@@ -298,9 +298,9 @@ async function handleApi(req, res, url) {
       break;
     }
     case 'delete': {
-      const { table: rawTable, match, force } = params;
+      const { table: rawTable, match = {}, force = false } = params;
       const table = validateTable(rawTable);
-      const conds = Object.entries(match).map(([k, v]) => {
+      const conds = Object.entries(match || {}).map(([k, v]) => {
         if (v === null || v === undefined) return `${escKey(k)} IS NULL`;
         if (Array.isArray(v)) {
           const vals = v.map(item => {
