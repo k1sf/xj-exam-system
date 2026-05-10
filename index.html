@@ -1663,7 +1663,13 @@ async function handleLogin() {
       body: JSON.stringify({ table: 'admins', username, password })
     });
     const adminData = await adminRes.json();
-    if (!adminData.error && adminData.username) {
+    // 如果返回错误，显示错误信息并停止
+    if (adminData.error) {
+      const msg = adminData.error === 'Wrong password' ? '密码错误' : 
+                  adminData.error === 'User not found' ? '管理员账号不存在' : adminData.error;
+      showToast(msg, 'error'); btn.disabled = false; btn.textContent = '登 录'; return;
+    }
+    if (adminData.username) {
       userRole = 'admin';
       currentAdmin = adminData;
       currentUser = null;
