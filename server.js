@@ -7,12 +7,28 @@ const PORT = process.env.DEPLOY_RUN_PORT || 5000;
 
 // Direct PostgreSQL connection via pg module
 const { Pool } = require('pg');
+// Fix channel_binding issue by replacing the URL
+const dbUrl = process.env.PGDATABASE_URL || '';
+let dbUrlFixed = dbUrl;
+// 确保只有一个 sslmode
+dbUrlFixed = dbUrlFixed.replace(/sslmode=[^&]+&?/g, '');
+// 移除 channel_binding
+dbUrlFixed = dbUrlFixed.replace(/channel_binding=[^&]+&?/g, '');
+// 确保有 ?
+if (!dbUrlFixed.includes('?')) {
+  dbUrlFixed += '?';
+}
+// 移除末尾的 ? 如果有的话
+dbUrlFixed = dbUrlFixed.replace(/\?$/, '');
+// 添加 uselibpqcompat 和 sslmode
+dbUrlFixed = dbUrlFixed + '?uselibpqcompat=true&sslmode=require';
+console.log('数据库URL:', dbUrlFixed.replace(/\/\/[^@]+@/, '//***:***@'));
 const pool = new Pool({
-  connectionString: process.env.PGDATABASE_URL,
+  connectionString: dbUrlFixed,
   ssl: { rejectUnauthorized: false },
-  max: 20,              // Max connections in pool (Supabase free tier allows ~60)
-  idleTimeoutMillis: 30000,  // Close idle connections after 30s
-  connectionTimeoutMillis: 5000  // Wait max 5s for a connection
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000
 });
 
 pool.on('error', (err) => {

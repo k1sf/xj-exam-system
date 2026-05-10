@@ -2161,6 +2161,8 @@ function renderQuestionUI(questions, totalPages, totalCount) {
     <div style="display:flex;gap:8px;margin-bottom:12px">
       <button class="btn btn-primary btn-sm" onclick="openQuestionEditor()">➕ 新增题目</button>
       <button class="btn btn-outline btn-sm" onclick="openBatchImport()">📥 批量导入</button>
+      <button class="btn btn-outline btn-sm" onclick="openFileImport()">📁 文件导入</button>
+      <button class="btn btn-sm" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca" onclick="openClearQuestions()">🗑️ 清空题库</button>
     </div>
     <div style="font-size:0.8rem;color:var(--text2);margin-bottom:8px">共${totalCount}题</div>
     <div id="questionListContainer">${qList}</div>
@@ -5241,6 +5243,503 @@ async function doArchive() {
   } catch(e) {
     console.error('Archive failed:', e);
     showToast('归档失败: ' + (e.message || '未知错误'), 'error');
+  }
+}
+
+
+// ===== 一键清空题库 =====
+async function openClearQuestions() {
+  if (!requireAdmin()) return;
+  
+  const totalCount = await dbCount('questions');
+  if (totalCount === 0) {
+    showToast('题库已经是空的', 'info');
+    return;
+  }
+  
+  openModal('⚠️ 危险操作 - 清空题库', `
+    <div style="text-align:center;padding:10px 0">
+      <div style="font-size:48px;margin-bottom:16px">🗑️</div>
+      <div style="font-size:1.1rem;font-weight:600;color:#dc2626;margin-bottom:12px">
+        确定要清空全部题库吗？
+      </div>
+      <div style="background:#fef2f2;border-radius:8px;padding:16px;margin-bottom:16px;text-align:left">
+        <div style="font-size:0.85rem;color:#991b1b;margin-bottom:8px"><strong>⚠️ 此操作将删除：</strong></div>
+        <ul style="font-size:0.82rem;color:#991b1b;margin-left:16px;line-height:1.8">
+          <li>全部 <strong>${totalCount}</strong> 道题目</li>
+          <li>所有关联的答题记录</li>
+          <li>引用这些题目的考试配置</li>
+        </ul>
+        <div style="font-size:0.8rem;color:#b91c1c;margin-top:8px">⚡ 此操作不可逆！请谨慎操作！</div>
+      </div>
+      <div class="form-group" style="text-align:left">
+        <label style="font-size:0.85rem;color:var(--text2)">请输入管理员密码确认身份：</label>
+        <input type="password" id="clearQuestionsPwd" class="form-input" placeholder="输入管理员密码" autocomplete="off" style="margin-top:6px">
+      </div>
+      <button class="btn" style="width:100%;background:#dc2626;color:white;border:none;margin-top:8px" onclick="doClearQuestions()">
+        🚫 确认清空全部题库
+      </button>
+      <button class="btn btn-outline" style="width:100%;margin-top:8px" onclick="closeModal()">
+        取消操作
+      </button>
+    </div>
+  `);
+}
+
+async function doClearQuestions() {
+  const pwd = document.getElementById('clearQuestionsPwd').value;
+  if (!pwd) {
+    showToast('请输入管理员密码', 'error');
+    return;
+  }
+  
+  // 验证管理员密码
+  const currentAdmin = JSON.parse(localStorage.getItem('xjAdmin') || '{}');
+  const token = document.querySelector('script:not([src])')?.textContent?.match(/const API_TOKEN = '([^']+)'/)?.[1] || API_TOKEN;
+  
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN || token },
+      body: JSON.stringify({ table: 'admins', username: currentAdmin.username, password: pwd })
+    });
+    const data = await res.json();
+    
+    if (data.error) {
+      showToast('密码验证失败', 'error');
+      return;
+    }
+  } catch(e) {
+    showToast('验证失败', 'error');
+    return;
+  }
+  
+  // 密码验证通过，执行清空
+  showToast('正在清空题库...', 'info');
+  
+  try {
+    // 先删除所有关联的答题记录
+    await dbDelete('records', {});
+    
+    // 删除所有考试中的题目引用
+    const exams = await dbSelect('exams');
+    for (const exam of exams) {
+      if (exam.question_ids && exam.question_ids.length > 0) {
+        await dbUpdate('exams', { data: { question_ids: [] }, match: { id: exam.id } });
+      }
+    }
+    
+    // 清空题库
+    await dbDelete('questions', {});
+    
+    // 清除缓存
+    cacheClear('questions');
+    cacheClear('records');
+    cacheClear('exams');
+    
+    closeModal();
+    showToast('题库已清空！共删除所有题目', 'success');
+    renderAdminQuestions();
+    
+  } catch(e) {
+    console.error('清空题库失败:', e);
+    showToast('清空失败: ' + (e.message || '未知错误'), 'error');
+  }
+}
+
+// ===== 文件导入题库 =====
+async function openFileImport() {
+  if (!requireAdmin()) return;
+  
+  const levelOpts = LEVELS.map(l => `<option value="${l}">${LEVEL_ICONS[l]} ${l}</option>`).join('');
+  
+  openModal('📁 从文件导入题库', `
+    <div style="padding:8px 0">
+      <div style="background:#f1f5f9;border-radius:var(--radius-s);padding:12px;margin-bottom:16px;font-size:0.82rem;color:var(--text2);line-height:1.8">
+        <strong>支持格式：</strong><br>
+        <span style="color:var(--primary)">📄 TXT/CSV:</span> 按分隔符（|、逗号、Tab）格式化的文本<br>
+        <span style="color:var(--primary)">📋 JSON:</span> 标准JSON数组，每项包含 type、content、options、answer<br>
+        <span style="color:var(--primary)">📊 Excel:</span> .xlsx/.xls 文件，需要列名匹配<br>
+        <span style="color:var(--warning)">⚡ 智能识别：自动检测分隔符、编码、题型</span>
+      </div>
+      
+      <div style="margin-bottom:16px">
+        <label style="font-size:0.85rem;color:var(--text2);display:block;margin-bottom:6px">导入级别</label>
+        <select class="input" id="fileImportLevel">${levelOpts}</select>
+      </div>
+      
+      <div style="margin-bottom:16px">
+        <label style="font-size:0.85rem;color:var(--text2);display:block;margin-bottom:6px">导入班级（可选）</label>
+        <input class="input" id="fileImportCohort" placeholder="留空则导入为通用题目">
+      </div>
+      
+      <div style="margin-bottom:16px">
+        <label style="font-size:0.85rem;color:var(--text2);display:block;margin-bottom:6px">选择文件</label>
+        <div style="border:2px dashed var(--border);border-radius:var(--radius-m);padding:24px;text-align:center;cursor:pointer;transition:all 0.2s" 
+             id="fileDropZone"
+             ondragover="event.preventDefault();this.style.borderColor='var(--primary)';this.style.background='var(--primary-light)'"
+             ondragleave="this.style.borderColor='var(--border)';this.style.background='transparent'"
+             ondrop="handleFileDrop(event)"
+             onclick="document.getElementById('fileInput').click()">
+          <div style="font-size:32px;margin-bottom:8px">📂</div>
+          <div style="font-size:0.9rem;color:var(--text)">点击选择文件 或 拖拽文件到此处</div>
+          <div style="font-size:0.78rem;color:var(--text2);margin-top:4px">支持 .txt .csv .json .xlsx .xls</div>
+        </div>
+        <input type="file" id="fileInput" accept=".txt,.csv,.json,.xlsx,.xls" style="display:none" onchange="handleFileSelect(this)">
+      </div>
+      
+      <div id="fileImportPreview" style="display:none;margin-bottom:16px">
+        <div style="font-size:0.85rem;font-weight:600;margin-bottom:8px">📋 文件内容预览</div>
+        <div id="filePreviewContent" style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:12px;background:var(--bg);font-size:0.8rem"></div>
+      </div>
+      
+      <div id="fileImportResult" style="display:none"></div>
+      
+      <button class="btn btn-primary" style="width:100%" id="confirmFileImportBtn" disabled onclick="doFileImport()">
+        📥 开始导入
+      </button>
+    </div>
+  `);
+}
+
+function handleFileDrop(e) {
+  e.preventDefault();
+  e.target.style.borderColor = 'var(--border)';
+  e.target.style.background = 'transparent';
+  const file = e.dataTransfer.files[0];
+  if (file) processFile(file);
+}
+
+function handleFileSelect(input) {
+  const file = input.files[0];
+  if (file) processFile(file);
+}
+
+async function processFile(file) {
+  const extension = file.name.split('.').pop().toLowerCase();
+  
+  // 读取文件内容
+  let content = '';
+  if (extension === 'xlsx' || extension === 'xls') {
+    // Excel文件需要特殊处理
+    showToast('正在解析Excel文件...', 'info');
+    const arrayBuffer = await file.arrayBuffer();
+    content = await parseExcel(arrayBuffer);
+  } else {
+    content = await file.text();
+  }
+  
+  // 智能解析内容
+  const parsed = smartParse(content);
+  
+  if (parsed.length === 0) {
+    showToast('未能解析出任何题目，请检查文件格式', 'error');
+    return;
+  }
+  
+  // 显示预览
+  const previewEl = document.getElementById('fileImportPreview');
+  const resultEl = document.getElementById('fileImportResult');
+  const confirmBtn = document.getElementById('confirmFileImportBtn');
+  
+  previewEl.style.display = 'block';
+  
+  const typeNames = { single: '单选', multiple: '多选', judge: '判断' };
+  let previewHtml = `<div style="font-size:0.82rem;color:var(--text2);margin-bottom:8px">检测到 <strong style="color:var(--success)">${parsed.length}</strong> 道题目</div>`;
+  previewHtml += '<div style="max-height:160px;overflow-y:auto">';
+  parsed.slice(0, 10).forEach((q, i) => {
+    previewHtml += `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:0.8rem">
+      <span style="color:var(--primary)">${i + 1}.</span> 
+      <span style="background:#e0f2fe;padding:1px 4px;border-radius:3px;font-size:0.75rem">[${typeNames[q.type] || q.type}]</span>
+      ${escHtml(q.content.substring(0, 50))}${q.content.length > 50 ? '...' : ''}
+      <span style="color:var(--success)">答案: ${q.answer}</span>
+    </div>`;
+  });
+  if (parsed.length > 10) {
+    previewHtml += `<div style="padding:8px 0;color:var(--text2);font-size:0.78rem;text-align:center">... 还有 ${parsed.length - 10} 道题目</div>`;
+  }
+  previewHtml += '</div>';
+  
+  document.getElementById('filePreviewContent').innerHTML = previewHtml;
+  
+  // 保存解析结果
+  window._fileImportData = parsed;
+  
+  // 显示格式检测信息
+  resultEl.style.display = 'block';
+  resultEl.innerHTML = `<div style="font-size:0.78rem;color:var(--text2);background:#fef3c7;padding:8px 12px;border-radius:6px;margin-bottom:8px">
+    ✅ 智能识别完成！检测格式：<strong>${parsed.format || '自动'}</strong>，共 <strong>${parsed.length}</strong> 道题目
+  </div>`;
+  
+  confirmBtn.disabled = false;
+  confirmBtn.textContent = `📥 导入 ${parsed.length} 道题目`;
+  
+  // 清除错误状态
+  resultEl.innerHTML = '';
+  resultEl.style.display = 'none';
+}
+
+async function parseExcel(arrayBuffer) {
+  // 使用SheetJS解析Excel
+  if (typeof XLSX === 'undefined') {
+    // 动态加载SheetJS
+    await loadScript('https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js');
+  }
+  
+  const data = new Uint8Array(arrayBuffer);
+  const workbook = XLSX.read(data, { type: 'array' });
+  const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+  const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+  
+  // 将Excel行转换为文本格式
+  const lines = jsonData.map(row => row.join('|')).filter(row => row.trim()).join('\n');
+  
+  return smartParse(lines);
+}
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = src;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
+function smartParse(content) {
+  // 检测分隔符
+  const firstLine = content.split('\n')[0];
+  let delimiter = '|';
+  
+  // 尝试检测分隔符
+  const delimiters = ['|', '\t', ',', ';'];
+  let maxCount = 0;
+  for (const d of delimiters) {
+    const count = (firstLine.match(new RegExp(d === '|' ? '\\|' : d, 'g')) || []).length;
+    if (count > maxCount) {
+      maxCount = count;
+      delimiter = d;
+    }
+  }
+  
+  // 尝试解析为JSON
+  if (content.trim().startsWith('[') || content.trim().startsWith('{')) {
+    try {
+      const json = JSON.parse(content);
+      const arr = Array.isArray(json) ? json : [json];
+      return parseJSONQuestions(arr);
+    } catch(e) {}
+  }
+  
+  // 文本格式解析
+  const lines = content.split('\n').filter(l => l.trim());
+  const questions = [];
+  const typeNames = { '单选': 'single', '多选': 'multiple', '判断': 'judge', 'single': 'single', 'multiple': 'multiple', 'judge': 'judge' };
+  
+  for (const line of lines) {
+    try {
+      const parts = line.split(delimiter).map(s => s.trim()).filter(Boolean);
+      if (parts.length < 3) continue;
+      
+      // 识别题型
+      let type = 'single';
+      let contentIdx = 0;
+      
+      // 检查第一列是否是题型
+      const first = parts[0].toLowerCase();
+      if (typeNames[first] || ['single', 'multiple', 'judge'].includes(first)) {
+        type = typeNames[first] || first;
+        contentIdx = 1;
+      } else if (first.includes('单选') || first.includes('判断') || first.includes('多选')) {
+        type = typeNames[first] || 'single';
+        contentIdx = 1;
+      }
+      
+      const qContent = parts[contentIdx] || '';
+      if (!qContent) continue;
+      
+      // 提取选项
+      let options = [];
+      let answer = '';
+      let analysis = '';
+      let tags = [];
+      
+      if (type === 'judge') {
+        options = [{ key: 'A', value: '正确' }, { key: 'B', value: '错误' }];
+        // 判断题答案识别
+        const answerPart = parts.find(p => /^[答案Answer]/.test(p) || /^A$|^B$|^对$|^错$|^正确$|^错误$/i.test(p));
+        if (answerPart) {
+          const ans = answerPart.replace(/^[答案Answer:：\s]+/, '').toUpperCase();
+          answer = (ans.includes('A') || ans.includes('正确') || ans.includes('对')) ? 'A' : 'B';
+        }
+      } else {
+        // 单选/多选题 - 尝试识别选项和答案
+        // 查找答案（通常在特定位置或有答案标记）
+        const answerIdx = parts.length - (parts[parts.length - 1].match(/^[答案Answer解析tags]/) ? 2 : 1);
+        
+        for (let i = contentIdx + 1; i < parts.length; i++) {
+          const p = parts[i];
+          // 选项识别：A. B. C. D. 或 A、B、B、C...
+          const optMatch = p.match(/^([A-Da-d])[.、:：]?\s*(.*)/);
+          if (optMatch) {
+            options.push({ key: optMatch[1].toUpperCase(), value: optMatch[2] || p });
+          } else if (/^[A-Da-d]$/.test(p) && i === answerIdx) {
+            // 单个字母可能是答案
+            answer = p.toUpperCase();
+          } else if (/^[A-Da-d]{2,}$/.test(p) && i === answerIdx) {
+            // 多个字母是多选题答案
+            answer = p.toUpperCase();
+          }
+        }
+        
+        // 再次尝试从整个parts中找答案
+        for (const p of parts) {
+          const ansMatch = p.match(/^[答案Answer]?[：:\s]*([A-Da-d]{1,4})$/i);
+          if (ansMatch) {
+            answer = ansMatch[1].toUpperCase();
+            break;
+          }
+          // 中文答案
+          const cnAns = p.match(/^[答案Answer]?[：:\s]*(正确|错误|对|错|[A-Da-d])$/);
+          if (cnAns) {
+            const ans = cnAns[1];
+            if ('对错正确错误'.includes(ans)) {
+              answer = ans === '对' || ans === '正确' ? 'A' : 'B';
+            } else {
+              answer = ans.toUpperCase();
+            }
+            break;
+          }
+        }
+        
+        // 去除选项中的选项标记
+        options = options.map(o => ({
+          key: o.key.toUpperCase(),
+          value: o.value.replace(/^[A-Da-d][.、:：]\s*/, '')
+        }));
+      }
+      
+      // 提取解析和标签
+      for (const p of parts) {
+        if (/^[解析Analysis]/.test(p)) {
+          analysis = p.replace(/^[解析Analysis]?[：:\s]*/, '');
+        }
+        if (/^[标签Tags]/.test(p)) {
+          tags = p.replace(/^[标签Tags]?[：:\s]*/, '').split(/[,，]/).map(t => t.trim()).filter(Boolean);
+        }
+      }
+      
+      if (qContent && answer) {
+        questions.push({ type, content: qContent, options: JSON.stringify(options), answer, analysis, tags });
+      }
+    } catch(e) {
+      console.warn('解析行失败:', e);
+    }
+  }
+  
+  questions.format = delimiter === '\t' ? 'Tab分隔文本' : delimiter === ',' ? 'CSV' : '管道符分隔';
+  return questions;
+}
+
+function parseJSONQuestions(arr) {
+  const questions = [];
+  const typeNames = { '单选': 'single', '多选': 'multiple', '判断': 'judge', 'single': 'single', 'multiple': 'multiple', 'judge': 'judge' };
+  
+  for (const item of arr) {
+    try {
+      // 支持多种JSON格式
+      const type = typeNames[item.type] || typeNames[item.题型] || 'single';
+      const content = item.content || item.题干 || item.question || item.title || '';
+      let answer = (item.answer || item.答案 || item.an || '').toString().toUpperCase();
+      
+      // 处理选项
+      let options = [];
+      if (item.options) {
+        if (Array.isArray(item.options)) {
+          options = item.options.map((o, i) => {
+            if (typeof o === 'string') {
+              return { key: String.fromCharCode(65 + i), value: o };
+            }
+            return { key: o.key || o.label || String.fromCharCode(65 + i), value: o.value || o.text || o };
+          });
+        } else if (typeof item.options === 'object') {
+          options = Object.entries(item.options).map(([k, v]) => ({ key: k.toUpperCase(), value: v }));
+        }
+      } else if (item.A || item.B || item.C || item.D) {
+        // Excel列格式
+        if (item.A) options.push({ key: 'A', value: item.A });
+        if (item.B) options.push({ key: 'B', value: item.B });
+        if (item.C) options.push({ key: 'C', value: item.C });
+        if (item.D) options.push({ key: 'D', value: item.D });
+      }
+      
+      // 判断题自动生成选项
+      if (type === 'judge' && options.length === 0) {
+        options = [{ key: 'A', value: '正确' }, { key: 'B', value: '错误' }];
+        if ('对错正确错误'.includes(answer)) {
+          answer = answer === '对' || answer === '正确' ? 'A' : 'B';
+        }
+      }
+      
+      const analysis = item.analysis || item.解析 || item.desc || '';
+      const tags = item.tags || item.标签 || [];
+      
+      if (content && answer) {
+        questions.push({ 
+          type, 
+          content, 
+          options: JSON.stringify(options), 
+          answer, 
+          analysis: analysis.toString(),
+          tags: Array.isArray(tags) ? tags : []
+        });
+      }
+    } catch(e) {
+      console.warn('解析JSON题目失败:', e);
+    }
+  }
+  
+  questions.format = 'JSON';
+  return questions;
+}
+
+async function doFileImport() {
+  if (!requireAdmin()) return;
+  
+  const rows = window._fileImportData;
+  if (!rows || rows.length === 0) {
+    showToast('没有可导入的数据', 'error');
+    return;
+  }
+  
+  const confirmBtn = document.getElementById('confirmFileImportBtn');
+  confirmBtn.disabled = true;
+  confirmBtn.textContent = '导入中...';
+  
+  try {
+    const importLevel = document.getElementById('fileImportLevel').value || '初级';
+    const importCohort = document.getElementById('fileImportCohort').value.trim() || null;
+    
+    // 添加级别和班级信息
+    const finalRows = rows.map(r => ({
+      ...r,
+      level: importLevel,
+      cohort: importCohort
+    }));
+    
+    await dbInsert('questions', finalRows);
+    
+    closeModal();
+    showToast(`成功导入 ${rows.length} 道题目`, 'success');
+    renderAdminQuestions();
+    
+  } catch(e) {
+    console.error('导入失败:', e);
+    showToast('导入失败: ' + (e.message || '未知错误'), 'error');
+  } finally {
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = '📥 开始导入';
   }
 }
 
