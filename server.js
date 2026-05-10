@@ -57,6 +57,17 @@ function validateTable(table) {
 // Generate a random token on server start; embed in HTML for browser; require in API calls
 const API_TOKEN = crypto.randomBytes(32).toString('hex');
 
+// ===== Super Admin Password =====
+// This password is used for emergency recovery when main admin password is lost
+// Default password: TpBXNX8LTXyqML1WEb49vOFFPUS7tKnb (32 chars, auto-generated)
+// To change: update the hash below (regenerate with: crypto.createHash('sha256').update('newpassword_super_recovery_salt_2026').digest('hex'))
+const SUPER_ADMIN_HASH = process.env.SUPER_ADMIN_HASH || '91b24f42851d4897224c1ce302f7aa564859feabc2366c64574774333846c86e';
+
+function verifySuperAdmin(password) {
+  const hash = crypto.createHash('sha256').update(password + '_super_recovery_salt_2026').digest('hex');
+  return hash === SUPER_ADMIN_HASH;
+}
+
 // ===== Security: select whitelist =====
 // Only allow simple column names (alphanumeric + underscore), no expressions
 function validateSelect(selInput) {
@@ -352,6 +363,257 @@ async function handleApi(req, res, url) {
       const { password: _, ...safeUser } = user;
       safeUser.session_id = sessionId;
       sendJson(res, safeUser);
+      break;
+    }
+    case 'super-admin-verify': {
+      // Verify super admin password for emergency recovery
+      const { password } = params;
+      if (!password) { sendJson(res, { error: 'Missing password' }, 400); return; }
+      if (verifySuperAdmin(password)) {
+        // Generate a temporary recovery token valid for 5 minutes
+        const recoveryToken = crypto.randomBytes(32).toString('hex');
+        const recoveryExpiry = Date.now() + 5 * 60 * 1000;
+        // Store in memory (in production, use Redis or similar)
+        global._superAdminToken = { token: recoveryToken, expiry: recoveryExpiry };
+        sendJson(res, { success: true, recoveryToken, expiresIn: 300 });
+      } else {
+        sendJson(res, { error: 'Invalid super password' }, 401);
+      }
+      break;
+    }
+    case 'super-admin-reset': {
+      // Reset admin password using recovery token
+      const { recoveryToken, username, newPassword } = params;
+      if (!recoveryToken || !username || !newPassword) {
+        sendJson(res, { error: 'Missing parameters' }, 400); return;
+      }
+      // Verify recovery token
+      if (!global._superAdminToken || 
+          global._superAdminToken.token !== recoveryToken || 
+          global._superAdminToken.expiry < Date.now()) {
+        sendJson(res, { error: 'Invalid or expired recovery token' }, 401); return;
+      }
+      // Reset password
+      const hashedPwd = hashPassword(newPassword);
+      const sql = `UPDATE admins SET "password" = ${escVal(hashedPwd)} WHERE "username" = ${escVal(username)}`;
+      await pool.query(sql);
+      // Clear recovery token
+      delete global._superAdminToken;
+      sendJson(res, { success: true, message: 'Password reset successfully' });
+      break;
+    }
+    case 'export-all': {
+      // Export all database data as JSON
+      const tables = ['students', 'questions', 'records', 'exams', 'admins'];
+      const exportData = {};
+      for (const table of tables) {
+        try {
+          const result = await pool.query(`SELECT * FROM ${table}`);
+          exportData[table] = result.rows;
+        } catch(e) {
+          exportData[table] = [];
+        }
+      }
+      exportData._meta = {
+        exportedAt: new Date().toISOString(),
+        version: '1.0',
+        system: '修脚师考试刷题系统'
+      };
+      sendJson(res, exportData);
+      break;
+    }
+    case 'import-all': {
+      // Import data from JSON backup
+      const { recoveryToken, data } = params;
+      // Verify recovery token (same as super admin)
+      if (!global._superAdminToken || 
+          global._superAdminToken.token !== recoveryToken || 
+          global._superAdminToken.expiry < Date.now()) {
+        sendJson(res, { error: 'Invalid or expired recovery token' }, 401); return;
+      }
+      if (!data || typeof data !== 'object') {
+        sendJson(res, { error: 'Invalid data format' }, 400); return;
+      }
+      const results = { imported: {}, errors: [] };
+      // Import tables in order (respect foreign keys)
+      const tableOrder = ['questions', 'exams', 'students', 'records', 'admins'];
+      for (const table of tableOrder) {
+        if (!data[table] || !Array.isArray(data[table])) continue;
+        try {
+          let imported = 0;
+          for (const row of data[table]) {
+            try {
+              // Build INSERT SQL
+              const cols = Object.keys(row).filter(k => k !== 'id' && k !== 'created_at');
+              const vals = cols.map(c => escVal(row[c], getColType(table, c)));
+              if (cols.length > 0) {
+                const sql = `INSERT INTO ${table} (${cols.map(escKey).join(',')}) VALUES (${vals.join(',')}) ON CONFLICT DO NOTHING RETURNING id`;
+                const result = await pool.query(sql);
+                if (result.rowCount > 0) imported++;
+              }
+            } catch(e) {
+              results.errors.push({ table, row: row.id || row.username || 'unknown', error: e.message });
+            }
+          }
+          results.imported[table] = imported;
+        } catch(e) {
+          results.errors.push({ table, error: e.message });
+        }
+      }
+      // Clear recovery token after use
+      delete global._superAdminToken;
+      sendJson(res, results);
+      break;
+    }
+    // ===== Super Admin Routes =====
+    case 'superadmin/verify': {
+      const { password } = params;
+      if (!password) {
+        sendJson(res, { error: 'Password required' }, 400); return;
+      }
+      // Verify against hardcoded hash (security through obscurity + server-side only)
+      const hash = crypto.createHash('sha256').update(password + '_super_recovery_salt_2026').digest('hex');
+      if (hash !== SUPER_ADMIN_HASH) {
+        // Random delay to prevent timing attacks
+        await new Promise(r => setTimeout(r, 100 + Math.random() * 200));
+        sendJson(res, { success: false, error: 'Invalid super password' }, 401); return;
+      }
+      // Generate temporary session token (valid for 10 minutes)
+      const sessionToken = crypto.randomBytes(32).toString('hex');
+      global._superAdminSession = {
+        token: sessionToken,
+        expiry: Date.now() + 10 * 60 * 1000
+      };
+      sendJson(res, { success: true, sessionToken });
+      break;
+    }
+    case 'superadmin/reset-admin': {
+      const { sessionToken } = params;
+      if (!global._superAdminSession || 
+          global._superAdminSession.token !== sessionToken || 
+          global._superAdminSession.expiry < Date.now()) {
+        sendJson(res, { error: 'Invalid or expired session' }, 401); return;
+      }
+      // Generate new password hash (default: 123456)
+      const newHash = 'sha256:' + crypto.createHash('sha256').update('123456' + '_pedicure_salt_2026').digest('hex');
+      await pool.query(
+        "UPDATE admins SET password = $1 WHERE username = 'admin'",
+        [newHash]
+      );
+      sendJson(res, { success: true, message: 'Admin password reset to 123456' });
+      break;
+    }
+    case 'superadmin/export': {
+      const { questions, students, records, exams } = params;
+      const exportData = {};
+      try {
+        if (questions) {
+          const r = await pool.query('SELECT * FROM questions ORDER BY id');
+          exportData.questions = r.rows;
+        }
+        if (students) {
+          // Exclude password hash for security
+          const r = await pool.query('SELECT id, username, nickname, cohort, level, status, expires_at, xp, study_level, created_at FROM students ORDER BY id');
+          exportData.students = r.rows;
+        }
+        if (records) {
+          const r = await pool.query('SELECT * FROM records ORDER BY id');
+          exportData.records = r.rows;
+        }
+        if (exams) {
+          const r = await pool.query('SELECT * FROM exams ORDER BY id');
+          exportData.exams = r.rows;
+        }
+        sendJson(res, exportData);
+      } catch(e) {
+        sendJson(res, { error: 'Export failed: ' + e.message }, 500);
+      }
+      break;
+    }
+    case 'superadmin/import': {
+      const { data, options } = params;
+      if (!global._superAdminSession || global._superAdminSession.expiry < Date.now()) {
+        sendJson(res, { error: 'Invalid or expired session' }, 401); return;
+      }
+      if (!data || typeof data !== 'object') {
+        sendJson(res, { error: 'Invalid data format' }, 400); return;
+      }
+      const results = {
+        questionsCount: 0,
+        studentsCount: 0,
+        recordsCount: 0,
+        examsCount: 0,
+        errors: []
+      };
+      try {
+        // Import questions
+        if (options.questions && Array.isArray(data.questions)) {
+          for (const q of data.questions) {
+            try {
+              const cols = Object.keys(q).filter(k => k !== 'id' && k !== 'created_at');
+              const vals = cols.map(c => escVal(q[c], getColType('questions', c)));
+              if (cols.length > 0) {
+                const sql = `INSERT INTO questions (${cols.map(escKey).join(',')}) VALUES (${vals.join(',')}) RETURNING id`;
+                await pool.query(sql);
+                results.questionsCount++;
+              }
+            } catch(e) {
+              results.errors.push({ type: 'question', error: e.message });
+            }
+          }
+        }
+        // Import exams
+        if (options.exams && Array.isArray(data.exams)) {
+          for (const e of data.exams) {
+            try {
+              const cols = Object.keys(e).filter(k => k !== 'id' && k !== 'created_at');
+              const vals = cols.map(c => escVal(e[c], getColType('exams', c)));
+              if (cols.length > 0) {
+                const sql = `INSERT INTO exams (${cols.map(escKey).join(',')}) VALUES (${vals.join(',')}) RETURNING id`;
+                await pool.query(sql);
+                results.examsCount++;
+              }
+            } catch(e) {
+              results.errors.push({ type: 'exam', error: e.message });
+            }
+          }
+        }
+        // Import students (skip password)
+        if (options.students && Array.isArray(data.students)) {
+          for (const s of data.students) {
+            try {
+              const cols = Object.keys(s).filter(k => !['id', 'created_at', 'password'].includes(k));
+              const vals = cols.map(c => escVal(s[c], null));
+              if (cols.length > 0) {
+                const sql = `INSERT INTO students (${cols.map(escKey).join(',')}) VALUES (${vals.join(',')}) ON CONFLICT (username) DO UPDATE SET nickname=EXCLUDED.nickname, cohort=EXCLUDED.cohort, level=EXCLUDED.level RETURNING id`;
+                await pool.query(sql);
+                results.studentsCount++;
+              }
+            } catch(e) {
+              results.errors.push({ type: 'student', error: e.message });
+            }
+          }
+        }
+        // Import records
+        if (options.records && Array.isArray(data.records)) {
+          for (const r of data.records) {
+            try {
+              const cols = Object.keys(r).filter(k => k !== 'id');
+              const vals = cols.map(c => escVal(r[c], null));
+              if (cols.length > 0) {
+                const sql = `INSERT INTO records (${cols.map(escKey).join(',')}) VALUES (${vals.join(',')})`;
+                await pool.query(sql);
+                results.recordsCount++;
+              }
+            } catch(e) {
+              results.errors.push({ type: 'record', error: e.message });
+            }
+          }
+        }
+        sendJson(res, results);
+      } catch(e) {
+        sendJson(res, { error: 'Import failed: ' + e.message }, 500);
+      }
       break;
     }
     default:

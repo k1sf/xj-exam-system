@@ -1584,6 +1584,9 @@ function renderLogin(errorMsg) {
         ${errorMsg ? `<div class="login-expired-msg">${escHtml(errorMsg)}</div>` : ''}
         <button class="login-btn" id="loginBtn" onclick="handleLogin()">登 录</button>
         <div class="login-hint">登录即代表你已获得管理员授权</div>
+        <div class="login-footer">
+          <a href="#" onclick="event.preventDefault();openSuperAdminLogin();return false;" style="color:var(--primary);font-size:12px;text-decoration:none;padding:8px 0">🔑 紧急恢复</a>
+        </div>
       </div>
       <div class="login-dots"><span class="active"></span><span></span><span></span></div>
       <div class="settings-bar" style="margin-top:20px;border-radius:12px;justify-content:center;flex-wrap:wrap">
@@ -5740,6 +5743,366 @@ async function doFileImport() {
   } finally {
     confirmBtn.disabled = false;
     confirmBtn.textContent = '📥 开始导入';
+  }
+}
+
+// ===== 超级管理员紧急恢复 =====
+function openSuperAdminLogin() {
+  openModal('🔑 超级管理员紧急恢复', `
+    <div style="padding:8px 0">
+      <div style="background:#fef3c7;border-radius:8px;padding:16px;margin-bottom:20px;text-align:center">
+        <div style="font-size:32px;margin-bottom:8px">⚠️</div>
+        <div style="font-size:0.85rem;color:#92400e;line-height:1.6">
+          此功能仅用于<span style="font-weight:600">主管理员密码丢失</span>时的紧急恢复<br>
+          使用此功能需要提供<strong>超级管理员密码</strong>
+        </div>
+      </div>
+      
+      <div style="margin-bottom:16px">
+        <label style="font-size:0.85rem;color:var(--text2);display:block;margin-bottom:6px">超级密码</label>
+        <input class="input" type="password" id="superAdminPwd" placeholder="请输入超级管理员密码">
+      </div>
+      
+      <div id="superAdminError" style="display:none;color:#dc2626;font-size:0.85rem;margin-bottom:12px;text-align:center"></div>
+      
+      <button class="btn btn-primary" style="width:100%" onclick="verifySuperAdmin()">
+        验证并继续
+      </button>
+      
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);text-align:center">
+        <div style="font-size:0.78rem;color:var(--text2)">
+          如需获取超级密码，请联系系统维护人员
+        </div>
+      </div>
+    </div>
+  `, 'sm');
+}
+
+async function verifySuperAdmin() {
+  const pwd = document.getElementById('superAdminPwd').value.trim();
+  if (!pwd) {
+    document.getElementById('superAdminError').textContent = '请输入超级密码';
+    document.getElementById('superAdminError').style.display = 'block';
+    return;
+  }
+  
+  try {
+    const res = await fetch(`${API_BASE}/superadmin/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
+      body: JSON.stringify({ password: pwd })
+    });
+    const data = await res.json();
+    
+    if (data.success) {
+      closeModal();
+      openModal('🔐 超级管理员控制台', `
+        <div style="padding:8px 0">
+          <div style="background:#dcfce7;border-radius:8px;padding:16px;margin-bottom:20px;text-align:center">
+            <div style="font-size:32px;margin-bottom:8px">✅</div>
+            <div style="color:#166534;font-weight:600">超级管理员验证成功</div>
+          </div>
+          
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <button class="btn btn-warning" style="padding:14px" onclick="superAdminResetAdminPwd()">
+              🔑 重置主管理员密码
+            </button>
+            <button class="btn btn-primary" style="padding:14px" onclick="openDatabaseExport()">
+              📤 导出数据库
+            </button>
+            <button class="btn btn-success" style="padding:14px" onclick="openDatabaseImport()">
+              📥 导入数据库
+            </button>
+          </div>
+          
+          <div style="margin-top:20px;padding:16px;background:var(--bg);border-radius:8px;text-align:center">
+            <div style="font-size:0.78rem;color:var(--text2)">
+              超级管理员权限：密码重置、数据库导出导入
+            </div>
+          </div>
+        </div>
+      `, 'lg');
+    } else {
+      document.getElementById('superAdminError').textContent = data.error || '超级密码验证失败';
+      document.getElementById('superAdminError').style.display = 'block';
+    }
+  } catch(e) {
+    document.getElementById('superAdminError').textContent = '验证失败: ' + (e.message || '未知错误');
+    document.getElementById('superAdminError').style.display = 'block';
+  }
+}
+
+async function superAdminResetAdminPwd() {
+  if (!confirm('确定要将主管理员密码重置为默认密码 123456 吗？')) return;
+  
+  try {
+    const res = await fetch(`${API_BASE}/superadmin/reset-admin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
+      body: JSON.stringify({})
+    });
+    const data = await res.json();
+    
+    if (data.success) {
+      closeModal();
+      showToast('主管理员密码已重置为 123456', 'success');
+    } else {
+      showToast(data.error || '重置失败', 'error');
+    }
+  } catch(e) {
+    showToast('重置失败: ' + (e.message || '未知错误'), 'error');
+  }
+}
+
+// ===== 数据库导出功能 =====
+function openDatabaseExport() {
+  openModal('📤 导出数据库', `
+    <div style="padding:8px 0">
+      <div style="background:#f1f5f9;border-radius:8px;padding:16px;margin-bottom:20px">
+        <div style="font-size:0.85rem;font-weight:600;margin-bottom:12px">📋 导出说明</div>
+        <div style="font-size:0.82rem;color:var(--text2);line-height:1.8">
+          • 导出的数据为 JSON 格式，包含所有表结构<br>
+          • 题库、学生、答题记录、考试、管理员账号<br>
+          • 可用于数据备份或迁移到其他系统
+        </div>
+      </div>
+      
+      <div style="margin-bottom:16px">
+        <label style="font-size:0.85rem;font-weight:600;display:block;margin-bottom:8px">选择导出内容</label>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="exportQuestions" checked> 📚 题库
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="exportStudents" checked> 👥 学生账号
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="exportRecords" checked> 📝 答题记录
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="exportExams" checked> 📋 考试记录
+          </label>
+        </div>
+      </div>
+      
+      <button class="btn btn-primary" style="width:100%" onclick="doDatabaseExport()">
+        📥 开始导出
+      </button>
+      
+      <div id="exportProgress" style="display:none;margin-top:16px;text-align:center">
+        <div class="spinner"></div>
+        <div style="font-size:0.85rem;color:var(--text2);margin-top:8px">正在导出数据...</div>
+      </div>
+      
+      <div id="exportResult" style="display:none;margin-top:16px"></div>
+    </div>
+  `, 'md');
+}
+
+async function doDatabaseExport() {
+  const options = {
+    questions: document.getElementById('exportQuestions').checked,
+    students: document.getElementById('exportStudents').checked,
+    records: document.getElementById('exportRecords').checked,
+    exams: document.getElementById('exportExams').checked
+  };
+  
+  if (!Object.values(options).some(v => v)) {
+    showToast('请至少选择一项导出', 'error');
+    return;
+  }
+  
+  const progress = document.getElementById('exportProgress');
+  const result = document.getElementById('exportResult');
+  progress.style.display = 'block';
+  result.style.display = 'none';
+  
+  try {
+    const res = await fetch(`${API_BASE}/superadmin/export`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
+      body: JSON.stringify(options)
+    });
+    const data = await res.json();
+    
+    if (data.error) {
+      throw new Error(data.error);
+    }
+    
+    // 创建下载
+    const exportData = {
+      version: '1.0',
+      exportTime: new Date().toISOString(),
+      ...data
+    };
+    
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `exam_backup_${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    
+    progress.style.display = 'none';
+    result.innerHTML = `
+      <div style="background:#dcfce7;border-radius:8px;padding:16px;text-align:center">
+        <div style="font-size:32px;margin-bottom:8px">✅</div>
+        <div style="color:#166534;font-weight:600">导出成功</div>
+        <div style="font-size:0.82rem;color:#166534;margin-top:4px">
+          共导出: 题库(${data.questions?.length||0}) 学生(${data.students?.length||0}) 
+          记录(${data.records?.length||0}) 考试(${data.exams?.length||0})
+        </div>
+      </div>
+    `;
+    result.style.display = 'block';
+    
+  } catch(e) {
+    progress.style.display = 'none';
+    result.innerHTML = `
+      <div style="background:#fef2f2;border-radius:8px;padding:16px;text-align:center">
+        <div style="color:#dc2626">导出失败: ${e.message}</div>
+      </div>
+    `;
+    result.style.display = 'block';
+  }
+}
+
+// ===== 数据库导入功能 =====
+function openDatabaseImport() {
+  openModal('📥 导入数据库', `
+    <div style="padding:8px 0">
+      <div style="background:#fef3c7;border-radius:8px;padding:16px;margin-bottom:20px">
+        <div style="font-size:32px;margin-bottom:8px;text-align:center">⚠️</div>
+        <div style="font-size:0.85rem;color:#92400e;line-height:1.6;text-align:center">
+          <strong>警告：导入将覆盖现有数据！</strong><br>
+          建议在导入前先导出当前数据作为备份
+        </div>
+      </div>
+      
+      <div style="margin-bottom:16px">
+        <label style="font-size:0.85rem;color:var(--text2);display:block;margin-bottom:6px">选择备份文件 (.json)</label>
+        <input type="file" id="importFileInput" accept=".json" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px"
+               onchange="previewImportFile(this)">
+      </div>
+      
+      <div id="importPreview" style="display:none;margin-bottom:16px">
+        <div style="font-size:0.85rem;font-weight:600;margin-bottom:8px">📋 备份文件预览</div>
+        <div style="background:var(--bg);border-radius:8px;padding:12px;font-size:0.8rem">
+          <div>版本: <span id="importVersion">-</span></div>
+          <div>导出时间: <span id="importTime">-</span></div>
+          <div style="margin-top:8px">包含数据:</div>
+          <div id="importCounts" style="color:var(--text2)">-</div>
+        </div>
+      </div>
+      
+      <div style="margin-bottom:16px">
+        <label style="font-size:0.85rem;font-weight:600;display:block;margin-bottom:8px">导入选项</label>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="importQuestions" checked> 📚 题库
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="importStudents"> 👥 学生账号
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="importRecords"> 📝 答题记录
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="importExams"> 📋 考试记录
+          </label>
+        </div>
+      </div>
+      
+      <div id="importProgress" style="display:none;margin-bottom:16px;text-align:center">
+        <div class="spinner"></div>
+        <div style="font-size:0.85rem;color:var(--text2);margin-top:8px">正在导入数据...</div>
+      </div>
+      
+      <button class="btn btn-success" id="doImportBtn" style="width:100%" onclick="doDatabaseImport()" disabled>
+        ⚠️ 确认导入（将覆盖数据）
+      </button>
+    </div>
+  `, 'md');
+}
+
+function previewImportFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      
+      document.getElementById('importVersion').textContent = data.version || '未知';
+      document.getElementById('importTime').textContent = data.exportTime ? new Date(data.exportTime).toLocaleString() : '未知';
+      
+      const counts = [];
+      if (data.questions?.length) counts.push(`题库 ${data.questions.length} 道`);
+      if (data.students?.length) counts.push(`学生 ${data.students.length} 名`);
+      if (data.records?.length) counts.push(`记录 ${data.records.length} 条`);
+      if (data.exams?.length) counts.push(`考试 ${data.exams.length} 场`);
+      document.getElementById('importCounts').textContent = counts.join(' | ') || '无数据';
+      
+      document.getElementById('importPreview').style.display = 'block';
+      document.getElementById('doImportBtn').disabled = false;
+      
+      window._importData = data;
+    } catch(err) {
+      showToast('文件格式错误: ' + err.message, 'error');
+      input.value = '';
+    }
+  };
+  reader.readAsText(file);
+}
+
+async function doDatabaseImport() {
+  const data = window._importData;
+  if (!data) {
+    showToast('请先选择备份文件', 'error');
+    return;
+  }
+  
+  const options = {
+    questions: document.getElementById('importQuestions').checked,
+    students: document.getElementById('importStudents').checked,
+    records: document.getElementById('importRecords').checked,
+    exams: document.getElementById('importExams').checked
+  };
+  
+  if (!Object.values(options).some(v => v)) {
+    showToast('请至少选择一项导入', 'error');
+    return;
+  }
+  
+  if (!confirm('确定要导入数据吗？这将覆盖现有的相关数据！')) return;
+  
+  const btn = document.getElementById('doImportBtn');
+  const progress = document.getElementById('importProgress');
+  btn.disabled = true;
+  progress.style.display = 'block';
+  
+  try {
+    const res = await fetch(`${API_BASE}/superadmin/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
+      body: JSON.stringify({ data, options })
+    });
+    const result = await res.json();
+    
+    if (result.error) {
+      throw new Error(result.error);
+    }
+    
+    closeModal();
+    showToast(`导入成功！题库(${result.questionsCount}) 学生(${result.studentsCount}) 记录(${result.recordsCount}) 考试(${result.examsCount})`, 'success');
+    
+  } catch(e) {
+    btn.disabled = false;
+    showToast('导入失败: ' + (e.message || '未知错误'), 'error');
+  } finally {
+    progress.style.display = 'none';
   }
 }
 
