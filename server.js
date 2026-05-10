@@ -504,7 +504,13 @@ async function handleApi(req, res, url) {
       break;
     }
     case 'superadmin/export': {
-      const { questions, students, records, exams } = params;
+      const { questions, students, records, exams, sessionToken } = params;
+      // Verify session token
+      if (!global._superAdminSession || 
+          global._superAdminSession.token !== sessionToken || 
+          global._superAdminSession.expiry < Date.now()) {
+        sendJson(res, { error: 'Invalid or expired session' }, 401); return;
+      }
       const exportData = {};
       try {
         if (questions) {
@@ -531,8 +537,10 @@ async function handleApi(req, res, url) {
       break;
     }
     case 'superadmin/import': {
-      const { data, options } = params;
-      if (!global._superAdminSession || global._superAdminSession.expiry < Date.now()) {
+      const { data, options, sessionToken } = params;
+      if (!global._superAdminSession || 
+          global._superAdminSession.token !== sessionToken || 
+          global._superAdminSession.expiry < Date.now()) {
         sendJson(res, { error: 'Invalid or expired session' }, 401); return;
       }
       if (!data || typeof data !== 'object') {

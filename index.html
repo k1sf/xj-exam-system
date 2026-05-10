@@ -5746,8 +5746,11 @@ async function doFileImport() {
   }
 }
 
+let _superAdminSession = null;
+
 // ===== 超级管理员紧急恢复 =====
 function openSuperAdminLogin() {
+  _superAdminSession = null;
   openModal('🔑 超级管理员紧急恢复', `
     <div style="padding:8px 0">
       <div style="background:#fef3c7;border-radius:8px;padding:16px;margin-bottom:20px;text-align:center">
@@ -5795,6 +5798,7 @@ async function verifySuperAdmin() {
     const data = await res.json();
     
     if (data.success) {
+      _superAdminSession = data.sessionToken;
       closeModal();
       openModal('🔐 超级管理员控制台', `
         <div style="padding:8px 0">
@@ -5833,13 +5837,18 @@ async function verifySuperAdmin() {
 }
 
 async function superAdminResetAdminPwd() {
+  if (!_superAdminSession) {
+    showToast('请先验证超级管理员', 'error');
+    openSuperAdminLogin();
+    return;
+  }
   if (!confirm('确定要将主管理员密码重置为默认密码 123456 吗？')) return;
   
   try {
     const res = await fetch(`${API_BASE}/superadmin/reset-admin`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-      body: JSON.stringify({})
+      body: JSON.stringify({ sessionToken: _superAdminSession })
     });
     const data = await res.json();
     
@@ -5856,6 +5865,11 @@ async function superAdminResetAdminPwd() {
 
 // ===== 数据库导出功能 =====
 function openDatabaseExport() {
+  if (!_superAdminSession) {
+    showToast('请先验证超级管理员', 'error');
+    openSuperAdminLogin();
+    return;
+  }
   openModal('📤 导出数据库', `
     <div style="padding:8px 0">
       <div style="background:#f1f5f9;border-radius:8px;padding:16px;margin-bottom:20px">
@@ -5921,7 +5935,7 @@ async function doDatabaseExport() {
     const res = await fetch(`${API_BASE}/superadmin/export`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-      body: JSON.stringify(options)
+      body: JSON.stringify({ ...options, sessionToken: _superAdminSession })
     });
     const data = await res.json();
     
@@ -5970,6 +5984,11 @@ async function doDatabaseExport() {
 
 // ===== 数据库导入功能 =====
 function openDatabaseImport() {
+  if (!_superAdminSession) {
+    showToast('请先验证超级管理员', 'error');
+    openSuperAdminLogin();
+    return;
+  }
   openModal('📥 导入数据库', `
     <div style="padding:8px 0">
       <div style="background:#fef3c7;border-radius:8px;padding:16px;margin-bottom:20px">
@@ -6087,7 +6106,7 @@ async function doDatabaseImport() {
     const res = await fetch(`${API_BASE}/superadmin/import`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-      body: JSON.stringify({ data, options })
+      body: JSON.stringify({ data, options, sessionToken: _superAdminSession })
     });
     const result = await res.json();
     
