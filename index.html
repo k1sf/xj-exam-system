@@ -5333,7 +5333,7 @@ async function doClearQuestions() {
     const exams = await dbSelect('exams');
     for (const exam of exams) {
       if (exam.question_ids && exam.question_ids.length > 0) {
-        await dbUpdate('exams', { data: { question_ids: [] }, match: { id: exam.id } });
+        await dbUpdate('exams', { question_ids: [] }, { id: exam.id });
       }
     }
     
