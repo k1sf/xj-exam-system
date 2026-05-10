@@ -5717,20 +5717,20 @@ function smartParse(content) {
 // ===== 编码检测与转换 =====
 function detectAndConvertEncoding(content) {
   // 检测是否包含乱码特征（GBK转UTF8产生的乱码）
-  const乱码模式 = /[ã€Šã€‹â€œâ€�]/;
-  const has乱码 = 乱码模式.test(content);
+  const garbledPattern = /[ã€Šã€‹â€œâ€�]/;
+  const hasGarbled = garbledPattern.test(content);
   
   // 检测UTF-8编码特征
   const utf8Chars = content.match(/[\u4e00-\u9fff]/g) || [];
   const hasCJK = utf8Chars.length > 0;
   
   // 如果有中文且没有乱码，很可能是UTF-8
-  if (hasCJK && !has乱码) {
+  if (hasCJK && !hasGarbled) {
     return { text: content, encoding: 'UTF-8' };
   }
   
   // 如果有乱码，尝试用TextDecoder转换
-  if (has乱码) {
+  if (hasGarbled) {
     // 尝试将乱码转为正常中文
     try {
       // GBK编码的中文在UTF-8解析时会产生这些字符
