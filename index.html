@@ -2660,8 +2660,8 @@ async function createExam() {
 
 async function viewExamScores(examId) {
   const exam = allExams.find(e => e.id == examId);
-  cacheClear('sel_records_');
-  cacheClear('sel_students_');
+  cacheClearTable('records');
+  cacheClearTable('students');
   const examIdNum = Number(examId);
   const records = await dbSelect('records', { eq: { exam_id: examIdNum } });
   const students = await dbSelect('students');
@@ -2949,7 +2949,7 @@ function copyQuickExamLink(examId) {
 
 async function viewQuickExamScores(examId) {
   const exam = allExams.find(e => e.id == examId);
-  cacheClear('sel_records_');
+  cacheClearTable('records');
   const examIdNum = Number(examId);
   const records = await dbSelect('records', { eq: { exam_id: examIdNum } });
 
@@ -3530,7 +3530,7 @@ async function createAdmin() {
   const existing = await dbSelect('admins', { eq: { username } });
   if (existing.length > 0) { showToast('该账号已存在', 'error'); return; }
   await dbInsert('admins', [{ username, password, nickname, is_master: false }]);
-  cacheClear('sel_admins');
+  cacheClearTable('admins');
   closeModal();
   showToast('管理员创建成功', 'success');
   renderAdminAdmins();
@@ -3559,7 +3559,7 @@ async function deleteAdmin(adminId, nickname) {
   if (!requireMasterAdmin()) return;
   if (!confirm(`确定删除管理员"${nickname}"吗？此操作不可恢复！`)) return;
   await dbDelete('admins', { id: adminId });
-  cacheClear('sel_admins');
+  cacheClearTable('admins');
   showToast('管理员已删除', 'success');
   renderAdminAdmins();
 }
