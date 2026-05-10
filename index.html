@@ -730,6 +730,17 @@ function bufferFavUpdate(id, isFav) {
   }
 }
 
+// 立即同步收藏更新到数据库
+async function flushFavUpdateNow(id, isFav) {
+  try {
+    await dbUpdate('records', { is_fav: isFav }, { id: id });
+    // 清除缓存确保数据一致
+    cacheRemoveAnywhere('records');
+  } catch(e) {
+    console.warn('flushFavUpdateNow error:', e);
+  }
+}
+
 async function flushFavBuffer() {
   if (_favBufferTimer) { clearTimeout(_favBufferTimer); _favBufferTimer = null; }
   const updates = Object.values(_favBuffer);
@@ -1040,12 +1051,24 @@ function cacheUpsertAnywhere(table, row, matchFn) {
   });
 }
 // Remove from ALL cache entries for a table
+// 清除指定表的所有缓存
+function cacheClearTable(table) {
+  const prefix = 'sel_' + table + '_';
+  Object.keys(_cache).forEach(key => {
+    if (key.startsWith(prefix)) {
+      delete _cache[key];
+    }
+  });
+}
+
 function cacheRemoveAnywhere(table, matchFn) {
   const prefix = 'sel_' + table + '_';
   Object.entries(_cache).forEach(([key, entry]) => {
     if (!key.startsWith(prefix) || !Array.isArray(entry.data)) return;
-    entry.data = entry.data.filter(r => !matchFn(r));
-    entry.ts = Date.now();
+    if (matchFn) {
+      entry.data = entry.data.filter(r => !matchFn(r));
+      entry.ts = Date.now();
+    }
   });
 }
 
@@ -3659,7 +3682,7 @@ async function renderPractice() {
     const content = document.getElementById('studentContent');
     content.innerHTML = `<div style="text-align:center;padding:40px"><div class="spinner-lg" style="margin:0 auto"></div><div style="margin-top:12px;color:var(--text2)">加载题目...</div></div>`;
     allQ = await dbSelect('questions', { eq: { level: currentLevel }, order: ['id', false] });
-    records = await dbSelect('records', { eq: { student_id: currentUser.username } });
+    records = await dbSelect('records', { eq: { student_id: currentUser.username }, cacheBypass: true });
   }
 
   practiceQuestions = allQ;
@@ -3713,7 +3736,8 @@ async function switchPracticeMode(mode) {
   practiceMultiSelected = {};
 
   const allQ = await dbSelect('questions', { eq: { level: currentLevel }, order: ['id', false] });
-  const records = await dbSelect('records', { eq: { student_id: currentUser.username } });
+  // 使用 cacheBypass 确保获取最新的收藏状态
+  const records = await dbSelect('records', { eq: { student_id: currentUser.username }, cacheBypass: true });
 
   switch(mode) {
     case 'wrong': {
@@ -3888,13 +3912,14 @@ async function toggleFav(qId) {
   if (bufferedRecord) {
     records = [bufferedRecord];
   } else {
-    records = await dbSelect('records', { eq: { student_id: currentUser.username, question_id: qId } });
+    records = await dbSelect('records', { eq: { student_id: currentUser.username, question_id: qId }, cacheBypass: true });
   }
   if (records.length > 0) {
     const latest = records.reduce((a, b) => new Date(a.created_at || 0) > new Date(b.created_at || 0) ? a : b);
     const isFav = !latest.is_fav;
     if (latest.id) {
-      bufferFavUpdate(latest.id, isFav);
+      // 立即同步到数据库，不再延迟
+      await flushFavUpdateNow(latest.id, isFav);
     } else {
       // Record is in buffer, update it locally
       latest.is_fav = isFav;
@@ -3903,7 +3928,14 @@ async function toggleFav(qId) {
     practiceAnswered[qId].isFav = isFav;
     if (isFav) addXp(XP_REWARDS.fav, '收藏');
   } else {
-    bufferRecord({ student_id: currentUser.username, question_id: qId, is_correct: false, user_answer: '', is_fav: true });
+    // 新建收藏记录，立即同步到数据库
+    try {
+      await dbInsert('records', [{ student_id: currentUser.username, question_id: qId, is_correct: false, user_answer: '', is_fav: true }]);
+      // 清除缓存确保数据一致
+      cacheRemoveAnywhere('records');
+    } catch(e) {
+      console.warn('创建收藏记录失败:', e);
+    }
     if (!practiceAnswered[qId]) practiceAnswered[qId] = {};
     practiceAnswered[qId].isFav = true;
     addXp(XP_REWARDS.fav, '收藏');
@@ -4087,7 +4119,7 @@ async function startMockExam() {
 
   // Fetch questions filtered by student's level
   const allQ = await dbSelect('questions', { eq: { level: currentLevel }, order: ['id', false] });
-  const records = await dbSelect('records', { eq: { student_id: currentUser.username } });
+  const records = await dbSelect('records', { eq: { student_id: currentUser.username }, cacheBypass: true });
 
   // Filter by source
   let pool = [...allQ];
@@ -4895,7 +4927,7 @@ async function practiceWrongQuestion(qId) {
 async function clearWrongBook() {
   showConfirm('确定清空错题本？考试中的错题记录将保留，仅清除练习中的错题。', async () => {
     // Only delete wrong records that are NOT from exams
-    const records = await dbSelect('records', { eq: { student_id: currentUser.username, is_correct: false } });
+    const records = await dbSelect('records', { eq: { student_id: currentUser.username, is_correct: false }, cacheBypass: true });
     const practiceWrongIds = records.filter(r => !r.exam_id).map(r => r.id);
     if (practiceWrongIds.length === 0) {
       showToast('错题本已为空', 'info');
@@ -4911,9 +4943,9 @@ async function clearWrongBook() {
 
 // ===== Student Tab4: Profile =====
 async function renderProfile() {
-  // Cache-only: no cloud access needed for profile stats
+  // 使用 cacheBypass 确保获取最新的统计数据
   let records = await dbSelect('records', { eq: { student_id: currentUser.username }, cacheOnly: true });
-  if (!records) records = await dbSelect('records', { eq: { student_id: currentUser.username } });
+  if (!records) records = await dbSelect('records', { eq: { student_id: currentUser.username }, cacheBypass: true });
   const correctCount = records.filter(r => r.is_correct).length;
   const totalCount = records.length;
   const favCount = records.filter(r => r.is_fav).length;
@@ -5277,9 +5309,9 @@ async function doArchive() {
       document.getElementById('archiveConfirmInput') && (document.getElementById('archiveConfirmInput').placeholder = `正在归档... ${Math.min(pct, 100)}%`);
     }
     
-    // Clear all caches
-    cacheClear('records');
-    cacheClear('students');
+    // Clear all caches - use cacheClearTable for proper table cache clearing
+    cacheClearTable('records');
+    cacheClearTable('students');
     closeModal();
     showToast(`归档完成！已清理 ${studentIds.length} 名学生的答题记录`, 'success');
   } catch(e) {
@@ -5375,9 +5407,9 @@ async function doClearQuestions() {
     await dbDelete('questions', {}, true);
     
     // 清除缓存
-    cacheClear('questions');
-    cacheClear('records');
-    cacheClear('exams');
+    cacheClearTable('questions');
+    cacheClearTable('records');
+    cacheClearTable('exams');
     
     closeModal();
     showToast('题库已清空！共删除所有题目', 'success');
