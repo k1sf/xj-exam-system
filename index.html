@@ -3427,7 +3427,6 @@ async function renderAdminSettings() {
   const sLv = currentUser ? Math.min(currentUser.study_level || 1, 30) : 1;
   const sIcon = studyLevelIcon(sLv);
   const levelOptions = LEVELS.map(l => `<option value="${l}" ${l===currentLevel?'selected':''}>${LEVEL_ICONS[l]} ${l}</option>`).join('');
-  const large = localStorage.getItem('xjLargeText') === '1';
   
   // Admin list (only for master)
   let adminSection = '';
@@ -5522,7 +5521,6 @@ async function processFile(file) {
   // 读取文件内容
   let content = '';
   if (extension === 'xlsx' || extension === 'xls') {
-    // Excel文件需要特殊处理
     showToast('正在解析Excel文件...', 'info');
     const arrayBuffer = await file.arrayBuffer();
     content = await parseExcel(arrayBuffer);
@@ -5532,9 +5530,11 @@ async function processFile(file) {
   
   // 智能解析内容
   const parsed = smartParse(content);
+  const questions = parsed.questions || [];
   
-  if (parsed.length === 0) {
-    showToast('未能解析出任何题目，请检查文件格式', 'error');
+  if (questions.length === 0) {
+    const errMsg = parsed.errors ? parsed.errors.join('; ') : '未能解析出任何题目';
+    showToast(errMsg + '，请检查文件格式', 'error');
     return;
   }
   
@@ -5546,9 +5546,18 @@ async function processFile(file) {
   previewEl.style.display = 'block';
   
   const typeNames = { single: '单选', multiple: '多选', judge: '判断' };
-  let previewHtml = `<div style="font-size:0.82rem;color:var(--text2);margin-bottom:8px">检测到 <strong style="color:var(--success)">${parsed.length}</strong> 道题目</div>`;
+  const stats = parsed.stats || { total: questions.length, single: 0, multiple: 0, judge: 0 };
+  
+  // 生成详细统计信息
+  let previewHtml = `<div style="font-size:0.82rem;color:var(--text2);margin-bottom:8px">
+    检测到 <strong style="color:var(--success)">${questions.length}</strong> 道题目
+    <span style="margin-left:12px">单选 <strong>${stats.single || 0}</strong></span>
+    <span style="margin-left:8px">多选 <strong>${stats.multiple || 0}</strong></span>
+    <span style="margin-left:8px">判断 <strong>${stats.judge || 0}</strong></span>
+  </div>`;
+  
   previewHtml += '<div style="max-height:160px;overflow-y:auto">';
-  parsed.slice(0, 10).forEach((q, i) => {
+  questions.slice(0, 10).forEach((q, i) => {
     previewHtml += `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:0.8rem">
       <span style="color:var(--primary)">${i + 1}.</span> 
       <span style="background:#e0f2fe;padding:1px 4px;border-radius:3px;font-size:0.75rem">[${typeNames[q.type] || q.type}]</span>
@@ -5556,24 +5565,25 @@ async function processFile(file) {
       <span style="color:var(--success)">答案: ${q.answer}</span>
     </div>`;
   });
-  if (parsed.length > 10) {
-    previewHtml += `<div style="padding:8px 0;color:var(--text2);font-size:0.78rem;text-align:center">... 还有 ${parsed.length - 10} 道题目</div>`;
+  if (questions.length > 10) {
+    previewHtml += `<div style="padding:8px 0;color:var(--text2);font-size:0.78rem;text-align:center">... 还有 ${questions.length - 10} 道题目</div>`;
   }
   previewHtml += '</div>';
   
   document.getElementById('filePreviewContent').innerHTML = previewHtml;
   
   // 保存解析结果
-  window._fileImportData = parsed;
+  window._fileImportData = questions;
   
   // 显示格式检测信息
   resultEl.style.display = 'block';
-  resultEl.innerHTML = `<div style="font-size:0.78rem;color:var(--text2);background:#fef3c7;padding:8px 12px;border-radius:6px;margin-bottom:8px">
-    ✅ 智能识别完成！检测格式：<strong>${parsed.format || '自动'}</strong>，共 <strong>${parsed.length}</strong> 道题目
+  const encodingInfo = parsed.encoding ? ` | 编码: <strong>${parsed.encoding}</strong>` : '';
+  resultEl.innerHTML = `<div style="font-size:0.78rem;color:var(--text2);background:#dcfce7;padding:8px 12px;border-radius:6px;margin-bottom:8px">
+    ✅ 智能识别完成！检测格式：<strong>${parsed.format || '自动'}</strong>${encodingInfo}
   </div>`;
   
   confirmBtn.disabled = false;
-  confirmBtn.textContent = `📥 导入 ${parsed.length} 道题目`;
+  confirmBtn.textContent = `📥 导入 ${questions.length} 道题目`;
   
   // 清除错误状态
   resultEl.innerHTML = '';
@@ -5583,7 +5593,6 @@ async function processFile(file) {
 async function parseExcel(arrayBuffer) {
   // 使用SheetJS解析Excel
   if (typeof XLSX === 'undefined') {
-    // 动态加载SheetJS
     await loadScript('https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js');
   }
   
@@ -5592,10 +5601,30 @@ async function parseExcel(arrayBuffer) {
   const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
   const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
   
-  // 将Excel行转换为文本格式
-  const lines = jsonData.map(row => row.join('|')).filter(row => row.trim()).join('\n');
+  // 尝试将Excel转换为JSON格式
+  const rows = jsonData.filter(row => row.some(cell => cell !== null && cell !== undefined && cell !== ''));
+  if (rows.length === 0) return '';
   
-  return smartParse(lines);
+  // 获取表头
+  const header = rows[0].map(h => String(h || '').trim());
+  
+  // 转换为JSON对象数组
+  const jsonArray = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    const obj = {};
+    header.forEach((h, idx) => {
+      obj[h] = row[idx];
+    });
+    // 也添加A/B/C/D作为选项列
+    if (row[0] !== undefined) obj.A = row[0];
+    if (row[1] !== undefined) obj.B = row[1];
+    if (row[2] !== undefined) obj.C = row[2];
+    if (row[3] !== undefined) obj.D = row[3];
+    jsonArray.push(obj);
+  }
+  
+  return JSON.stringify(jsonArray);
 }
 
 function loadScript(src) {
@@ -5609,207 +5638,597 @@ function loadScript(src) {
 }
 
 // ===== 增强版智能题库解析器 =====
+/**
+ * 智能题库导入系统 v2.0
+ * 支持：JSON、CSV、Excel、纯文本
+ * 自动检测：编码、分隔符、题型、答案格式
+ */
+
+// ===== 智能内容解析 =====
 function smartParse(content) {
-  content = content.trim();
-  const errors = [];
+  // 预处理：规范化换行符
+  content = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
   
-  // 1. 尝试JSON解析
+  // 0. 检测并转换编码
+  const { text, encoding } = detectAndConvertEncoding(content);
+  content = text;
+  
+  const result = {
+    questions: [],
+    format: '未知',
+    encoding: encoding,
+    stats: { total: 0, single: 0, multiple: 0, judge: 0, failed: 0 },
+    errors: []
+  };
+  
+  // 1. 尝试 JSON 格式（最高优先级）
   if (content.startsWith('[') || content.startsWith('{')) {
+    const jsonResult = tryParseJSON(content);
+    if (jsonResult.questions.length > 0) {
+      result.questions = jsonResult.questions;
+      result.format = 'JSON';
+      result.stats = countStats(result.questions);
+      return result;
+    } else if (jsonResult.error) {
+      result.errors.push('JSON: ' + jsonResult.error);
+    }
+  }
+  
+  // 2. 尝试带表头的 CSV/Excel 格式
+  const csvResult = tryParseCSV(content);
+  if (csvResult.questions.length > 0) {
+    result.questions = csvResult.questions;
+    result.format = 'CSV表格';
+    result.stats = countStats(result.questions);
+    return result;
+  }
+  
+  // 3. 尝试多种分隔符格式（按优先级）
+  const delimiters = ['|', '\t', ';;', ';', ',', '::'];
+  let bestResult = { questions: [], quality: 0 };
+  
+  for (const delim of delimiters) {
+    const parsed = tryParseDelimited(content, delim);
+    if (parsed.questions.length > bestResult.quality) {
+      bestResult = { questions: parsed.questions, quality: parsed.quality };
+    }
+  }
+  
+  if (bestResult.questions.length > 0) {
+    result.questions = bestResult.questions;
+    result.format = '文本分隔';
+    result.stats = countStats(result.questions);
+    return result;
+  }
+  
+  // 4. 尝试智能逐行解析（处理特殊格式）
+  const lineResult = tryParseSmartLines(content);
+  if (lineResult.questions.length > 0) {
+    result.questions = lineResult.questions;
+    result.format = '智能解析';
+    result.stats = countStats(result.questions);
+    return result;
+  }
+  
+  result.errors.push('无法识别文件格式');
+  return result;
+}
+
+// ===== 编码检测与转换 =====
+function detectAndConvertEncoding(content) {
+  // 检测是否包含乱码特征（GBK转UTF8产生的乱码）
+  const乱码模式 = /[ã€Šã€‹â€œâ€�]/;
+  const has乱码 = 乱码模式.test(content);
+  
+  // 检测UTF-8编码特征
+  const utf8Chars = content.match(/[\u4e00-\u9fff]/g) || [];
+  const hasCJK = utf8Chars.length > 0;
+  
+  // 如果有中文且没有乱码，很可能是UTF-8
+  if (hasCJK && !has乱码) {
+    return { text: content, encoding: 'UTF-8' };
+  }
+  
+  // 如果有乱码，尝试用TextDecoder转换
+  if (has乱码) {
+    // 尝试将乱码转为正常中文
     try {
-      const json = JSON.parse(content);
-      const arr = Array.isArray(json) ? json : [json];
-      const result = parseJSONQuestions(arr);
-      if (result.length > 0) {
-        result.format = 'JSON';
-        return result;
-      } else if (arr.length > 0) {
-        errors.push('JSON格式无法解析，请检查字段名（需要type/content/answer）');
+      // GBK编码的中文在UTF-8解析时会产生这些字符
+      const replacements = {
+        'ã€Š': '【',
+        'ã€‹': '】',
+        'â€œ': '"',
+        'â€�': '"',
+        'ã€Œ': '【',
+        'ã€�': '】'
+      };
+      let fixed = content;
+      for (const [wrong, correct] of Object.entries(replacements)) {
+        fixed = fixed.replace(new RegExp(wrong, 'g'), correct);
       }
-    } catch(e) {
-      errors.push('JSON格式错误: ' + e.message);
+      return { text: fixed, encoding: 'GBK→UTF8' };
+    } catch (e) {
+      return { text: content, encoding: 'unknown' };
     }
   }
   
-  // 2. CSV/Excel格式检测 (有表头)
-  const firstLine = content.split('\n')[0];
-  const isCSV = /(题型|题干|Question|Answer|单选|多选)/i.test(firstLine) && 
-                 /,/.test(firstLine) && /[A-D]/.test(firstLine);
-  
-  if (isCSV) {
-    const result = parseCSV(content);
-    if (result.length > 0) {
-      result.format = 'CSV/Excel';
-      return result;
-    } else {
-      errors.push('CSV格式无法解析，请检查表头（需要包含：题型、题干、答案、A、B、C、D）');
+  return { text: content, encoding: 'UTF-8' };
+}
+
+// ===== JSON 格式尝试解析 =====
+function tryParseJSON(content) {
+  try {
+    // 尝试直接解析
+    let json = JSON.parse(content);
+    if (!Array.isArray(json)) json = [json];
+    
+    const questions = [];
+    for (const item of json) {
+      const q = parseJSONItem(item);
+      if (q) questions.push(q);
+    }
+    
+    return { questions };
+  } catch (e) {
+    // 尝试修复常见JSON错误
+    try {
+      // 修复单引号为双引号
+      let fixed = content.replace(/'/g, '"');
+      // 移除尾部逗号
+      fixed = fixed.replace(/,\s*([}\]])/g, '$1');
+      const json = JSON.parse(fixed);
+      const questions = Array.isArray(json) ? json.map(parseJSONItem).filter(Boolean) : [parseJSONItem(json)].filter(Boolean);
+      return { questions };
+    } catch (e2) {
+      return { questions: [], error: e.message };
     }
   }
+}
+
+// 解析单个JSON题目
+function parseJSONItem(item) {
+  if (!item || typeof item !== 'object') return null;
   
-  // 3. 管道符分隔格式
-  if (content.includes('|')) {
-    const result = parsePipeDelimited(content, '|');
-    if (result.length > 0) {
-      result.format = '管道符分隔';
-      return result;
-    }
+  const typeNames = { '单选': 'single', '多选': 'multiple', '判断': 'judge', 'single': 'single', 'multiple': 'multiple', 'judge': 'judge' };
+  
+  // 识别题型
+  let type = 'single';
+  const typeField = item.type || item.题型 || item.questionType || '';
+  if (typeNames[typeField]) {
+    type = typeNames[typeField];
+  } else if (/判断|对错|true.*false/i.test(typeField)) {
+    type = 'judge';
+  } else if (/多选|多选/i.test(typeField)) {
+    type = 'multiple';
   }
   
-  // 4. Tab分隔格式
-  if (content.includes('\t')) {
-    const result = parsePipeDelimited(content, '\t');
-    if (result.length > 0) {
-      result.format = 'Tab分隔';
-      return result;
-    }
+  // 提取题干
+  let content = item.content || item.题干 || item.question || item.title || item.subject || '';
+  if (!content) return null;
+  
+  // 提取答案
+  let answer = (item.answer || item.答案 || item.an || '').toString().toUpperCase();
+  
+  // 标准化答案
+  answer = normalizeAnswer(answer, type);
+  
+  // 提取选项
+  let options = [];
+  if (item.options) {
+    options = parseOptions(item.options);
+  } else if (item.A || item.B || item.C || item.D) {
+    if (item.A) options.push({ key: 'A', value: item.A });
+    if (item.B) options.push({ key: 'B', value: item.B });
+    if (item.C) options.push({ key: 'C', value: item.C });
+    if (item.D) options.push({ key: 'D', value: item.D });
+  } else if (item.选项) {
+    options = parseOptions(item.选项);
   }
   
-  // 5. 逗号分隔格式
-  const commaCount = (content.match(/,/g) || []).length;
-  const lineCount = (content.match(/\n/g) || []).length + 1;
-  if (commaCount > lineCount) {
-    const result = parsePipeDelimited(content, ',');
-    if (result.length > 0) {
-      result.format = '逗号分隔';
-      return result;
-    }
+  // 判断题默认选项
+  if (type === 'judge' && options.length === 0) {
+    options = [{ key: 'A', value: '正确' }, { key: 'B', value: '错误' }];
   }
   
-  // 返回空数组并记录错误
-  if (errors.length > 0) {
-    const errResult = [];
-    errResult.error = errors.join('; ');
-    return errResult;
+  // 提取解析
+  let analysis = item.analysis || item.解析 || item.explanation || item.desc || '';
+  
+  // 提取标签
+  let tags = item.tags || item.标签 || [];
+  if (typeof tags === 'string') {
+    tags = tags.split(/[,，;；]/).map(t => t.trim()).filter(Boolean);
+  }
+  
+  if (content && answer) {
+    return { type, content, options: JSON.stringify(options), answer, analysis: analysis.toString(), tags };
+  }
+  
+  return null;
+}
+
+// 标准化答案格式
+function normalizeAnswer(answer, type) {
+  if (!answer) return '';
+  
+  // 处理判断题
+  if (['对', '错', '正确', '错误', 'TRUE', 'FALSE', 'YES', 'NO'].includes(answer)) {
+    if (/^(对|正确|TRUE|YES)$/i.test(answer)) return 'A';
+    return 'B';
+  }
+  
+  // 处理多选题（提取所有字母）
+  if (type === 'multiple') {
+    const letters = answer.match(/[A-Da-d]/g);
+    if (letters) return letters.map(l => l.toUpperCase()).join('');
+  }
+  
+  // 处理单选题
+  const letter = answer.match(/[A-Da-d]/);
+  if (letter) return letter[0].toUpperCase();
+  
+  return answer;
+}
+
+// 解析选项
+function parseOptions(opts) {
+  if (Array.isArray(opts)) {
+    return opts.map((o, i) => {
+      if (typeof o === 'string') {
+        return { key: String.fromCharCode(65 + i), value: o };
+      }
+      return { 
+        key: o.key || o.label || String.fromCharCode(65 + i), 
+        value: o.value || o.text || o 
+      };
+    });
+  }
+  
+  if (typeof opts === 'object') {
+    return Object.entries(opts).map(([k, v]) => ({ key: k.toUpperCase(), value: v }));
   }
   
   return [];
 }
 
 // CSV/Excel格式解析
-function parseCSV(content) {
-  const questions = [];
+// ===== CSV/表格格式尝试解析 =====
+function tryParseCSV(content) {
   const lines = content.split('\n').filter(l => l.trim());
-  if (lines.length < 2) return [];
+  if (lines.length < 2) return { questions: [] };
   
-  const header = lines[0].toLowerCase();
+  const firstLine = lines[0];
+  
+  // 检测是否是表格格式
+  const hasHeader = /(题型|题干|Question|Answer|选项|Option|单选|多选|判断)/i.test(firstLine);
+  const hasComma = /,/.test(firstLine);
+  
+  if (!hasHeader && !hasComma) return { questions: [] };
   
   // 解析表头
-  const cols = lines[0].split(',').map(h => h.trim().toLowerCase());
-  const colMap = {};
-  cols.forEach((h, i) => {
-    if (/题型|type/i.test(h)) colMap.type = i;
-    if (/题干|题目|content|question/i.test(h)) colMap.content = i;
-    if (/答案|answer/i.test(h)) colMap.answer = i;
-    if (/解析|analysis|explanation/i.test(h)) colMap.analysis = i;
-    if (/标签|tags/i.test(h)) colMap.tags = i;
-    // 选项列
-    if (/[a-d]/i.test(h)) colMap.options = colMap.options || {};
-    if (/^a$|^选项a|^选项.*a/i.test(h)) colMap.options.A = i;
-    if (/^b$|^选项b|^选项.*b/i.test(h)) colMap.options.B = i;
-    if (/^c$|^选项c|^选项.*c/i.test(h)) colMap.options.C = i;
-    if (/^d$|^选项d|^选项.*d/i.test(h)) colMap.options.D = i;
-  });
+  const headers = parseCSVLine(firstLine).map(h => h.trim().toLowerCase());
   
-  // 如果没有检测到选项列，但有A/B/C/D列
-  if (!colMap.options || Object.keys(colMap.options).length === 0) {
-    cols.forEach((h, i) => {
-      if (/^a$|^选项.*a|^a选项/i.test(h)) colMap.options = colMap.options || {};
-      if (/^b$|^选项.*b|^b选项/i.test(h)) colMap.options.B = i;
-      if (/^c$|^选项.*c|^c选项/i.test(h)) colMap.options.C = i;
-      if (/^d$|^选项.*d|^d选项/i.test(h)) colMap.options.D = i;
-    });
+  // 建立列映射
+  const colMap = buildColumnMap(headers);
+  
+  // 如果没有识别到关键列，跳过
+  if (!colMap.content && headers.length < 3) {
+    return { questions: [] };
   }
   
-  // 解析数据行
-  for (let i = 1; i < lines.length; i++) {
-    try {
-      const line = lines[i].trim();
-      if (!line) continue;
-      
-      // CSV行解析（处理引号内的逗号）
-      const parts = parseCSVLine(line);
-      
-      const typeNames = { '单选': 'single', '多选': 'multiple', '判断': 'judge', 'single': 'single', 'multiple': 'multiple', 'judge': 'judge' };
-      
-      let type = 'single';
-      let content = '';
-      let answer = '';
-      let options = [];
-      let analysis = '';
-      let tags = [];
-      
-      // 识别题型
-      if (colMap.type !== undefined) {
-        const t = (parts[colMap.type] || '').toLowerCase();
-        if (typeNames[t]) type = typeNames[t];
-        else if (/判断|对错|true.*false/i.test(t)) type = 'judge';
-        else if (/多选|多选/i.test(t)) type = 'multiple';
-        else type = 'single';
-      }
-      
-      // 提取内容
-      if (colMap.content !== undefined) {
-        content = (parts[colMap.content] || '').trim();
-      } else {
-        // 找非选项列作为内容
-        for (let j = 0; j < parts.length; j++) {
-          if (colMap.options && Object.values(colMap.options).includes(j)) continue;
-          if (colMap.answer !== undefined && j === colMap.answer) continue;
-          if (colMap.analysis !== undefined && j === colMap.analysis) continue;
-          const p = parts[j];
-          if (p && p.length > 10 && !/^[a-d]$/i.test(p)) {
-            content = p;
-            break;
-          }
-        }
-      }
-      
-      // 提取答案
-      if (colMap.answer !== undefined) {
-        answer = (parts[colMap.answer] || '').toString().toUpperCase();
-        // 清理答案
-        answer = answer.replace(/^[答案ANSWER:：\s]*/, '').trim();
-        if (!answer) continue;
-      }
-      
-      // 提取选项
-      if (colMap.options) {
-        const optKeys = ['A', 'B', 'C', 'D'];
-        optKeys.forEach(k => {
-          if (colMap.options[k] !== undefined) {
-            const v = parts[colMap.options[k]];
-            if (v) options.push({ key: k, value: v.trim() });
-          }
-        });
-      }
-      
-      // 提取解析
-      if (colMap.analysis !== undefined) {
-        analysis = (parts[colMap.analysis] || '').trim();
-      }
-      
-      // 提取标签
-      if (colMap.tags !== undefined) {
-        const t = parts[colMap.tags] || '';
-        tags = t.split(/[,，;；]/).map(s => s.trim()).filter(Boolean);
-      }
-      
-      // 判断题处理
-      if (type === 'judge' && options.length === 0) {
-        options = [{ key: 'A', value: '正确' }, { key: 'B', value: '错误' }];
-        if (['对', '错', '正确', '错误', 'TRUE', 'FALSE'].includes(answer)) {
-          answer = /^(对|正确|true)$/i.test(answer) ? 'A' : 'B';
-        }
-      }
-      
-      if (content && answer) {
-        questions.push({ type, content, options: JSON.stringify(options), answer, analysis, tags });
-      }
-    } catch(e) {
-      console.warn('CSV行解析失败:', e);
+  const questions = [];
+  const startLine = hasHeader ? 1 : 0;
+  
+  for (let i = startLine; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    
+    const q = parseCSVRow(line, colMap);
+    if (q) questions.push(q);
+  }
+  
+  return { questions };
+}
+
+// 建立列映射
+function buildColumnMap(headers) {
+  const map = {};
+  
+  headers.forEach((h, idx) => {
+    const h2 = h.replace(/[_\s]/g, '');
+    
+    if (/题型|type|qtype|questiontype/i.test(h2) && map.type === undefined) map.type = idx;
+    if (/题干|题目|content|question|title|subject/i.test(h2) && map.content === undefined) map.content = idx;
+    if (/答案|answer|key|ans/i.test(h2) && map.answer === undefined) map.answer = idx;
+    if (/解析|analysis|explanation|desc|description/i.test(h2) && map.analysis === undefined) map.analysis = idx;
+    if (/标签|tags|category/i.test(h2) && map.tags === undefined) map.tags = idx;
+    
+    if (/^a$|^选项.*a|^a$|选项a/i.test(h2) && map.A === undefined) map.A = idx;
+    if (/^b$|^选项.*b|^b$|选项b/i.test(h2) && map.B === undefined) map.B = idx;
+    if (/^c$|^选项.*c|^c$|选项c/i.test(h2) && map.C === undefined) map.C = idx;
+    if (/^d$|^选项.*d|^d$|选项d/i.test(h2) && map.D === undefined) map.D = idx;
+  });
+  
+  // 如果没有找到A/B/C/D列，检查是否有连续的短文本列
+  if (map.A === undefined) {
+    const optionCandidates = headers.map((h, i) => ({ h, i, len: h.length }))
+      .filter(x => x.len <= 2 && /^[a-d]$/i.test(x.h));
+    if (optionCandidates.length >= 2) {
+      optionCandidates.slice(0, 4).forEach((x, i) => {
+        if (i === 0) map.A = x.i;
+        if (i === 1) map.B = x.i;
+        if (i === 2) map.C = x.i;
+        if (i === 3) map.D = x.i;
+      });
     }
   }
   
-  return questions;
+  return map;
+}
+
+// 解析CSV行
+function parseCSVRow(line, colMap) {
+  try {
+    const parts = parseCSVLine(line);
+    if (parts.length < 2) return null;
+    
+    const typeNames = { '单选': 'single', '多选': 'multiple', '判断': 'judge' };
+    
+    // 识别题型
+    let type = 'single';
+    if (colMap.type !== undefined) {
+      const t = (parts[colMap.type] || '').toLowerCase();
+      if (typeNames[t]) type = typeNames[t];
+      else if (/判断|对错/i.test(t)) type = 'judge';
+      else if (/多选/i.test(t)) type = 'multiple';
+    }
+    
+    // 提取题干
+    let content = '';
+    if (colMap.content !== undefined) {
+      content = (parts[colMap.content] || '').trim();
+    } else {
+      let maxLen = 0;
+      for (let i = 0; i < parts.length; i++) {
+        if (i === colMap.answer || i === colMap.analysis) continue;
+        if (colMap.A !== undefined && i === colMap.A) continue;
+        if (colMap.B !== undefined && i === colMap.B) continue;
+        if (colMap.C !== undefined && i === colMap.C) continue;
+        if (colMap.D !== undefined && i === colMap.D) continue;
+        
+        const p = parts[i].trim();
+        if (p.length > maxLen && p.length > 5) {
+          if (!/^[A-Da-d]$/.test(p)) {
+            maxLen = p.length;
+            content = p;
+          }
+        }
+      }
+    }
+    
+    if (!content || content.length < 4) return null;
+    
+    // 提取答案
+    let answer = '';
+    if (colMap.answer !== undefined) {
+      answer = (parts[colMap.answer] || '').toString().toUpperCase();
+    } else {
+      for (let i = parts.length - 1; i >= 0; i--) {
+        const p = parts[i].trim();
+        if (/^[A-Da-d]$/.test(p) || /^[A-Da-d]{2,4}$/.test(p)) {
+          answer = p.toUpperCase();
+          break;
+        }
+        if (/^(对|错|正确|错误)$/.test(p)) {
+          answer = /^(对|正确)$/.test(p) ? 'A' : 'B';
+          break;
+        }
+      }
+    }
+    
+    answer = normalizeAnswer(answer, type);
+    if (!answer) return null;
+    
+    // 提取选项
+    let options = [];
+    if (colMap.A !== undefined && parts[colMap.A]) options.push({ key: 'A', value: parts[colMap.A].trim() });
+    if (colMap.B !== undefined && parts[colMap.B]) options.push({ key: 'B', value: parts[colMap.B].trim() });
+    if (colMap.C !== undefined && parts[colMap.C]) options.push({ key: 'C', value: parts[colMap.C].trim() });
+    if (colMap.D !== undefined && parts[colMap.D]) options.push({ key: 'D', value: parts[colMap.D].trim() });
+    
+    if (type === 'judge' && options.length === 0) {
+      options = [{ key: 'A', value: '正确' }, { key: 'B', value: '错误' }];
+    }
+    
+    // 提取解析
+    let analysis = '';
+    if (colMap.analysis !== undefined) {
+      analysis = (parts[colMap.analysis] || '').trim();
+    }
+    
+    // 提取标签
+    let tags = [];
+    if (colMap.tags !== undefined) {
+      const t = (parts[colMap.tags] || '').trim();
+      if (t) tags = t.split(/[,，;；]/).map(x => x.trim()).filter(Boolean);
+    }
+    
+    return { type, content, options: JSON.stringify(options), answer, analysis, tags };
+  } catch (e) {
+    return null;
+  }
+}
+
+// CSV行解析（处理引号）
+function parseCSVLine(line) {
+  const parts = [];
+  let current = '';
+  let inQuotes = false;
+  
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      inQuotes = !inQuotes;
+    } else if (c === ',' && !inQuotes) {
+      parts.push(current.trim());
+      current = '';
+    } else {
+      current += c;
+    }
+  }
+  parts.push(current.trim());
+  
+  return parts;
+}
+
+// ===== 分隔符格式尝试解析 =====
+function tryParseDelimited(content, delimiter) {
+  const lines = content.split('\n').filter(l => l.trim());
+  if (lines.length < 1) return { questions: [], quality: 0 };
+  
+  const typeNames = { '单选': 'single', '多选': 'multiple', '判断': 'judge' };
+  
+  const questions = [];
+  let validCount = 0;
+  
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    
+    const parts = line.split(delimiter).map(s => s.trim()).filter(Boolean);
+    if (parts.length < 2) continue;
+    
+    let type = 'single';
+    let content = '';
+    let answer = '';
+    let options = [];
+    let analysis = '';
+    let tags = [];
+    let startIdx = 0;
+    
+    // 检测第一列是否是题型标识
+    const first = parts[0].toLowerCase();
+    if (typeNames[first]) {
+      type = typeNames[first];
+      startIdx = 1;
+    } else if (/判断|对错/i.test(first)) {
+      type = 'judge';
+      startIdx = 1;
+    } else if (/多选/i.test(first)) {
+      type = 'multiple';
+      startIdx = 1;
+    }
+    
+    // 提取内容
+    let maxLen = 0;
+    for (let i = startIdx; i < parts.length; i++) {
+      const p = parts[i];
+      if (p.length > maxLen && p.length > 5) {
+        if (!/^(?:答案|answer)?[：:\s]*([A-Da-d]{1,4}|[对错正确错误])$/i.test(p)) {
+          maxLen = p.length;
+          content = p;
+        }
+      }
+    }
+    
+    if (!content) continue;
+    
+    // 智能提取答案
+    answer = extractAnswer(parts, startIdx, type);
+    if (!answer) continue;
+    
+    // 提取选项
+    options = extractOptions(parts, startIdx);
+    
+    if (type === 'judge' && options.length === 0) {
+      options = [{ key: 'A', value: '正确' }, { key: 'B', value: '错误' }];
+    }
+    
+    // 提取解析
+    for (const p of parts) {
+      if (/^(解析|analysis|说明)[:：\s]*/i.test(p)) {
+        analysis = p.replace(/^(解析|analysis|说明)[:：\s]*/i, '');
+        break;
+      }
+    }
+    
+    // 提取标签
+    for (const p of parts) {
+      if (/^(标签|tags|category)[:：\s]*/i.test(p)) {
+        tags = p.replace(/^(标签|tags|category)[:：\s]*/i, '').split(/[,，]/).map(t => t.trim()).filter(Boolean);
+        break;
+      }
+    }
+    
+    if (content && answer) {
+      questions.push({ type, content, options: JSON.stringify(options), answer, analysis, tags });
+      validCount++;
+    }
+  }
+  
+  const quality = lines.length > 0 ? validCount / lines.length : 0;
+  
+  return { questions, quality };
+}
+
+// 智能提取答案
+function extractAnswer(parts, startIdx, type) {
+  for (let i = parts.length - 1; i >= startIdx; i--) {
+    const p = parts[i].trim();
+    
+    const ansPatterns = [
+      /^(?:答案|answer|key)[:：\s]*([A-Da-d]{1,4}|[对错正确错误])$/i,
+      /^(?:答案|answer)[:：]\s*"?([A-Da-d]{1,4})"?$/i
+    ];
+    
+    for (const pattern of ansPatterns) {
+      const match = p.match(pattern);
+      if (match) {
+        return normalizeAnswer((match[1] || p).toUpperCase(), type);
+      }
+    }
+    
+    if (/^(对|错|正确|错误)$/.test(p)) {
+      return normalizeAnswer(p, type);
+    }
+  }
+  
+  return '';
+}
+
+// 智能提取选项
+function extractOptions(parts, startIdx) {
+  const options = [];
+  const seenKeys = new Set();
+  
+  for (let i = startIdx; i < parts.length; i++) {
+    const p = parts[i].trim();
+    
+    if (/^(?:答案|answer|key|解析|analysis|说明|标签|tags)[:：\s]*/i.test(p)) continue;
+    
+    const optMatch = p.match(/^([A-Da-d])[.、:：\s]+(.*)$/);
+    if (optMatch) {
+      const key = optMatch[1].toUpperCase();
+      if (!seenKeys.has(key)) {
+        options.push({ key, value: optMatch[2] || key });
+        seenKeys.add(key);
+      }
+      continue;
+    }
+    
+    if (/^[A-Da-d]$/.test(p) || /^[A-Da-d]{2,4}$/.test(p)) continue;
+  }
+  
+  return options;
+}
+
+// 统计题目数量
+function countStats(questions) {
+  const stats = { total: questions.length, single: 0, multiple: 0, judge: 0, failed: 0 };
+  for (const q of questions) {
+    if (q.type === 'single') stats.single++;
+    else if (q.type === 'multiple') stats.multiple++;
+    else if (q.type === 'judge') stats.judge++;
+  }
+  return stats;
 }
 
 // CSV行解析（处理引号）
