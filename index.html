@@ -5837,13 +5837,15 @@ function parseJSONItem(item) {
 // 标准化答案格式
 function normalizeAnswer(answer, type) {
   if (!answer) return '';
+  answer = answer.toString().trim();
   
-  // 处理判断题
-  if (['对', '错', '正确', '错误', 'TRUE', 'FALSE', 'YES', 'NO'].includes(answer)) {
-    if (/^(对|正确|TRUE|YES)$/i.test(answer)) return 'A';
+  // 处理判断题 - 对/错/正确/错误/√/×/T/F/true/false
+  if (['对', '错', '正确', '错误', 'TRUE', 'FALSE', 'YES', 'NO', 'T', 'F', 'Y', 'N', '√', '×', 'true', 'false'].includes(answer.toUpperCase()) || answer === '√' || answer === '×') {
+    // 对/正确/TRUE/YES/T/Y/√/true → A
+    if (/^(对|正确|TRUE|YES|T|Y|√|true)$/i.test(answer)) return 'A';
+    // 错/错误/FALSE/NO/F/N/×/false → B
     return 'B';
   }
-  
   // 处理多选题（提取所有字母）
   if (type === 'multiple') {
     const letters = answer.match(/[A-Da-d]/g);
