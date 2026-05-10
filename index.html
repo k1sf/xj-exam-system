@@ -5535,7 +5535,7 @@ function smartParse(content) {
   
   // 2. CSV/Excel格式检测 (有表头)
   const firstLine = content.split('\n')[0];
-  const isCSV = /^[题型,题干|题型.*答案|Question.*Answer|单选.*多选/i.test(firstLine) || 
+  const isCSV = /(题型|题干|Question|Answer|单选|多选)/i.test(firstLine) && 
                  /,/.test(firstLine) && /[A-D]/.test(firstLine);
   
   if (isCSV) {
