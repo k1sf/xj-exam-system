@@ -5381,19 +5381,18 @@ async function doClearQuestions() {
     return;
   }
   
-  // 验证管理员密码
+  // 验证管理员密码（不更新session_id）
   const currentAdmin = JSON.parse(localStorage.getItem('xjAdmin') || '{}');
-  const token = document.querySelector('script:not([src])')?.textContent?.match(/const API_TOKEN = '([^']+)'/)?.[1] || API_TOKEN;
   
   try {
-    const res = await fetch('/api/login', {
+    const res = await fetch('/api/verify-password', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN || token },
+      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
       body: JSON.stringify({ table: 'admins', username: currentAdmin.username, password: pwd })
     });
     const data = await res.json();
     
-    if (data.error) {
+    if (!data.valid) {
       showToast('密码验证失败', 'error');
       return;
     }
