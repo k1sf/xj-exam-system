@@ -536,14 +536,15 @@ let _sessionCheckInterval = null;
 
 function startSessionCheck() {
   if (_sessionCheckInterval) clearInterval(_sessionCheckInterval);
-  _sessionCheckInterval = setInterval(checkDeviceSession, 60000); // check every 60s
-  // Also check when page becomes visible
+  _sessionCheckInterval = setInterval(checkDeviceSession, 10000); // check every 10s
+  // Also check when page becomes visible or gains focus
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) checkDeviceSession();
   });
+  window.addEventListener('focus', checkDeviceSession);
 }
 
-async function checkDeviceSession() {
+async function checkDeviceSession(force = false) {
   if (!currentUser && !currentAdmin) return;
   try {
     const table = userRole === 'admin' ? 'admins' : 'students';
@@ -964,7 +965,7 @@ setTimeout(() => {
 
 // ===== Cache System =====
 const _cache = {};
-const CACHE_TTL = 30 * 60 * 1000; // 30 minutes - questions/exams rarely change
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes - balance between performance and freshness
 
 // ===== Data Preloading =====
 // Preload frequently used data after login to avoid repeated DB queries
@@ -1245,16 +1246,21 @@ async function dbSelect(table, opts = {}) {
     }
     return null; // No cache available
   }
-  const cacheKey = `sel_${table}_${JSON.stringify(opts)}`;
-  const cached = cacheGet(cacheKey);
-  if (cached) return cached;
+  // cacheBypass: skip cache, always hit cloud
+  const cacheKey = opts.cacheBypass ? null : `sel_${table}_${JSON.stringify(opts)}`;
+  if (cacheKey) {
+    const cached = cacheGet(cacheKey);
+    if (cached) return cached;
+  }
 
   // SWR: if we have stale (expired) cache, return it immediately and refresh in background
-  const staleEntry = _cache[cacheKey];
-  if (staleEntry && Array.isArray(staleEntry.data)) {
-    // Return stale data immediately, refresh in background
-    _refreshInBackground(cacheKey, table, opts);
-    return staleEntry.data;
+  if (cacheKey) {
+    const staleEntry = _cache[cacheKey];
+    if (staleEntry && Array.isArray(staleEntry.data)) {
+      // Return stale data immediately, refresh in background
+      _refreshInBackground(cacheKey, table, opts);
+      return staleEntry.data;
+    }
   }
 
   showLoading();
@@ -1273,7 +1279,7 @@ async function dbSelect(table, opts = {}) {
       });
       return row;
     });
-    cacheSet(cacheKey, data);
+    if (cacheKey) cacheSet(cacheKey, data);
     return data;
   } catch(e) {
     // Offline fallback: try to return any cached data (even expired)
@@ -1356,7 +1362,7 @@ async function dbUpdate(table, data, match) {
     let result = await res.json();
     if (result.error) throw new Error(result.error);
     // Smart cache: update matching rows in cache instead of clearing everything
-    const matchKeys = Object.keys(match);
+    const matchKeys = Object.keys(match || {});
     cacheUpsertAnywhere(table, data, r => matchKeys.every(k => {
       const matchVal = match[k];
       if (Array.isArray(matchVal)) return matchVal.includes(r[k]);
@@ -1627,6 +1633,15 @@ async function handleLogin() {
       currentUser = null;
       saveLogin('admin', null, adminData);
       if (adminData.session_id) localStorage.setItem('xjSessionId', adminData.session_id);
+      // 清除所有缓存，确保数据一致性
+      cacheClear();
+      // 立即验证session
+      const valid = await checkDeviceSession(true);
+      if (!valid) {
+        showToast('账号在其他设备登录', 'error');
+        handleLogout();
+        return;
+      }
       startSessionCheck();
       renderAdmin();
       preloadData('admin');
@@ -1672,8 +1687,19 @@ async function handleLogin() {
     if (!currentUser.study_level || currentUser.study_level < 1) {
       currentUser.study_level = levelFromXp(currentUser.xp || 0);
     }
+    // 立即验证session并清除所有缓存，确保数据一致性
+    const sessionId = student.session_id;
+    if (sessionId) localStorage.setItem('xjSessionId', sessionId);
+    // 清除所有缓存，确保获取最新数据
+    cacheClear();
+    // 立即验证session
+    const valid = await checkDeviceSession(true);
+    if (!valid) {
+      showToast('账号在其他设备登录，请重新登录', 'error');
+      handleLogout();
+      return;
+    }
     saveLogin('student', student, null);
-    if (student.session_id) localStorage.setItem('xjSessionId', student.session_id);
     startSessionCheck();
     renderStudent();
     // Preload student data in background (questions, records, exams)
@@ -1688,14 +1714,22 @@ async function handleLogin() {
   }
 }
 
-function handleLogout() {
+async function handleLogout() {
   if (_sessionCheckInterval) clearInterval(_sessionCheckInterval);
-  localStorage.removeItem('xjSessionId');
+  const sessionId = localStorage.getItem('xjSessionId');
   clearLogin();
   userRole = null;
   currentUser = null;
   currentAdmin = null;
   allStudents = []; allQuestions = []; allExams = [];
+  // Clear server-side session_id
+  try {
+    await fetch(`${API_BASE}/logout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN, 'X-Session-Id': sessionId || '' },
+      body: JSON.stringify({})
+    });
+  } catch(e) { /* ignore */ }
   renderLogin();
 }
 

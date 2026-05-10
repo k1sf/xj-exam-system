@@ -216,6 +216,23 @@ async function handleApi(req, res, url) {
   const route = url.pathname.replace('/api/', '');
 
   switch(route) {
+    case 'logout': {
+      // Clear session_id on client logout
+      const sessionId = req.headers['x-session-id'] || params.sessionId;
+      if (sessionId) {
+        // Clear session_id from both tables (find which table has this session)
+        const adminSql = `UPDATE admins SET "session_id" = NULL WHERE "session_id" = ${escVal(sessionId)}`;
+        const studentSql = `UPDATE students SET "session_id" = NULL WHERE "session_id" = ${escVal(sessionId)}`;
+        try {
+          await Promise.all([
+            pool.query(adminSql),
+            pool.query(studentSql)
+          ]);
+        } catch(e) { console.error('Logout clear session failed:', e.message); }
+      }
+      sendJson(res, { success: true });
+      break;
+    }
     case 'select': {
       const { table: rawTable, filter, order, limit, offset, select, eq, gte, gt, lte, lt } = params;
       const table = validateTable(rawTable);
@@ -286,12 +303,16 @@ async function handleApi(req, res, url) {
         processedData.password = hashPassword(processedData.password);
       }
       const sets = Object.entries(processedData).map(([k, v]) => `${escKey(k)} = ${escVal(v, getColType(table, k))}`);
-      const conds = Object.entries(match).map(([k, v]) => {
+      const conds = Object.entries(match || {}).map(([k, v]) => {
         if (v === null || v === undefined) return `${escKey(k)} IS NULL`;
         if (typeof v === 'boolean') return `${escKey(k)} = ${v}`;
         if (typeof v === 'number') return `${escKey(k)} = ${v}`;
         return `${escKey(k)} = ${escVal(v, getColType(table, k))}`;
       });
+      if (conds.length === 0) {
+        sendJson(res, { error: 'Empty match requires condition' }, 400);
+        return;
+      }
       const sql = `UPDATE ${table} SET ${sets.join(',')} WHERE ${conds.join(' AND ')} RETURNING *`;
       const result = await pool.query(sql);
       sendJson(res, result.rows);
@@ -375,7 +396,7 @@ async function handleApi(req, res, url) {
       // Generate session_id for single-device login enforcement
       const sessionId = crypto.randomBytes(16).toString('hex');
       const sessionSql = `UPDATE ${table} SET "session_id" = ${escVal(sessionId)} WHERE "username" = ${escVal(username)}`;
-      pool.query(sessionSql).catch(e => console.error('Session update failed:', e.message));
+      await pool.query(sessionSql);
       // Return user without password, with session_id
       const { password: _, ...safeUser } = user;
       safeUser.session_id = sessionId;
