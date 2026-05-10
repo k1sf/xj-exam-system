@@ -503,6 +503,11 @@ function toggleLargeText(on) {
 function initTheme() {
   const dark = localStorage.getItem('xjDarkMode') === '1';
   const large = localStorage.getItem('xjLargeText') === '1';
+  const canChange = currentUser && currentUser.can_change_level;
+  const sLv = currentUser ? Math.min(currentUser.study_level || 1, 30) : 1;
+  const sIcon = studyLevelIcon(sLv);
+  const levelOptions = LEVELS.map(l => `<option value="${l}" ${l===currentLevel?'selected':''}>${LEVEL_ICONS[l]} ${l}</option>`).join('');
+  const large = localStorage.getItem('xjLargeText') === '1';
   document.documentElement.classList.toggle('dark', dark);
   document.documentElement.classList.toggle('large-text', large);
   // Sync toggle checkboxes if they exist
@@ -516,7 +521,11 @@ function initTheme() {
 function showSettingsModal() {
   const dark = localStorage.getItem('xjDarkMode') === '1';
   const large = localStorage.getItem('xjLargeText') === '1';
-  openModal('显示设置', `
+  const canChange = currentUser && currentUser.can_change_level;
+  const sLv = currentUser ? Math.min(currentUser.study_level || 1, 30) : 1;
+  const sIcon = studyLevelIcon(sLv);
+  const levelOptions = LEVELS.map(l => `<option value="${l}" ${l===currentLevel?'selected':''}>${LEVEL_ICONS[l]} ${l}</option>`).join('');
+  openModal('设置', `
     <div style="padding:2px 0">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
         <div><div style="font-weight:600;font-size:0.88rem">🌙 暗色模式</div><div style="font-size:0.75rem;color:var(--text2)">降低屏幕亮度，保护眼睛</div></div>
@@ -526,11 +535,20 @@ function showSettingsModal() {
         <div><div style="font-weight:600;font-size:0.88rem">🔤 大字版</div><div style="font-size:0.75rem;color:var(--text2)">放大字体，阅读更轻松</div></div>
         <label class="toggle-switch"><input type="checkbox" ${large ? 'checked' : ''} onchange="toggleLargeText(this.checked)"><span class="toggle-slider"></span></label>
       </div>
+      ${currentUser ? `
+      <div style="padding:12px 0;border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div><div style="font-weight:600;font-size:0.88rem">📚 当前考试级别</div><div style="font-size:0.75rem;color:var(--text2)">${sIcon} 学习等级 Lv.${sLv}</div></div>
+          ${canChange ? `<select onchange="quickSwitchLevel(this.value);closeModal()" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border);font-size:0.85rem">${levelOptions}</select>` : '<span style="font-size:0.8rem;color:var(--text2)">🔒 管理员锁定</span>'}
+        </div>
+      </div>
+      ` : ''}
+      <div style="padding:12px 0">
+        <button onclick="closeModal();reopenHelp()" style="width:100%;padding:10px;background:var(--primary);color:#fff;border:none;border-radius:8px;font-size:0.88rem;cursor:pointer">📖 使用帮助</button>
+      </div>
     </div>
   `);
 }
-
-
 // ===== Single Device Login =====
 let _sessionCheckInterval = null;
 
@@ -3410,6 +3428,11 @@ async function renderAdminSettings() {
   // Theme settings
   const dark = localStorage.getItem('xjDarkMode') === '1';
   const large = localStorage.getItem('xjLargeText') === '1';
+  const canChange = currentUser && currentUser.can_change_level;
+  const sLv = currentUser ? Math.min(currentUser.study_level || 1, 30) : 1;
+  const sIcon = studyLevelIcon(sLv);
+  const levelOptions = LEVELS.map(l => `<option value="${l}" ${l===currentLevel?'selected':''}>${LEVEL_ICONS[l]} ${l}</option>`).join('');
+  const large = localStorage.getItem('xjLargeText') === '1';
   
   // Admin list (only for master)
   let adminSection = '';
@@ -3613,8 +3636,7 @@ function levelSwitchHtml() {
   const canChange = currentUser && currentUser.can_change_level === true;
   const sLv = currentUser?.study_level || 1;
   const sIcon = studyLevelIcon(sLv);
-  return `<span style="display:flex;align-items:center;gap:4px"><span style="font-size:.75rem;background:rgba(255,255,255,.2);padding:1px 6px;border-radius:8px">${sIcon} Lv.${sLv}</span> ${LEVEL_ICONS[currentLevel]||''} ${escHtml(currentLevel)}</span>` +
-    (canChange ? `<select id="levelQuickSwitch" onchange="quickSwitchLevel(this.value)" style="background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#fff;padding:2px 6px;font-size:0.8rem;appearance:auto">${LEVELS.map(l => `<option value="${l}" ${l===currentLevel?'selected':''} style="color:var(--text)">${LEVEL_ICONS[l]} ${l}</option>`).join('')}</select>` : '<span style="font-size:0.75rem;opacity:0.7">🔒 管理员锁定</span>');
+  return `<span style="display:flex;align-items:center;gap:4px"><span style="font-size:.75rem;background:rgba(255,255,255,.2);padding:1px 6px;border-radius:8px">${sIcon} Lv.${sLv}</span> ${LEVEL_ICONS[currentLevel]||''} ${escHtml(currentLevel)}</span>`;
 }
 function renderStudent() {
   // Daily login XP bonus
@@ -3628,9 +3650,10 @@ function renderStudent() {
     <div class="student-page">
       <div style="background:linear-gradient(135deg,var(--primary),#7c3aed);color:#fff;padding:8px 16px;font-size:0.82rem;display:flex;align-items:center;justify-content:space-between">
         <div style="display:flex;align-items:center;gap:4px">${levelSwitchHtml()}</div>
-        <button onclick="showSettingsModal()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#fff;padding:3px 8px;font-size:0.78rem;cursor:pointer">⚙️</button>
-        <button onclick="reopenHelp()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#fff;padding:3px 8px;font-size:0.78rem;cursor:pointer">📖</button>
-        <button onclick="handleLogout()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#fff;padding:3px 10px;font-size:0.78rem;cursor:pointer">退出</button>
+        <div style="display:flex;align-items:center;gap:4px">
+          <button onclick="showSettingsModal()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#fff;padding:3px 8px;font-size:0.78rem;cursor:pointer">⚙️</button>
+          <button onclick="handleLogout()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#fff;padding:3px 10px;font-size:0.78rem;cursor:pointer">退出</button>
+        </div>
       </div>
       <div class="student-content" id="studentContent"></div>
       <div class="student-tabbar">
@@ -3652,12 +3675,13 @@ async function quickSwitchLevel(level) {
     localStorage.setItem('xjUser', JSON.stringify(currentUser));
     try {
       await dbUpdate('students', { level }, { id: currentUser.id });
+      cacheClearTable('students');
     } catch(e) {
       console.warn('Level sync failed:', e);
       enqueueOperation({ type: 'update', table: 'students', data: { level }, match: { id: currentUser.id } });
     }
   }
-  // Re-render current tab
+  // Re-render current tab and update header
   const activeTab = document.querySelector('.student-tab.active')?.dataset.tab || 'practice';
   switchStudentTab(activeTab);
 }
