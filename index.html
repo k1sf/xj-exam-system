@@ -1374,23 +1374,27 @@ async function dbUpdate(table, data, match) {
   }
 }
 
-async function dbDelete(table, match) {
+async function dbDelete(table, match, force = false) {
   try {
-    const res = await fetch(`${API_BASE}/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify({ table, match }) });
+    const res = await fetch(`${API_BASE}/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify({ table, match, force }) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     let result = await res.json();
     if (result.error) throw new Error(result.error);
     // Smart cache: remove matching rows from cache instead of clearing everything
     const matchKeys = Object.keys(match);
-    cacheRemoveAnywhere(table, r => matchKeys.every(k => {
-      const matchVal = match[k];
-      if (Array.isArray(matchVal)) return matchVal.includes(r[k]);
-      return r[k] == matchVal;
-    }));
+    if (matchKeys.length === 0 && !force) {
+      // No cache update needed for full delete with force
+    } else if (matchKeys.length > 0) {
+      cacheRemoveAnywhere(table, r => matchKeys.every(k => {
+        const matchVal = match[k];
+        if (Array.isArray(matchVal)) return matchVal.includes(r[k]);
+        return r[k] == matchVal;
+      }));
+    }
     return result;
   } catch(e) {
     if (!isOnline || e.message === 'Failed to fetch' || e.message.includes('NetworkError') || e.message.includes('network')) {
-      enqueueOperation({ type: 'delete', table, match: JSON.parse(JSON.stringify(match)) });
+      enqueueOperation({ type: 'delete', table, match: JSON.parse(JSON.stringify(match)), force });
       showToast('网络不可用，操作已保存到本地，恢复网络后自动同步', 'warning');
       return [];
     }
@@ -5322,7 +5326,7 @@ async function doClearQuestions() {
   
   try {
     // 先删除所有关联的答题记录
-    await dbDelete('records', {});
+    await dbDelete('records', {}, true);
     
     // 删除所有考试中的题目引用
     const exams = await dbSelect('exams');
@@ -5333,7 +5337,7 @@ async function doClearQuestions() {
     }
     
     // 清空题库
-    await dbDelete('questions', {});
+    await dbDelete('questions', {}, true);
     
     // 清除缓存
     cacheClear('questions');
@@ -5510,138 +5514,328 @@ function loadScript(src) {
   });
 }
 
+// ===== 增强版智能题库解析器 =====
 function smartParse(content) {
-  // 检测分隔符
-  const firstLine = content.split('\n')[0];
-  let delimiter = '|';
+  content = content.trim();
   
-  // 尝试检测分隔符
-  const delimiters = ['|', '\t', ',', ';'];
-  let maxCount = 0;
-  for (const d of delimiters) {
-    const count = (firstLine.match(new RegExp(d === '|' ? '\\|' : d, 'g')) || []).length;
-    if (count > maxCount) {
-      maxCount = count;
-      delimiter = d;
-    }
-  }
-  
-  // 尝试解析为JSON
-  if (content.trim().startsWith('[') || content.trim().startsWith('{')) {
+  // 1. 尝试JSON解析
+  if (content.startsWith('[') || content.startsWith('{')) {
     try {
       const json = JSON.parse(content);
       const arr = Array.isArray(json) ? json : [json];
-      return parseJSONQuestions(arr);
-    } catch(e) {}
+      const result = parseJSONQuestions(arr);
+      if (result.length > 0) {
+        result.format = 'JSON';
+        return result;
+      }
+    } catch(e) {
+      console.warn('JSON解析失败:', e);
+    }
   }
   
-  // 文本格式解析
-  const lines = content.split('\n').filter(l => l.trim());
+  // 2. CSV/Excel格式检测 (有表头)
+  const firstLine = content.split('\n')[0];
+  const isCSV = /^[题型,题干|题型.*答案|Question.*Answer|单选.*多选/i.test(firstLine) || 
+                 /,/.test(firstLine) && /[A-D]/.test(firstLine);
+  
+  if (isCSV) {
+    const result = parseCSV(content);
+    if (result.length > 0) {
+      result.format = 'CSV/Excel';
+      return result;
+    }
+  }
+  
+  // 3. 管道符分隔格式
+  if (content.includes('|')) {
+    const result = parsePipeDelimited(content, '|');
+    if (result.length > 0) {
+      result.format = '管道符分隔';
+      return result;
+    }
+  }
+  
+  // 4. Tab分隔格式
+  if (content.includes('\t')) {
+    const result = parsePipeDelimited(content, '\t');
+    if (result.length > 0) {
+      result.format = 'Tab分隔';
+      return result;
+    }
+  }
+  
+  // 5. 逗号分隔格式
+  const commaCount = (content.match(/,/g) || []).length;
+  const lineCount = (content.match(/\n/g) || []).length + 1;
+  if (commaCount > lineCount) {
+    const result = parsePipeDelimited(content, ',');
+    if (result.length > 0) {
+      result.format = '逗号分隔';
+      return result;
+    }
+  }
+  
+  return [];
+}
+
+// CSV/Excel格式解析
+function parseCSV(content) {
   const questions = [];
+  const lines = content.split('\n').filter(l => l.trim());
+  if (lines.length < 2) return [];
+  
+  const header = lines[0].toLowerCase();
+  
+  // 解析表头
+  const cols = lines[0].split(',').map(h => h.trim().toLowerCase());
+  const colMap = {};
+  cols.forEach((h, i) => {
+    if (/题型|type/i.test(h)) colMap.type = i;
+    if (/题干|题目|content|question/i.test(h)) colMap.content = i;
+    if (/答案|answer/i.test(h)) colMap.answer = i;
+    if (/解析|analysis|explanation/i.test(h)) colMap.analysis = i;
+    if (/标签|tags/i.test(h)) colMap.tags = i;
+    // 选项列
+    if (/[a-d]/i.test(h)) colMap.options = colMap.options || {};
+    if (/^a$|^选项a|^选项.*a/i.test(h)) colMap.options.A = i;
+    if (/^b$|^选项b|^选项.*b/i.test(h)) colMap.options.B = i;
+    if (/^c$|^选项c|^选项.*c/i.test(h)) colMap.options.C = i;
+    if (/^d$|^选项d|^选项.*d/i.test(h)) colMap.options.D = i;
+  });
+  
+  // 如果没有检测到选项列，但有A/B/C/D列
+  if (!colMap.options || Object.keys(colMap.options).length === 0) {
+    cols.forEach((h, i) => {
+      if (/^a$|^选项.*a|^a选项/i.test(h)) colMap.options = colMap.options || {};
+      if (/^b$|^选项.*b|^b选项/i.test(h)) colMap.options.B = i;
+      if (/^c$|^选项.*c|^c选项/i.test(h)) colMap.options.C = i;
+      if (/^d$|^选项.*d|^d选项/i.test(h)) colMap.options.D = i;
+    });
+  }
+  
+  // 解析数据行
+  for (let i = 1; i < lines.length; i++) {
+    try {
+      const line = lines[i].trim();
+      if (!line) continue;
+      
+      // CSV行解析（处理引号内的逗号）
+      const parts = parseCSVLine(line);
+      
+      const typeNames = { '单选': 'single', '多选': 'multiple', '判断': 'judge', 'single': 'single', 'multiple': 'multiple', 'judge': 'judge' };
+      
+      let type = 'single';
+      let content = '';
+      let answer = '';
+      let options = [];
+      let analysis = '';
+      let tags = [];
+      
+      // 识别题型
+      if (colMap.type !== undefined) {
+        const t = (parts[colMap.type] || '').toLowerCase();
+        if (typeNames[t]) type = typeNames[t];
+        else if (/判断|对错|true.*false/i.test(t)) type = 'judge';
+        else if (/多选|多选/i.test(t)) type = 'multiple';
+        else type = 'single';
+      }
+      
+      // 提取内容
+      if (colMap.content !== undefined) {
+        content = (parts[colMap.content] || '').trim();
+      } else {
+        // 找非选项列作为内容
+        for (let j = 0; j < parts.length; j++) {
+          if (colMap.options && Object.values(colMap.options).includes(j)) continue;
+          if (colMap.answer !== undefined && j === colMap.answer) continue;
+          if (colMap.analysis !== undefined && j === colMap.analysis) continue;
+          const p = parts[j];
+          if (p && p.length > 10 && !/^[a-d]$/i.test(p)) {
+            content = p;
+            break;
+          }
+        }
+      }
+      
+      // 提取答案
+      if (colMap.answer !== undefined) {
+        answer = (parts[colMap.answer] || '').toString().toUpperCase();
+        // 清理答案
+        answer = answer.replace(/^[答案ANSWER:：\s]*/, '').trim();
+        if (!answer) continue;
+      }
+      
+      // 提取选项
+      if (colMap.options) {
+        const optKeys = ['A', 'B', 'C', 'D'];
+        optKeys.forEach(k => {
+          if (colMap.options[k] !== undefined) {
+            const v = parts[colMap.options[k]];
+            if (v) options.push({ key: k, value: v.trim() });
+          }
+        });
+      }
+      
+      // 提取解析
+      if (colMap.analysis !== undefined) {
+        analysis = (parts[colMap.analysis] || '').trim();
+      }
+      
+      // 提取标签
+      if (colMap.tags !== undefined) {
+        const t = parts[colMap.tags] || '';
+        tags = t.split(/[,，;；]/).map(s => s.trim()).filter(Boolean);
+      }
+      
+      // 判断题处理
+      if (type === 'judge' && options.length === 0) {
+        options = [{ key: 'A', value: '正确' }, { key: 'B', value: '错误' }];
+        if (['对', '错', '正确', '错误', 'TRUE', 'FALSE'].includes(answer)) {
+          answer = /^(对|正确|true)$/i.test(answer) ? 'A' : 'B';
+        }
+      }
+      
+      if (content && answer) {
+        questions.push({ type, content, options: JSON.stringify(options), answer, analysis, tags });
+      }
+    } catch(e) {
+      console.warn('CSV行解析失败:', e);
+    }
+  }
+  
+  return questions;
+}
+
+// CSV行解析（处理引号）
+function parseCSVLine(line) {
+  const parts = [];
+  let current = '';
+  let inQuotes = false;
+  
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      inQuotes = !inQuotes;
+    } else if (c === ',' && !inQuotes) {
+      parts.push(current.trim());
+      current = '';
+    } else {
+      current += c;
+    }
+  }
+  parts.push(current.trim());
+  
+  return parts;
+}
+
+// 管道符/Tab分隔格式解析
+function parsePipeDelimited(content, delimiter) {
+  const questions = [];
+  const lines = content.split('\n').filter(l => l.trim());
   const typeNames = { '单选': 'single', '多选': 'multiple', '判断': 'judge', 'single': 'single', 'multiple': 'multiple', 'judge': 'judge' };
   
   for (const line of lines) {
     try {
       const parts = line.split(delimiter).map(s => s.trim()).filter(Boolean);
-      if (parts.length < 3) continue;
+      if (parts.length < 2) continue;
       
-      // 识别题型
       let type = 'single';
-      let contentIdx = 0;
+      let content = '';
+      let answer = '';
+      let options = [];
+      let analysis = '';
+      let tags = [];
+      let startIdx = 0;
       
       // 检查第一列是否是题型
       const first = parts[0].toLowerCase();
-      if (typeNames[first] || ['single', 'multiple', 'judge'].includes(first)) {
-        type = typeNames[first] || first;
-        contentIdx = 1;
-      } else if (first.includes('单选') || first.includes('判断') || first.includes('多选')) {
-        type = typeNames[first] || 'single';
-        contentIdx = 1;
+      if (typeNames[first]) {
+        type = typeNames[first];
+        startIdx = 1;
+      } else if (/判断|对错/i.test(first)) {
+        type = 'judge';
+        startIdx = 1;
+      } else if (/多选/i.test(first)) {
+        type = 'multiple';
+        startIdx = 1;
       }
       
-      const qContent = parts[contentIdx] || '';
-      if (!qContent) continue;
+      content = parts[startIdx] || '';
+      if (!content) continue;
+      
+      // 查找答案
+      for (let i = parts.length - 1; i >= startIdx; i--) {
+        const p = parts[i];
+        // 答案格式: 答案:D 或 D 或 正确:对
+        const ansMatch = p.match(/^(?:答案|answer)?[：:\s]*([A-Da-d]{1,4}|[对错正确错误])$/i);
+        if (ansMatch) {
+          answer = ansMatch[1].toUpperCase();
+          if (/^[对错]$/.test(answer)) {
+            answer = answer === '对' ? 'A' : 'B';
+          } else if (/正确/.test(answer)) {
+            answer = 'A';
+          } else if (/错误/.test(answer)) {
+            answer = 'B';
+          }
+          break;
+        }
+        // 单个字母在最后
+        if (/^[A-Da-d]$/.test(p) && !answer) {
+          answer = p.toUpperCase();
+        }
+        // 多个字母（多选）
+        if (/^[A-Da-d]{2,4}$/.test(p) && !answer) {
+          answer = p.toUpperCase();
+        }
+      }
       
       // 提取选项
-      let options = [];
-      let answer = '';
-      let analysis = '';
-      let tags = [];
+      for (let i = startIdx + 1; i < parts.length; i++) {
+        const p = parts[i];
+        if (/^答案|answer/i.test(p)) continue;
+        
+        // 选项格式: A. xxx 或 A、xxx 或 A:xxx
+        const optMatch = p.match(/^([A-Da-d])[.、:：\s]+(.*)$/);
+        if (optMatch) {
+          options.push({ key: optMatch[1].toUpperCase(), value: optMatch[2] || optMatch[1] });
+        } else if (/^[A-Da-d]$/.test(p) && i === parts.length - 1) {
+          // 单字母在最后，可能是答案
+          if (!answer) answer = p.toUpperCase();
+        }
+      }
       
+      // 查找解析
+      for (const p of parts) {
+        if (/^解析|^analysis/i.test(p)) {
+          analysis = p.replace(/^解析[：:\s]*/i, '');
+          break;
+        }
+      }
+      
+      // 查找标签
+      for (const p of parts) {
+        if (/^标签|^tags/i.test(p)) {
+          tags = p.replace(/^标签[：:\s]*/i, '').split(/[,，]/).map(t => t.trim()).filter(Boolean);
+          break;
+        }
+      }
+      
+      // 判断题处理
       if (type === 'judge') {
         options = [{ key: 'A', value: '正确' }, { key: 'B', value: '错误' }];
-        // 判断题答案识别
-        const answerPart = parts.find(p => /^[答案Answer]/.test(p) || /^A$|^B$|^对$|^错$|^正确$|^错误$/i.test(p));
-        if (answerPart) {
-          const ans = answerPart.replace(/^[答案Answer:：\s]+/, '').toUpperCase();
-          answer = (ans.includes('A') || ans.includes('正确') || ans.includes('对')) ? 'A' : 'B';
-        }
-      } else {
-        // 单选/多选题 - 尝试识别选项和答案
-        // 查找答案（通常在特定位置或有答案标记）
-        const answerIdx = parts.length - (parts[parts.length - 1].match(/^[答案Answer解析tags]/) ? 2 : 1);
-        
-        for (let i = contentIdx + 1; i < parts.length; i++) {
-          const p = parts[i];
-          // 选项识别：A. B. C. D. 或 A、B、B、C...
-          const optMatch = p.match(/^([A-Da-d])[.、:：]?\s*(.*)/);
-          if (optMatch) {
-            options.push({ key: optMatch[1].toUpperCase(), value: optMatch[2] || p });
-          } else if (/^[A-Da-d]$/.test(p) && i === answerIdx) {
-            // 单个字母可能是答案
-            answer = p.toUpperCase();
-          } else if (/^[A-Da-d]{2,}$/.test(p) && i === answerIdx) {
-            // 多个字母是多选题答案
-            answer = p.toUpperCase();
-          }
-        }
-        
-        // 再次尝试从整个parts中找答案
-        for (const p of parts) {
-          const ansMatch = p.match(/^[答案Answer]?[：:\s]*([A-Da-d]{1,4})$/i);
-          if (ansMatch) {
-            answer = ansMatch[1].toUpperCase();
-            break;
-          }
-          // 中文答案
-          const cnAns = p.match(/^[答案Answer]?[：:\s]*(正确|错误|对|错|[A-Da-d])$/);
-          if (cnAns) {
-            const ans = cnAns[1];
-            if ('对错正确错误'.includes(ans)) {
-              answer = ans === '对' || ans === '正确' ? 'A' : 'B';
-            } else {
-              answer = ans.toUpperCase();
-            }
-            break;
-          }
-        }
-        
-        // 去除选项中的选项标记
-        options = options.map(o => ({
-          key: o.key.toUpperCase(),
-          value: o.value.replace(/^[A-Da-d][.、:：]\s*/, '')
-        }));
-      }
-      
-      // 提取解析和标签
-      for (const p of parts) {
-        if (/^[解析Analysis]/.test(p)) {
-          analysis = p.replace(/^[解析Analysis]?[：:\s]*/, '');
-        }
-        if (/^[标签Tags]/.test(p)) {
-          tags = p.replace(/^[标签Tags]?[：:\s]*/, '').split(/[,，]/).map(t => t.trim()).filter(Boolean);
+        if (['对', '错', '正确', '错误'].includes(answer)) {
+          answer = /^(对|正确)$/.test(answer) ? 'A' : 'B';
         }
       }
       
-      if (qContent && answer) {
-        questions.push({ type, content: qContent, options: JSON.stringify(options), answer, analysis, tags });
+      if (content && answer) {
+        questions.push({ type, content, options: JSON.stringify(options), answer, analysis, tags });
       }
     } catch(e) {
-      console.warn('解析行失败:', e);
+      console.warn('行解析失败:', e);
     }
   }
   
-  questions.format = delimiter === '\t' ? 'Tab分隔文本' : delimiter === ',' ? 'CSV' : '管道符分隔';
   return questions;
 }
 

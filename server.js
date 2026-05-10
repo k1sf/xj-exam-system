@@ -298,7 +298,7 @@ async function handleApi(req, res, url) {
       break;
     }
     case 'delete': {
-      const { table: rawTable, match } = params;
+      const { table: rawTable, match, force } = params;
       const table = validateTable(rawTable);
       const conds = Object.entries(match).map(([k, v]) => {
         if (v === null || v === undefined) return `${escKey(k)} IS NULL`;
@@ -314,9 +314,26 @@ async function handleApi(req, res, url) {
         if (typeof v === 'number') return `${escKey(k)} = ${v}`;
         return `${escKey(k)} = ${escVal(v, getColType(table, k))}`;
       });
-      const sql = `DELETE FROM ${table} WHERE ${conds.join(' AND ')}`;
-      await pool.query(sql);
-      sendJson(res, { success: true });
+      
+      // 安全检查：空条件需要 force=true 且仅限特定表
+      if (conds.length === 0) {
+        if (!force) {
+          sendJson(res, { error: 'Empty match requires force=true' }, 400);
+          return;
+        }
+        // 仅允许清空 records 和 questions 表
+        if (!['records', 'questions'].includes(table)) {
+          sendJson(res, { error: 'Cannot truncate this table' }, 403);
+          return;
+        }
+        const sql = `DELETE FROM ${table}`;
+        await pool.query(sql);
+        sendJson(res, { success: true, truncated: true });
+      } else {
+        const sql = `DELETE FROM ${table} WHERE ${conds.join(' AND ')}`;
+        await pool.query(sql);
+        sendJson(res, { success: true });
+      }
       break;
     }
     case 'count': {
