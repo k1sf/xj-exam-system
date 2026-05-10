@@ -6075,6 +6075,142 @@ function parseCSVLine(line) {
   return parts;
 }
 
+// ===== 智能逐行解析（处理特殊格式）=====
+function tryParseSmartLines(content) {
+  const lines = content.split('\n').filter(l => l.trim());
+  if (lines.length < 1) return { questions: [] };
+  
+  const typeNames = { '单选': 'single', '多选': 'multiple', '判断': 'judge', 'single': 'single', 'multiple': 'multiple', 'judge': 'judge' };
+  const questions = [];
+  let currentQ = null;
+  let currentOptions = [];
+  
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    
+    // 检测是否是新题目的开始
+    const isNewQuestion = (
+      typeNames[line] || // 题型标识开头
+      /^[【\[【].*题/.test(line) || // 【单选题】
+      /^\d+[.、]/.test(line) || // 1. 或 1、
+      /^[题目]+[:：]/.test(line) // 题目:
+    );
+    
+    // 如果是新题目且有当前题目，保存它
+    if (isNewQuestion && currentQ && currentQ.content) {
+      // 尝试从内容中提取答案
+      const answerMatch = currentQ.content.match(/答案[：:]\s*([A-Da-d对错√×])\s*$/i);
+      if (answerMatch) {
+        currentQ.answer = normalizeAnswer(answerMatch[1], currentQ.type);
+        currentQ.content = currentQ.content.replace(/答案[：:]\s*[A-Da-d对错√×]\s*$/i, '').trim();
+      }
+      
+      // 如果没有找到答案，检查最后一行是否是答案
+      if (!currentQ.answer && currentOptions.length > 0) {
+        const lastOpt = currentOptions[currentOptions.length - 1];
+        if (/^(对|错|正确|错误|√|×|A|B)$/i.test(lastOpt.value)) {
+          currentQ.answer = normalizeAnswer(lastOpt.value, currentQ.type);
+          currentOptions.pop();
+        }
+      }
+      
+      if (currentQ.answer && currentQ.content) {
+        if (currentQ.type === 'judge' && currentOptions.length === 0) {
+          currentOptions = [{ key: 'A', value: '正确' }, { key: 'B', value: '错误' }];
+        }
+        questions.push({
+          type: currentQ.type,
+          content: currentQ.content,
+          options: JSON.stringify(currentOptions),
+          answer: currentQ.answer,
+          analysis: currentQ.analysis || '',
+          tags: []
+        });
+      }
+      currentQ = null;
+      currentOptions = [];
+    }
+    
+    // 开始新题目
+    if (isNewQuestion || !currentQ) {
+      let type = 'single';
+      let content = line;
+      
+      // 检测题型
+      if (/判断|对错|judge/i.test(line)) type = 'judge';
+      else if (/多选|multiple/i.test(line)) type = 'multiple';
+      else if (/单选|single/i.test(line)) type = 'single';
+      
+      // 移除题型前缀
+      content = content.replace(/^[【\[【】\]]*(单选|多选|判断|single|multiple|judge)[】\]]*[:：\s]*/i, '');
+      content = content.replace(/^\d+[.、]\s*/, '');
+      content = content.replace(/^[题目]+[:：\s]*/, '');
+      
+      currentQ = { type, content };
+      continue;
+    }
+    
+    // 处理选项行
+    if (currentQ) {
+      const optMatch = line.match(/^([A-Da-d])[.、:：\s]+(.*)$/);
+      if (optMatch) {
+        currentOptions.push({ key: optMatch[1].toUpperCase(), value: optMatch[2] || optMatch[1] });
+      } else if (/^[A-Da-d]$/.test(line) || /^[A-Da-d]{2,4}$/.test(line)) {
+        // 纯选项标识，可能是答案
+        if (!currentQ.answer) {
+          currentQ.answer = normalizeAnswer(line.toUpperCase(), currentQ.type);
+        }
+      } else if (/^(对|错|正确|错误|√|×)$/i.test(line)) {
+        // 判断题答案
+        if (!currentQ.answer) {
+          currentQ.answer = normalizeAnswer(line, currentQ.type);
+        }
+      } else if (/^答案[：:]?\s*(.*)$/i.test(line)) {
+        // 独立的答案行
+        const ans = line.match(/^答案[：:]?\s*(.*)$/i)[1];
+        if (/^[A-Da-d]$/i.test(ans) || /^(对|错|正确|错误|√|×)$/i.test(ans)) {
+          currentQ.answer = normalizeAnswer(ans, currentQ.type);
+        }
+      } else if (/^(解析|说明)[:：]/i.test(line)) {
+        currentQ.analysis = line.replace(/^(解析|说明)[:：]/, '');
+      } else {
+        // 可能是选项内容（没有A.前缀）
+        if (currentOptions.length > 0 && !currentQ.answer) {
+          currentOptions[currentOptions.length - 1].value += ' ' + line;
+        }
+      }
+    }
+  }
+  
+  // 保存最后一个题目
+  if (currentQ && currentQ.content) {
+    if (!currentQ.answer && currentOptions.length > 0) {
+      const lastOpt = currentOptions[currentOptions.length - 1];
+      if (/^(对|错|正确|错误|√|×|A|B)$/i.test(lastOpt.value)) {
+        currentQ.answer = normalizeAnswer(lastOpt.value, currentQ.type);
+        currentOptions.pop();
+      }
+    }
+    
+    if (currentQ.answer && currentQ.content) {
+      if (currentQ.type === 'judge' && currentOptions.length === 0) {
+        currentOptions = [{ key: 'A', value: '正确' }, { key: 'B', value: '错误' }];
+      }
+      questions.push({
+        type: currentQ.type,
+        content: currentQ.content,
+        options: JSON.stringify(currentOptions),
+        answer: currentQ.answer,
+        analysis: currentQ.analysis || '',
+        tags: []
+      });
+    }
+  }
+  
+  return { questions };
+}
+
 // ===== 分隔符格式尝试解析 =====
 function tryParseDelimited(content, delimiter) {
   const lines = content.split('\n').filter(l => l.trim());
