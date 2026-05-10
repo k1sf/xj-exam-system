@@ -5517,6 +5517,7 @@ function loadScript(src) {
 // ===== 增强版智能题库解析器 =====
 function smartParse(content) {
   content = content.trim();
+  const errors = [];
   
   // 1. 尝试JSON解析
   if (content.startsWith('[') || content.startsWith('{')) {
@@ -5527,9 +5528,11 @@ function smartParse(content) {
       if (result.length > 0) {
         result.format = 'JSON';
         return result;
+      } else if (arr.length > 0) {
+        errors.push('JSON格式无法解析，请检查字段名（需要type/content/answer）');
       }
     } catch(e) {
-      console.warn('JSON解析失败:', e);
+      errors.push('JSON格式错误: ' + e.message);
     }
   }
   
@@ -5543,6 +5546,8 @@ function smartParse(content) {
     if (result.length > 0) {
       result.format = 'CSV/Excel';
       return result;
+    } else {
+      errors.push('CSV格式无法解析，请检查表头（需要包含：题型、题干、答案、A、B、C、D）');
     }
   }
   
@@ -5573,6 +5578,13 @@ function smartParse(content) {
       result.format = '逗号分隔';
       return result;
     }
+  }
+  
+  // 返回空数组并记录错误
+  if (errors.length > 0) {
+    const errResult = [];
+    errResult.error = errors.join('; ');
+    return errResult;
   }
   
   return [];
@@ -5760,7 +5772,6 @@ function parsePipeDelimited(content, delimiter) {
         startIdx = 1;
       }
       
-      content = parts[startIdx] || '';
       if (!content) continue;
       
       // 查找答案
@@ -5794,13 +5805,16 @@ function parsePipeDelimited(content, delimiter) {
         const p = parts[i];
         if (/^答案|answer/i.test(p)) continue;
         
-        // 选项格式: A. xxx 或 A、xxx 或 A:xxx
+        // 选项格式: A. xxx 或 A、xxx 或 A:xxx 或 A xxx
         const optMatch = p.match(/^([A-Da-d])[.、:：\s]+(.*)$/);
         if (optMatch) {
           options.push({ key: optMatch[1].toUpperCase(), value: optMatch[2] || optMatch[1] });
-        } else if (/^[A-Da-d]$/.test(p) && i === parts.length - 1) {
-          // 单字母在最后，可能是答案
-          if (!answer) answer = p.toUpperCase();
+        } else if (/^[A-Da-d]$/.test(p)) {
+          // 单字母可能是答案，跳过
+          continue;
+        } else if (/^[A-Da-d]{2,4}$/.test(p)) {
+          // 多字母可能是答案，跳过
+          continue;
         }
       }
       
@@ -5910,6 +5924,12 @@ async function doFileImport() {
     return;
   }
   
+  // 检查是否有解析错误
+  if (rows.error) {
+    showToast('解析错误: ' + rows.error, 'error');
+    return;
+  }
+  
   const confirmBtn = document.getElementById('confirmFileImportBtn');
   confirmBtn.disabled = true;
   confirmBtn.textContent = '导入中...';
@@ -5925,7 +5945,7 @@ async function doFileImport() {
       cohort: importCohort
     }));
     
-    await dbInsert('questions', finalRows);
+    const result = await dbInsert('questions', finalRows);
     
     closeModal();
     showToast(`成功导入 ${rows.length} 道题目`, 'success');
