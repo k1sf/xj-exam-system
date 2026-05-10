@@ -1671,13 +1671,7 @@ async function handleLogin() {
       if (adminData.session_id) localStorage.setItem('xjSessionId', adminData.session_id);
       // 清除所有缓存，确保数据一致性
       cacheClear();
-      // 立即验证session
-      const valid = await checkDeviceSession(true);
-      if (!valid) {
-        showToast('账号在其他设备登录', 'error');
-        handleLogout();
-        return;
-      }
+      // 登录成功，直接进入系统（session刚设置，无需自我验证）
       startSessionCheck();
       renderAdmin();
       preloadData('admin');
@@ -1723,18 +1717,12 @@ async function handleLogin() {
     if (!currentUser.study_level || currentUser.study_level < 1) {
       currentUser.study_level = levelFromXp(currentUser.xp || 0);
     }
-    // 立即验证session并清除所有缓存，确保数据一致性
+    // 保存session_id并清除缓存
     const sessionId = student.session_id;
     if (sessionId) localStorage.setItem('xjSessionId', sessionId);
     // 清除所有缓存，确保获取最新数据
     cacheClear();
-    // 立即验证session
-    const valid = await checkDeviceSession(true);
-    if (!valid) {
-      showToast('账号在其他设备登录，请重新登录', 'error');
-      handleLogout();
-      return;
-    }
+    // 登录成功，直接进入系统（session刚设置，无需自我验证）
     saveLogin('student', student, null);
     startSessionCheck();
     renderStudent();
