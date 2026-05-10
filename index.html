@@ -503,11 +503,6 @@ function toggleLargeText(on) {
 function initTheme() {
   const dark = localStorage.getItem('xjDarkMode') === '1';
   const large = localStorage.getItem('xjLargeText') === '1';
-  const canChange = currentUser && currentUser.can_change_level;
-  const sLv = currentUser ? Math.min(currentUser.study_level || 1, 30) : 1;
-  const sIcon = studyLevelIcon(sLv);
-  const levelOptions = LEVELS.map(l => `<option value="${l}" ${l===currentLevel?'selected':''}>${LEVEL_ICONS[l]} ${l}</option>`).join('');
-  const large = localStorage.getItem('xjLargeText') === '1';
   document.documentElement.classList.toggle('dark', dark);
   document.documentElement.classList.toggle('large-text', large);
   // Sync toggle checkboxes if they exist
