@@ -1374,14 +1374,15 @@ async function dbUpdate(table, data, match) {
   }
 }
 
-async function dbDelete(table, match, force = false) {
+async function dbDelete(table, match = {}, force = false) {
   try {
-    const res = await fetch(`${API_BASE}/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify({ table, match, force }) });
+    const body = { table, match: match || {}, force };
+    const res = await fetch(`${API_BASE}/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify(body) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     let result = await res.json();
     if (result.error) throw new Error(result.error);
     // Smart cache: remove matching rows from cache instead of clearing everything
-    const matchKeys = Object.keys(match);
+    const matchKeys = Object.keys(match || {});
     if (matchKeys.length === 0 && !force) {
       // No cache update needed for full delete with force
     } else if (matchKeys.length > 0) {
