@@ -1871,7 +1871,8 @@ async function createStudents() {
   btn.disabled = true; btn.textContent = '处理中...';
   try {
     const lines = namesStr.split(/\n/).map(n => n.trim()).filter(Boolean);
-    const existing = await dbSelect('students', { select: ['username'] });
+    // 使用 cacheBypass 确保获取最新的已存在账号列表
+    const existing = await dbSelect('students', { select: ['username'], cacheBypass: true });
     const existingPhones = new Set(existing.map(s => s.username));
     const rows = [];
     const failed = [];
@@ -2004,7 +2005,8 @@ async function batchRenewStudents() {
       }
       cacheClearTable('students');
       showToast(`已为 ${students.length} 名学生续期`, 'success');
-      allStudents = await dbSelect('students');
+      // 使用 cacheBypass 确保获取最新数据
+      allStudents = await dbSelect('students', { cacheBypass: true });
       filterStudents();
     } catch(e) { showToast('批量续期失败', 'error'); }
   });
@@ -2021,7 +2023,8 @@ async function batchToggleStudents(disable) {
       }
       cacheClearTable('students');
       showToast(`已${disable ? '禁用' : '启用'} ${students.length} 名学生`, 'success');
-      allStudents = await dbSelect('students');
+      // 使用 cacheBypass 确保获取最新数据
+      allStudents = await dbSelect('students', { cacheBypass: true });
       filterStudents();
     } catch(e) { showToast('批量操作失败', 'error'); }
   });
@@ -2038,7 +2041,8 @@ async function batchLockLevel(lock) {
       }
       cacheClearTable('students');
       showToast(`已${lock ? '锁定' : '解锁'} ${students.length} 名学生等级`, 'success');
-      allStudents = await dbSelect('students');
+      // 使用 cacheBypass 确保获取最新数据
+      allStudents = await dbSelect('students', { cacheBypass: true });
       filterStudents();
     } catch(e) { showToast('批量操作失败', 'error'); }
   });
@@ -2115,7 +2119,8 @@ async function resetStudentPwd(username) {
       cacheClearTable('students');
       showToast('密码已重置为 123456', 'success');
       closeModal();
-      allStudents = await dbSelect('students');
+      // 使用 cacheBypass 确保获取最新数据
+      allStudents = await dbSelect('students', { cacheBypass: true });
       filterStudents();
     } catch(e) {
       showToast('重置失败', 'error');
@@ -2133,7 +2138,8 @@ async function toggleStudentStatus(username, currentStatus) {
       cacheClearTable('students');
       showToast(newStatus === 'disabled' ? '账号已禁用' : '账号已启用', 'success');
       closeModal();
-      allStudents = await dbSelect('students');
+      // 使用 cacheBypass 确保获取最新数据
+      allStudents = await dbSelect('students', { cacheBypass: true });
       filterStudents();
     } catch(e) {
       showToast('操作失败', 'error');
@@ -2150,7 +2156,8 @@ async function renewStudent(username) {
       cacheClearTable('students');
       showToast('已续期一年', 'success');
       closeModal();
-      allStudents = await dbSelect('students');
+      // 使用 cacheBypass 确保获取最新数据
+      allStudents = await dbSelect('students', { cacheBypass: true });
       filterStudents();
     } catch(e) {
       showToast('续期失败', 'error');
@@ -2169,7 +2176,8 @@ async function deleteStudent(username) {
       cacheClearTable('records');
       showToast('已删除', 'success');
       closeModal();
-      allStudents = await dbSelect('students');
+      // 使用 cacheBypass 确保获取最新数据
+      allStudents = await dbSelect('students', { cacheBypass: true });
       filterStudents();
     } catch(e) {
       showToast('删除失败', 'error');
@@ -2660,11 +2668,10 @@ async function createExam() {
 
 async function viewExamScores(examId) {
   const exam = allExams.find(e => e.id == examId);
-  cacheClearTable('records');
-  cacheClearTable('students');
   const examIdNum = Number(examId);
-  const records = await dbSelect('records', { eq: { exam_id: examIdNum } });
-  const students = await dbSelect('students');
+  // 使用 cacheBypass 确保获取最新成绩数据
+  const records = await dbSelect('records', { eq: { exam_id: examIdNum }, cacheBypass: true });
+  const students = await dbSelect('students', { cacheBypass: true });
 
   if (!records.length) {
     openModal('📊 考试成绩 - ' + escHtml(exam?.title || ''), '<div style="text-align:center;padding:30px;color:var(--text2)"><div>暂无成绩数据</div><div style="margin-top:8px;font-size:0.8rem;color:var(--text2)">提示：请确认学生已完成考试并交卷</div></div>');
@@ -2949,9 +2956,9 @@ function copyQuickExamLink(examId) {
 
 async function viewQuickExamScores(examId) {
   const exam = allExams.find(e => e.id == examId);
-  cacheClearTable('records');
   const examIdNum = Number(examId);
-  const records = await dbSelect('records', { eq: { exam_id: examIdNum } });
+  // 使用 cacheBypass 确保获取最新成绩数据
+  const records = await dbSelect('records', { eq: { exam_id: examIdNum }, cacheBypass: true });
 
   if (!records.length) {
     openModal('📊 快捷考试成绩 - ' + escHtml(exam?.title || ''), '<div style="text-align:center;padding:30px;color:var(--text2)"><div>暂无成绩数据</div><div style="margin-top:8px;font-size:0.8rem;color:var(--text2)">等待考生扫码参加考试</div></div>');
@@ -3161,7 +3168,8 @@ async function loadLearningData() {
 
   // Fetch records with date filter to avoid loading entire table
   // Use gte/lte on created_at for efficient server-side filtering
-  const allRecords = await dbSelect('records', { order: ['created_at', false], gte: { created_at: start.toISOString() }, lt: { created_at: end.toISOString() } });
+  // 使用 cacheBypass 确保获取最新数据
+  const allRecords = await dbSelect('records', { order: ['created_at', false], gte: { created_at: start.toISOString() }, lt: { created_at: end.toISOString() }, cacheBypass: true });
   const students = learningCohort
     ? allStudents.filter(s => s.cohort === learningCohort)
     : allStudents;
@@ -3189,7 +3197,7 @@ async function loadLearningData() {
   // Only need recent 60 days for streak calculation, not entire history
   const today = new Date(); today.setHours(0,0,0,0);
   const streakStart = new Date(today); streakStart.setDate(streakStart.getDate() - 60);
-  const streakRecords = await dbSelect('records', { gte: { created_at: streakStart.toISOString() }, select: ['student_id', 'created_at'] });
+  const streakRecords = await dbSelect('records', { gte: { created_at: streakStart.toISOString() }, select: ['student_id', 'created_at'], cacheBypass: true });
   const dayRecords = {};
   streakRecords.forEach(r => {
     if (!studentIds.has(r.student_id)) return;
@@ -3527,7 +3535,7 @@ async function createAdmin() {
   if (!username) { showToast('请输入管理员账号', 'error'); return; }
   if (!nickname) { showToast('请输入昵称', 'error'); return; }
   // Check duplicate
-  const existing = await dbSelect('admins', { eq: { username } });
+  const existing = await dbSelect('admins', { eq: { username }, cacheBypass: true });
   if (existing.length > 0) { showToast('该账号已存在', 'error'); return; }
   await dbInsert('admins', [{ username, password, nickname, is_master: false }]);
   cacheClearTable('admins');
