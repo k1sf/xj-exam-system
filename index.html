@@ -165,6 +165,15 @@ html.large-text .admin-tab{font-size:0.9rem;padding:14px 10px}
 .checkbox-label:hover{background:var(--primary-light)}
 .checkbox-label input[type="checkbox"]{accent-color:var(--primary)}
 
+/* ===== Enrollment Modal ===== */
+.enrollment-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px}
+.enrollment-modal-content{background:var(--card);border-radius:var(--radius-xl);width:100%;max-width:420px;max-height:90vh;overflow:hidden;display:flex;flex-direction:column}
+.enrollment-modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)}
+.enrollment-modal-title{font-weight:600;font-size:1rem}
+.enrollment-modal-close{background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text2);padding:0;line-height:1}
+.enrollment-modal-body{padding:20px;overflow-y:auto;flex:1}
+.enrollment-modal-footer{padding:16px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
+
 /* ===== Modal ===== */
 .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
 .modal-content{background:var(--card);border-radius:12px;width:100%;max-width:500px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.3)}
@@ -3407,14 +3416,14 @@ async function showCreateEnrollmentModal() {
   
   const modal = document.createElement('div');
   modal.id = 'enrollmentModal';
-  modal.className = 'modal-overlay';
+  modal.className = 'enrollment-modal-overlay';
   modal.innerHTML = `
-    <div class="modal-content" style="max-width:420px">
-      <div class="modal-header">
-        <div class="modal-title">📝 创建报名</div>
-        <button class="modal-close" onclick="closeEnrollmentModal()">×</button>
+    <div class="enrollment-modal-content">
+      <div class="enrollment-modal-header">
+        <div class="enrollment-modal-title">📝 创建报名</div>
+        <button class="enrollment-modal-close" onclick="closeEnrollmentModal()">×</button>
       </div>
-      <div class="modal-body" style="max-height:70vh;overflow-y:auto">
+      <div class="enrollment-modal-body">
         <div class="form-group">
           <label>报名标题 *</label>
           <input type="text" id="enrollTitle" placeholder="如：2024年春季考试报名" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:0.9rem">
@@ -3443,7 +3452,7 @@ async function showCreateEnrollmentModal() {
           <div style="font-size:0.8rem;color:var(--text2);margin-top:4px;margin-left:26px">开启后，学生报名成功立即可以登录学习</div>
         </div>
       </div>
-      <div class="modal-footer">
+      <div class="enrollment-modal-footer">
         <button class="admin-btn" onclick="closeEnrollmentModal()">取消</button>
         <button class="admin-btn primary" onclick="createEnrollment()">创建</button>
       </div>
@@ -3647,14 +3656,14 @@ async function showShareEnrollmentModal(configId) {
   
   const modal = document.createElement('div');
   modal.id = 'shareEnrollmentModal';
-  modal.className = 'modal-overlay';
+  modal.className = 'enrollment-modal-overlay';
   modal.innerHTML = `
-    <div class="modal-content" style="max-width:400px">
-      <div class="modal-header">
-        <div class="modal-title">📱 分享报名</div>
-        <button class="modal-close" onclick="closeShareEnrollmentModal()">×</button>
+    <div class="enrollment-modal-content">
+      <div class="enrollment-modal-header">
+        <div class="enrollment-modal-title">📱 分享报名</div>
+        <button class="enrollment-modal-close" onclick="closeShareEnrollmentModal()">×</button>
       </div>
-      <div class="modal-body" style="text-align:center">
+      <div class="enrollment-modal-body" style="text-align:center">
         <div style="margin-bottom:16px">
           <img src="${qrUrl}" alt="二维码" style="width:150px;height:150px;border-radius:8px;background:#fff" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
           <div style="display:none;width:150px;height:150px;background:#f0f0f0;border-radius:8px;align-items:center;justify-content:center;color:var(--text2);font-size:0.8rem">二维码加载失败</div>
@@ -3665,7 +3674,7 @@ async function showShareEnrollmentModal(configId) {
         </div>
         <button class="admin-btn primary" style="margin-top:12px" onclick="copyEnrollmentLink()">📋 复制链接</button>
       </div>
-      <div class="modal-footer">
+      <div class="enrollment-modal-footer">
         <button class="admin-btn" onclick="closeShareEnrollmentModal()">关闭</button>
       </div>
     </div>
