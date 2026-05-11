@@ -54,8 +54,8 @@ function validateTable(table) {
 }
 
 // ===== Security: API token =====
-// Generate a random token on server start; embed in HTML for browser; require in API calls
-const API_TOKEN = crypto.randomBytes(32).toString('hex');
+// Fixed token embedded in HTML and required in API calls
+const API_TOKEN = process.env.API_TOKEN || 'xj_exam_system_api_token_2024_fixed';
 
 // ===== Super Admin Password =====
 // This password is used for emergency recovery when main admin password is lost
@@ -377,8 +377,8 @@ async function handleApi(req, res, url) {
     }
     case 'verify-password': {
       // Verify password without updating session_id (for admin operations)
-      console.log('verify-password called:', { table: rawTable, username });
       const { table: rawTable, username, password } = params;
+      console.log('verify-password called:', { table: rawTable, username });
       const table = validateTable(rawTable);
       if (!username || !password) { sendJson(res, { error: 'Missing credentials' }, 400); return; }
       const sql = `SELECT * FROM ${table} WHERE "username" = ${escVal(username)}`;
