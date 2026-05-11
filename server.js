@@ -233,6 +233,61 @@ async function handleApi(req, res, url) {
       sendJson(res, { success: true });
       break;
     }
+    case 'register': {
+      // 学生报名接口（无需登录）
+      const { name, phone, cohort, level } = params;
+      if (!name || !phone || !level) {
+        sendJson(res, { success: false, error: '缺少必填字段' });
+        break;
+      }
+      // 检查手机号是否已报名
+      const checkSql = `SELECT id FROM registrations WHERE phone = ${escVal(phone)} AND status = 'pending'`;
+      const existing = await pool.query(checkSql);
+      if (existing.rows.length > 0) {
+        sendJson(res, { success: false, error: '该手机号已提交报名，请等待审核' });
+        break;
+      }
+      // 插入报名记录
+      const insertSql = `INSERT INTO registrations (name, phone, cohort, level, status) VALUES (${escVal(name)}, ${escVal(phone)}, ${escVal(cohort || '')}, ${escVal(level)}, 'pending') RETURNING id`;
+      const result = await pool.query(insertSql);
+      sendJson(res, { success: true, id: result.rows[0].id });
+      break;
+    }
+    case 'batch-register': {
+      // 批量导入报名记录（管理员）
+      const { rows } = params;
+      if (!Array.isArray(rows) || rows.length === 0) {
+        sendJson(res, { success: false, error: '没有要导入的数据' });
+        break;
+      }
+      // 检查手机号重复（只导入未报名的）
+      const phones = rows.map(r => r.phone).filter(Boolean);
+      if (phones.length === 0) {
+        sendJson(res, { success: false, error: '没有有效的手机号' });
+        break;
+      }
+      const placeholders = phones.map((p, i) => `$${i + 1}`).join(',');
+      const existSql = `SELECT phone FROM registrations WHERE phone IN (${placeholders})`;
+      const existing = await pool.query(existSql, phones);
+      const existPhones = new Set(existing.rows.map(r => r.phone));
+      const newRows = rows.filter(r => !existPhones.has(r.phone));
+      if (newRows.length === 0) {
+        sendJson(res, { success: true, imported: 0, skipped: rows.length, error: '所有手机号都已报名' });
+        break;
+      }
+      // 批量插入
+      let imported = 0;
+      for (const row of newRows) {
+        if (!row.name || !row.phone || !row.level) continue;
+        const insertSql = `INSERT INTO registrations (name, phone, cohort, level, status) VALUES (${escVal(row.name)}, ${escVal(row.phone)}, ${escVal(row.cohort || '')}, ${escVal(row.level)}, 'pending')`;
+        try {
+          await pool.query(insertSql);
+          imported++;
+        } catch(e) { console.error('Batch register error:', e.message); }
+      }
+      sendJson(res, { success: true, imported, skipped: rows.length - imported });
+      break;
+    }
     case 'select': {
       const { table: rawTable, filter, order, limit, offset, select, eq, gte, gt, lte, lt } = params;
       const table = validateTable(rawTable);
