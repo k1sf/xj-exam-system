@@ -3989,8 +3989,8 @@ async function toggleFav(qId) {
     const latest = records.reduce((a, b) => new Date(a.created_at || 0) > new Date(b.created_at || 0) ? a : b);
     const isFav = !latest.is_fav;
     if (latest.id) {
-      // 立即同步到数据库，不再延迟
-      await flushFavUpdateNow(latest.id, isFav);
+      // 使用缓冲机制，与其他操作一起批量同步
+      bufferFavUpdate(latest.id, isFav);
     } else {
       // Record is in buffer, update it locally
       latest.is_fav = isFav;
@@ -3999,24 +3999,10 @@ async function toggleFav(qId) {
     practiceAnswered[qId].isFav = isFav;
     if (isFav) addXp(XP_REWARDS.fav, '收藏');
   } else {
-    // 新建收藏记录，立即同步到数据库
-    try {
-      await dbInsert('records', [{ student_id: currentUser.username, question_id: qId, is_correct: false, user_answer: '', is_fav: true }]);
-      // 清除缓存确保数据一致
-      cacheRemoveAnywhere('records');
-    } catch(e) {
-      console.warn('创建收藏记录失败:', e);
-    }
-    if (!practiceAnswered[qId]) practiceAnswered[qId] = {};
-    practiceAnswered[qId].isFav = true;
-    addXp(XP_REWARDS.fav, '收藏');
-  }
-  // Local DOM update: only update the fav button, no full re-render
-  const favBtn = document.querySelector('.fav-btn');
-  if (favBtn) {
-    const isFav = practiceAnswered[qId]?.isFav;
-    favBtn.className = `btn fav-btn ${isFav ? 'active' : ''}`;
-    favBtn.textContent = isFav ? '⭐' : '☆';
+    // 新建收藏记录，进入缓冲区统一处理
+    const newRecord = { student_id: currentUser.username, question_id: qId, is_correct: false, user_answer: '', is_fav: true };
+    _recordBuffer.push(newRecord);
+    if (_recordBuffer.length >= RECORD_BUFFER_MAX_SIZE) flushRecordBuffer();
   }
 }
 
