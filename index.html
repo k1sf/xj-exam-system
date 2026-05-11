@@ -126,6 +126,16 @@ html.large-text .admin-tab{font-size:0.9rem;padding:14px 10px}
 .login-dots span.active{background:var(--primary);width:20px;border-radius:4px}
 .login-expired-msg{color:var(--error);font-size:0.85rem;text-align:center;margin-top:8px}
 
+/* ===== Enrollment Form ===== */
+.enroll-form{width:100%}
+.enroll-level-section{margin-top:20px}
+.enroll-level-title{font-size:0.9rem;color:var(--text2);margin-bottom:12px;font-weight:500}
+.enroll-level-options{display:flex;flex-direction:column;gap:10px}
+.enroll-level-options .radio-label{display:flex;align-items:center;padding:10px 12px;background:var(--bg2);border-radius:8px;cursor:pointer;transition:all 0.2s;border:2px solid transparent}
+.enroll-level-options .radio-label:hover{border-color:var(--primary)}
+.enroll-level-options .radio-label input[type="radio"]{margin-right:10px;accent-color:var(--primary)}
+.enroll-level-options .radio-label.selected{border-color:var(--primary);background:var(--primary-light)}
+
 /* ===== Admin Layout ===== */
 .admin-page{min-height:100vh;padding-bottom:20px}
 .admin-topbar{background:var(--card);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50}
@@ -140,6 +150,30 @@ html.large-text .admin-tab{font-size:0.9rem;padding:14px 10px}
 .admin-tab::after{content:'';position:absolute;bottom:-2px;left:50%;width:0;height:3px;background:var(--primary);border-radius:2px;transition:all 0.3s cubic-bezier(0.16,1,0.3,1);transform:translateX(-50%)}
 .admin-tab.active::after{width:60%}
 .admin-content{padding:16px}
+
+/* ===== Admin Buttons ===== */
+.admin-btn{display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:0.8rem;cursor:pointer;transition:all 0.2s;white-space:nowrap}
+.admin-btn:hover{background:var(--bg2);border-color:var(--primary);color:var(--primary)}
+.admin-btn.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
+.admin-btn.primary:hover{background:#357abd}
+.admin-btn.danger{background:var(--error);color:#fff;border-color:var(--error)}
+.admin-btn.danger:hover{opacity:0.9}
+
+/* ===== Checkbox Grid ===== */
+.checkbox-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px}
+.checkbox-label{display:flex;align-items:center;gap:6px;padding:8px 10px;background:var(--bg2);border-radius:6px;cursor:pointer;font-size:0.85rem;transition:all 0.2s}
+.checkbox-label:hover{background:var(--primary-light)}
+.checkbox-label input[type="checkbox"]{accent-color:var(--primary)}
+
+/* ===== Modal ===== */
+.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
+.modal-content{background:var(--card);border-radius:12px;width:100%;max-width:500px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.3)}
+.modal-header{display:flex;justify-content:space-between;align-items:center;padding:16px;border-bottom:1px solid var(--border)}
+.modal-title{font-weight:600;font-size:1rem}
+.modal-close{background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text2);padding:0;line-height:1}
+.modal-close:hover{color:var(--text)}
+.modal-body{flex:1;overflow-y:auto;padding:16px}
+.modal-footer{display:flex;justify-content:flex-end;gap:8px;padding:16px;border-top:1px solid var(--border)}
 
 /* ===== Student Layout ===== */
 .student-page{min-height:100vh;padding-bottom:70px}
@@ -1989,6 +2023,7 @@ function renderAdmin() {
         <button class="admin-tab" data-tab="questions" onclick="switchAdminTab('questions')">📚 题库</button>
         <button class="admin-tab" data-tab="exams" onclick="switchAdminTab('exams')">📅 考试</button>
         <button class="admin-tab" data-tab="quickexam" onclick="switchAdminTab('quickexam')">⚡ 快考</button>
+        <button class="admin-tab" data-tab="enrollment" onclick="switchAdminTab('enrollment')">📋 报名</button>
         <button class="admin-tab" data-tab="learning" onclick="switchAdminTab('learning')">📖 学情</button>
         <button class="admin-tab" data-tab="settings" onclick="switchAdminTab('settings')">⚙️ 设置</button>
       </div>
@@ -2009,6 +2044,7 @@ function switchAdminTab(tab) {
       case 'questions': renderAdminQuestions(); break;
       case 'exams': renderAdminExams(); break;
       case 'quickexam': renderQuickExam(); break;
+      case 'enrollment': renderAdminEnrollment(); break;
       case 'learning': renderLearning(); break;
       case 'settings': renderAdminSettings(); break;
     }
@@ -3317,6 +3353,434 @@ let learningCohort = '';
 let learningMode = 'day';   // day/week/month
 let learningDate = '';       // selected date (yyyy-mm-dd)
 let learningRankData = [];   // sorted data for export
+
+// ===== Admin Enrollment =====
+let _enrollmentConfigs = [];
+let _currentEnrollmentConfig = null;
+let _enrollmentList = [];
+let _enrollmentFilter = { level: '', status: '', search: '' };
+
+async function renderAdminEnrollment() {
+  try {
+    const response = await fetch('/api/enroll-config/list', {
+      headers: { 'X-API-Token': API_TOKEN }
+    });
+    _enrollmentConfigs = await response.json();
+  } catch(e) {
+    _enrollmentConfigs = [];
+  }
+  
+  const configsHtml = _enrollmentConfigs.map(c => {
+    const statusColor = c.status === 'active' ? '#28a745' : '#dc3545';
+    const statusText = c.status === 'active' ? '进行中' : '已关闭';
+    const autoSyncBadge = c.auto_sync ? '<span style="background:#28a745;color:#fff;padding:2px 6px;border-radius:4px;font-size:0.7rem;margin-left:6px">自动同步</span>' : '<span style="background:#999;color:#fff;padding:2px 6px;border-radius:4px;font-size:0.7rem;margin-left:6px">手动导入</span>';
+    const levelsStr = (c.levels || []).map(l => LEVEL_ICONS[l] || '').join(' ');
+    const timeRange = [];
+    if (c.start_time) timeRange.push(fmtLocal(c.start_time));
+    if (c.end_time) timeRange.push(fmtLocal(c.end_time));
+    return `
+      <div class="card" style="margin-bottom:12px;cursor:pointer" onclick="openEnrollmentDetail(${c.id})">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span>📋 ${escHtml(c.title)}</span>
+          <span style="color:${statusColor};font-size:0.8rem">● ${statusText}${autoSyncBadge}</span>
+        </div>
+        <div style="font-size:0.85rem;color:var(--text2);margin-top:6px">
+          <div>级别：${levelsStr} ${escHtml((c.levels || []).join(', '))}</div>
+          ${timeRange.length ? `<div>时间：${timeRange.join(' ~ ')}</div>` : ''}
+          <div style="margin-top:6px">报名：${c.enrollment_count || 0}人 | 已导入：${c.approved_count || 0}人 | 待审核：${(c.enrollment_count || 0) - (c.approved_count || 0)}人</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  
+  document.getElementById('adminContent').innerHTML = `
+    <div class="card" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
+      <div style="font-weight:600">📋 报名管理</div>
+      <button class="admin-btn primary" onclick="showCreateEnrollmentModal()">+ 创建报名</button>
+    </div>
+    ${configsHtml || '<div style="text-align:center;padding:40px;color:var(--text2)">暂无报名活动</div>'}
+  `;
+}
+
+async function showCreateEnrollmentModal() {
+  const levelsHtml = LEVELS.map(l => `<label class="checkbox-label"><input type="checkbox" name="enroll_level" value="${escHtml(l)}"> ${LEVEL_ICONS[l]||''} ${escHtml(l)}</label>`).join('');
+  
+  const modal = document.createElement('div');
+  modal.id = 'enrollmentModal';
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal-content" style="max-width:420px">
+      <div class="modal-header">
+        <div class="modal-title">📝 创建报名</div>
+        <button class="modal-close" onclick="closeEnrollmentModal()">×</button>
+      </div>
+      <div class="modal-body" style="max-height:70vh;overflow-y:auto">
+        <div class="form-group">
+          <label>报名标题 *</label>
+          <input type="text" id="enrollTitle" placeholder="如：2024年春季考试报名" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:0.9rem">
+        </div>
+        <div class="form-group">
+          <label>允许报名级别 *</label>
+          <div class="checkbox-grid">${levelsHtml}</div>
+        </div>
+        <div class="form-group">
+          <label>班级/期次（可选）</label>
+          <input type="text" id="enrollCohort" placeholder="如：2024春季班" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:0.9rem">
+        </div>
+        <div class="form-group">
+          <label>报名开始时间（可选）</label>
+          <input type="datetime-local" id="enrollStartTime" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:0.9rem">
+        </div>
+        <div class="form-group">
+          <label>报名截止时间</label>
+          <input type="datetime-local" id="enrollEndTime" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:0.9rem">
+        </div>
+        <div class="form-group">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="enrollAutoSync" style="width:18px;height:18px;accent-color:var(--primary)">
+            <span>自动同步到学生列表</span>
+          </label>
+          <div style="font-size:0.8rem;color:var(--text2);margin-top:4px;margin-left:26px">开启后，学生报名成功立即可以登录学习</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="admin-btn" onclick="closeEnrollmentModal()">取消</button>
+        <button class="admin-btn primary" onclick="createEnrollment()">创建</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeEnrollmentModal(); });
+}
+
+function closeEnrollmentModal() {
+  const modal = document.getElementById('enrollmentModal');
+  if (modal) modal.remove();
+}
+
+async function createEnrollment() {
+  const title = document.getElementById('enrollTitle').value.trim();
+  const levelInputs = document.querySelectorAll('input[name="enroll_level"]:checked');
+  const levels = Array.from(levelInputs).map(i => i.value);
+  const cohort = document.getElementById('enrollCohort').value.trim();
+  const startTime = document.getElementById('enrollStartTime').value;
+  const endTime = document.getElementById('enrollEndTime').value;
+  const autoSync = document.getElementById('enrollAutoSync').checked;
+  
+  if (!title) { showToast('请输入报名标题', 'error'); return; }
+  if (!levels.length) { showToast('请选择至少一个级别', 'error'); return; }
+  if (!endTime) { showToast('请设置报名截止时间', 'error'); return; }
+  
+  try {
+    const response = await fetch('/api/enroll-config/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
+      body: JSON.stringify({ title, levels, cohort, start_time: startTime || null, end_time: endTime, auto_sync: autoSync, created_by: currentAdmin?.id })
+    });
+    const result = await response.json();
+    if (result.error) { showToast(result.error, 'error'); return; }
+    showToast('创建成功', 'success');
+    closeEnrollmentModal();
+    renderAdminEnrollment();
+  } catch(e) {
+    showToast('创建失败：' + e.message, 'error');
+  }
+}
+
+async function openEnrollmentDetail(configId) {
+  try {
+    const [configRes, listRes] = await Promise.all([
+      fetch(`/api/enroll-config/get?id=${configId}`, { headers: { 'X-API-Token': API_TOKEN } }),
+      fetch(`/api/enroll-list?config_id=${configId}`, { headers: { 'X-API-Token': API_TOKEN } })
+    ]);
+    _currentEnrollmentConfig = await configRes.json();
+    _enrollmentList = await listRes.json();
+  } catch(e) {
+    _currentEnrollmentConfig = null;
+    _enrollmentList = [];
+  }
+  
+  if (!_currentEnrollmentConfig || !_currentEnrollmentConfig.id) {
+    showToast('加载失败', 'error');
+    return;
+  }
+  
+  renderEnrollmentDetailPage();
+}
+
+async function renderEnrollmentDetailPage() {
+  const c = _currentEnrollmentConfig;
+  const statusColor = c.status === 'active' ? '#28a745' : '#dc3545';
+  const statusText = c.status === 'active' ? '进行中' : '已关闭';
+  const levelsStr = (c.levels || []).map(l => `${LEVEL_ICONS[l]||''}${escHtml(l)}`).join(' ');
+  
+  // 生成分享链接
+  const enrollUrl = `${window.location.origin}/#enroll=${c.id}`;
+  
+  document.getElementById('adminContent').innerHTML = `
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <button class="admin-btn" onclick="renderAdminEnrollment()">← 返回</button>
+        <div style="display:flex;gap:8px">
+          <button class="admin-btn" onclick="showShareEnrollmentModal(${c.id})">📱 分享</button>
+          ${c.status === 'active' ? `<button class="admin-btn" onclick="toggleEnrollmentStatus(${c.id}, 'closed')">🔒 关闭</button>` : `<button class="admin-btn primary" onclick="toggleEnrollmentStatus(${c.id}, 'active')">🔓 开启</button>`}
+          <button class="admin-btn danger" onclick="deleteEnrollment(${c.id})">🗑 删除</button>
+        </div>
+      </div>
+      <div class="card-title">📋 ${escHtml(c.title)}</div>
+      <div style="font-size:0.85rem;color:var(--text2);margin-top:8px">
+        <div>状态：<span style="color:${statusColor}">● ${statusText}</span></div>
+        <div>级别：${levelsStr}</div>
+        ${c.cohort ? `<div>班级：${escHtml(c.cohort)}</div>` : ''}
+        <div style="margin-top:8px;padding:8px;background:var(--bg2);border-radius:6px">
+          报名：${c.enrollment_count || 0}人 | 已导入：${c.approved_count || 0}人 | 待审核：${(c.enrollment_count || 0) - (c.approved_count || 0)}人
+        </div>
+      </div>
+    </div>
+    
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div style="font-weight:600">报名列表</div>
+        <div style="display:flex;gap:8px">
+          <button class="admin-btn" onclick="importEnrollments()">📥 一键导入待审核</button>
+          <button class="admin-btn" onclick="exportEnrollmentCSV()">📊 导出CSV</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+        <select id="enrollLevelFilter" onchange="filterEnrollmentList()" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem">
+          <option value="">全部级别</option>
+          ${(c.levels || []).map(l => `<option value="${escHtml(l)}">${escHtml(l)}</option>`).join('')}
+        </select>
+        <select id="enrollStatusFilter" onchange="filterEnrollmentList()" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem">
+          <option value="">全部状态</option>
+          <option value="pending">待审核</option>
+          <option value="approved">已导入</option>
+        </select>
+        <input type="text" id="enrollSearch" placeholder="搜索姓名/手机号" onkeyup="filterEnrollmentList()" style="flex:1;min-width:120px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem">
+      </div>
+      <div style="max-height:400px;overflow-y:auto">
+        ${renderEnrollmentTable()}
+      </div>
+    </div>
+  `;
+}
+
+function renderEnrollmentTable() {
+  const filtered = getFilteredEnrollments();
+  if (!filtered.length) return '<div style="text-align:center;padding:20px;color:var(--text2)">暂无报名记录</div>';
+  
+  return `
+    <table style="width:100%;border-collapse:collapse;font-size:0.85rem">
+      <thead>
+        <tr style="background:var(--bg2)">
+          <th style="padding:8px;text-align:left">姓名</th>
+          <th style="padding:8px;text-align:left">手机号</th>
+          <th style="padding:8px;text-align:left">级别</th>
+          <th style="padding:8px;text-align:left">班级</th>
+          <th style="padding:8px;text-align:left">时间</th>
+          <th style="padding:8px;text-align:left">状态</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${filtered.map(e => {
+          const statusBadge = e.status === 'approved' 
+            ? '<span style="background:#28a745;color:#fff;padding:2px 6px;border-radius:4px;font-size:0.7rem">已导入</span>'
+            : '<span style="background:#ffc107;color:#000;padding:2px 6px;border-radius:4px;font-size:0.7rem">待审核</span>';
+          return `
+            <tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:8px">${escHtml(e.name)}</td>
+              <td style="padding:8px">${escHtml(e.phone)}</td>
+              <td style="padding:8px">${LEVEL_ICONS[e.level]||''}${escHtml(e.level)}</td>
+              <td style="padding:8px">${escHtml(e.cohort || '-')}</td>
+              <td style="padding:8px">${fmtLocalShort(e.created_at)}</td>
+              <td style="padding:8px">${statusBadge}</td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function getFilteredEnrollments() {
+  const level = _enrollmentFilter.level;
+  const status = _enrollmentFilter.status;
+  const search = _enrollmentFilter.search.toLowerCase();
+  
+  return _enrollmentList.filter(e => {
+    if (level && e.level !== level) return false;
+    if (status && e.status !== status) return false;
+    if (search && !e.name.toLowerCase().includes(search) && !e.phone.includes(search)) return false;
+    return true;
+  });
+}
+
+function filterEnrollmentList() {
+  _enrollmentFilter.level = document.getElementById('enrollLevelFilter').value;
+  _enrollmentFilter.status = document.getElementById('enrollStatusFilter').value;
+  _enrollmentFilter.search = document.getElementById('enrollSearch').value.trim();
+  
+  const tbody = document.querySelector('#adminContent table tbody');
+  if (tbody) {
+    const filtered = getFilteredEnrollments();
+    tbody.innerHTML = filtered.map(e => {
+      const statusBadge = e.status === 'approved' 
+        ? '<span style="background:#28a745;color:#fff;padding:2px 6px;border-radius:4px;font-size:0.7rem">已导入</span>'
+        : '<span style="background:#ffc107;color:#000;padding:2px 6px;border-radius:4px;font-size:0.7rem">待审核</span>';
+      return `
+        <tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:8px">${escHtml(e.name)}</td>
+          <td style="padding:8px">${escHtml(e.phone)}</td>
+          <td style="padding:8px">${LEVEL_ICONS[e.level]||''}${escHtml(e.level)}</td>
+          <td style="padding:8px">${escHtml(e.cohort || '-')}</td>
+          <td style="padding:8px">${fmtLocalShort(e.created_at)}</td>
+          <td style="padding:8px">${statusBadge}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+}
+
+async function showShareEnrollmentModal(configId) {
+  const enrollUrl = `${window.location.origin}/#enroll=${configId}`;
+  
+  const modal = document.createElement('div');
+  modal.id = 'shareEnrollmentModal';
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal-content" style="max-width:400px">
+      <div class="modal-header">
+        <div class="modal-title">📱 分享报名</div>
+        <button class="modal-close" onclick="closeShareEnrollmentModal()">×</button>
+      </div>
+      <div class="modal-body" style="text-align:center">
+        <div style="margin-bottom:16px">
+          <div id="enrollQRCode" style="display:inline-block;padding:8px;background:#fff;border-radius:8px"></div>
+        </div>
+        <div style="font-size:0.85rem;color:var(--text2);margin-bottom:12px">报名链接（点击复制）</div>
+        <div style="background:var(--bg2);padding:12px;border-radius:8px;word-break:break-all;font-size:0.85rem;cursor:pointer" onclick="copyEnrollmentLink('${escHtml(enrollUrl)}')">
+          ${escHtml(enrollUrl)}
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="admin-btn" onclick="closeShareEnrollmentModal()">关闭</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeShareEnrollmentModal(); });
+  
+  // 生成二维码
+  const qrContainer = document.getElementById('enrollQRCode');
+  if (qrContainer && typeof QRCode !== 'undefined') {
+    qrContainer.innerHTML = '';
+    new QRCode(qrContainer, { text: enrollUrl, width: 150, height: 150 });
+  } else {
+    qrContainer.innerHTML = '<div style="width:150px;height:150px;background:#f0f0f0;display:flex;align-items:center;justify-content:center">请截图分享</div>';
+  }
+}
+
+function closeShareEnrollmentModal() {
+  const modal = document.getElementById('shareEnrollmentModal');
+  if (modal) modal.remove();
+}
+
+function copyEnrollmentLink(url) {
+  navigator.clipboard.writeText(url).then(() => {
+    showToast('链接已复制', 'success');
+  }).catch(() => {
+    showToast('复制失败', 'error');
+  });
+}
+
+async function toggleEnrollmentStatus(configId, status) {
+  try {
+    const response = await fetch('/api/enroll-config/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
+      body: JSON.stringify({ id: configId, status })
+    });
+    const result = await response.json();
+    if (result.error) { showToast(result.error, 'error'); return; }
+    showToast(status === 'active' ? '已开启' : '已关闭', 'success');
+    openEnrollmentDetail(configId);
+  } catch(e) {
+    showToast('操作失败：' + e.message, 'error');
+  }
+}
+
+async function deleteEnrollment(configId) {
+  if (!confirm('确定删除此报名？报名记录将一并删除！')) return;
+  try {
+    const response = await fetch('/api/enroll-config/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
+      body: JSON.stringify({ id: configId })
+    });
+    const result = await response.json();
+    if (result.error) { showToast(result.error, 'error'); return; }
+    showToast('删除成功', 'success');
+    renderAdminEnrollment();
+  } catch(e) {
+    showToast('删除失败：' + e.message, 'error');
+  }
+}
+
+async function importEnrollments() {
+  const pending = _enrollmentList.filter(e => e.status === 'pending');
+  if (!pending.length) {
+    showToast('没有待审核的报名', 'info');
+    return;
+  }
+  
+  if (!confirm(`确定导入 ${pending.length} 名待审核学生到学生列表？\n默认密码为 123456`)) return;
+  
+  try {
+    const response = await fetch('/api/enroll-import-students', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
+      body: JSON.stringify({ config_id: _currentEnrollmentConfig.id })
+    });
+    const result = await response.json();
+    if (result.error) { showToast(result.error, 'error'); return; }
+    showToast(`成功导入 ${result.imported} 人，跳过 ${result.skipped} 人`, 'success');
+    if (result.errors?.length) {
+      console.error('导入错误：', result.errors);
+    }
+    // 刷新列表
+    openEnrollmentDetail(_currentEnrollmentConfig.id);
+  } catch(e) {
+    showToast('导入失败：' + e.message, 'error');
+  }
+}
+
+function exportEnrollmentCSV() {
+  const filtered = getFilteredEnrollments();
+  if (!filtered.length) {
+    showToast('没有数据可导出', 'info');
+    return;
+  }
+  
+  const headers = ['姓名', '手机号', '级别', '班级', '报名时间', '状态'];
+  const rows = filtered.map(e => [
+    e.name,
+    e.phone,
+    e.level,
+    e.cohort || '',
+    fmtLocal(e.created_at),
+    e.status === 'approved' ? '已导入' : '待审核'
+  ]);
+  
+  const csv = [headers.join('\t'), ...rows.map(r => r.join('\t'))].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `报名列表_${_currentEnrollmentConfig.title}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('导出成功', 'success');
+}
 
 
 async function renderLearning() {
@@ -5308,6 +5772,13 @@ async function changePassword() {
 // ===== Initialize =====
 async function init() {
   initTheme(); // Ensure theme is applied before any rendering
+  // Check for enrollment URL: #enroll=configId
+  const enrollMatch = location.hash.match(/^#enroll=(\d+)$/);
+  if (enrollMatch) {
+    const configId = parseInt(enrollMatch[1]);
+    renderEnrollmentPage(configId);
+    return;
+  }
   // Check for quick exam URL: #quick=examId
   const quickMatch = location.hash.match(/^#quick=(\d+)$/);
   if (quickMatch) {
@@ -5351,6 +5822,166 @@ async function init() {
     else { renderStudent(); startSessionCheck(); }
   } else {
     renderLogin();
+  }
+}
+
+// ===== Enrollment Page (Student) =====
+async function renderEnrollmentPage(configId) {
+  const app = document.getElementById('app');
+  app.innerHTML = `<div class="login-page"><div class="login-card" style="text-align:center;padding:40px"><div style="font-size:2rem;margin-bottom:12px">⏳</div><h3>加载中...</h3></div></div>`;
+  
+  try {
+    const response = await fetch(`/api/enroll-config/get?id=${configId}`, {
+      headers: { 'X-API-Token': API_TOKEN }
+    });
+    const config = await response.json();
+    
+    if (!config || !config.id) {
+      app.innerHTML = `<div class="login-page"><div class="login-card" style="text-align:center;padding:40px"><div style="font-size:2rem;margin-bottom:12px">❌</div><h3>报名不存在</h3><p style="color:var(--text2);margin-top:8px">该报名可能已被删除或关闭</p></div></div>`;
+      return;
+    }
+    
+    if (config.status !== 'active') {
+      app.innerHTML = `<div class="login-page"><div class="login-card" style="text-align:center;padding:40px"><div style="font-size:2rem;margin-bottom:12px">🔒</div><h3>报名已关闭</h3><p style="color:var(--text2);margin-top:8px">该报名已停止，请联系管理员</p></div></div>`;
+      return;
+    }
+    
+    const now = Date.now();
+    if (config.start_time && new Date(config.start_time).getTime() > now) {
+      app.innerHTML = `<div class="login-page"><div class="login-card" style="text-align:center;padding:40px"><div style="font-size:2rem;margin-bottom:12px">⏳</div><h3>报名尚未开始</h3><p style="color:var(--text2);margin-top:8px">开始时间：${escHtml(fmtLocal(config.start_time))}</p></div></div>`;
+      return;
+    }
+    if (config.end_time && new Date(config.end_time).getTime() < now) {
+      app.innerHTML = `<div class="login-page"><div class="login-card" style="text-align:center;padding:40px"><div style="font-size:2rem;margin-bottom:12px">⏰</div><h3>报名已截止</h3><p style="color:var(--text2);margin-top:8px">截止时间：${escHtml(fmtLocal(config.end_time))}</p></div></div>`;
+      return;
+    }
+    
+    const levels = config.levels || [];
+    const levelOptions = levels.map(l => `<label class="radio-label"><input type="radio" name="level" value="${escHtml(l)}" required> ${LEVEL_ICONS[l]||''} ${escHtml(l)}</label>`).join('');
+    const timeRange = [];
+    if (config.start_time) timeRange.push(`开始：${fmtLocal(config.start_time)}`);
+    if (config.end_time) timeRange.push(`截止：${fmtLocal(config.end_time)}`);
+    
+    app.innerHTML = `
+      <div class="login-page">
+        <div class="login-brand">
+          <div class="login-icon">📝</div>
+          <div class="login-title">${escHtml(config.title)}</div>
+          ${timeRange.length ? `<div class="login-subtitle">${timeRange.join(' | ')}</div>` : ''}
+        </div>
+        <div class="login-card">
+          <div class="enroll-form">
+            <div class="login-input-group">
+              <span class="icon">👤</span>
+              <input type="text" id="enrollName" placeholder="请输入姓名（必填）" autocomplete="name" required>
+            </div>
+            <div class="login-input-group">
+              <span class="icon">📱</span>
+              <input type="tel" id="enrollPhone" placeholder="请输入手机号（必填）" autocomplete="tel" maxlength="11" required>
+            </div>
+            <div class="enroll-level-section">
+              <div class="enroll-level-title">报考级别（必选）</div>
+              <div class="enroll-level-options">${levelOptions}</div>
+            </div>
+            ${config.cohort ? `<div class="login-input-group"><span class="icon">🏫</span><input type="text" id="enrollCohort" placeholder="班级/期次（选填）" value="${escHtml(config.cohort)}"></div>` : '<div class="login-input-group"><span class="icon">🏫</span><input type="text" id="enrollCohort" placeholder="班级/期次（选填）"></div>'}
+            <button class="login-btn" id="enrollSubmitBtn" onclick="submitEnrollment(${config.id}, ${config.auto_sync})">提交报名</button>
+            <div class="login-hint">请确保填写信息真实有效</div>
+          </div>
+        </div>
+      </div>
+    `;
+  } catch(e) {
+    app.innerHTML = `<div class="login-page"><div class="login-card" style="text-align:center;padding:40px"><div style="font-size:2rem;margin-bottom:12px">❌</div><h3>加载失败</h3><p style="color:var(--text2);margin-top:8px">${escHtml(e.message)}</p></div></div>`;
+  }
+}
+
+async function submitEnrollment(configId, autoSync) {
+  const btn = document.getElementById('enrollSubmitBtn');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  btn.textContent = '提交中...';
+  
+  const name = document.getElementById('enrollName').value.trim();
+  const phone = document.getElementById('enrollPhone').value.trim();
+  const cohort = document.getElementById('enrollCohort')?.value.trim() || '';
+  const levelInputs = document.getElementsByName('level');
+  let level = '';
+  for (const input of levelInputs) {
+    if (input.checked) { level = input.value; break; }
+  }
+  
+  if (!name) { showToast('请输入姓名', 'error'); btn.disabled = false; btn.textContent = '提交报名'; return; }
+  if (!phone || !/^1\d{10}$/.test(phone)) { showToast('请输入正确的手机号', 'error'); btn.disabled = false; btn.textContent = '提交报名'; return; }
+  if (!level) { showToast('请选择报考级别', 'error'); btn.disabled = false; btn.textContent = '提交报名'; return; }
+  
+  try {
+    const response = await fetch('/api/enroll-submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
+      body: JSON.stringify({ config_id: configId, name, phone, level, cohort })
+    });
+    const result = await response.json();
+    
+    if (result.error) {
+      showToast(result.error, 'error');
+      btn.disabled = false;
+      btn.textContent = '提交报名';
+      return;
+    }
+    
+    if (autoSync) {
+      // 自动同步模式：显示登录提示
+      document.getElementById('app').innerHTML = `
+        <div class="login-page">
+          <div class="login-card" style="text-align:center;padding:40px">
+            <div style="font-size:3rem;margin-bottom:16px">✅</div>
+            <h3 style="color:var(--primary)">报名成功！</h3>
+            <div style="margin-top:20px;text-align:left;background:var(--bg2);border-radius:8px;padding:16px;font-size:0.9rem">
+              <div style="margin-bottom:8px"><strong>姓名：</strong>${escHtml(name)}</div>
+              <div style="margin-bottom:8px"><strong>级别：</strong>${escHtml(level)}</div>
+              <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+                <div style="color:var(--primary);font-weight:600;margin-bottom:8px">📌 登录信息</div>
+                <div>账号：${phone}</div>
+                <div>密码：123456</div>
+              </div>
+            </div>
+            <button class="login-btn" style="margin-top:20px" onclick="location.href='/'">3秒后跳转登录页... <span id="countdown">3</span></button>
+          </div>
+        </div>
+      `;
+      let count = 3;
+      const timer = setInterval(() => {
+        count--;
+        const el = document.getElementById('countdown');
+        if (el) el.textContent = count;
+        if (count <= 0) {
+          clearInterval(timer);
+          location.href = '/';
+        }
+      }, 1000);
+    } else {
+      // 非自动同步模式：显示等待审核提示
+      document.getElementById('app').innerHTML = `
+        <div class="login-page">
+          <div class="login-card" style="text-align:center;padding:40px">
+            <div style="font-size:3rem;margin-bottom:16px">✅</div>
+            <h3 style="color:var(--primary)">报名成功！</h3>
+            <div style="margin-top:20px;text-align:left;background:var(--bg2);border-radius:8px;padding:16px;font-size:0.9rem">
+              <div style="margin-bottom:8px"><strong>姓名：</strong>${escHtml(name)}</div>
+              <div style="margin-bottom:8px"><strong>级别：</strong>${escHtml(level)}</div>
+            </div>
+            <div style="margin-top:16px;padding:12px;background:#fff3cd;border-radius:8px;color:#856404;font-size:0.85rem">
+              您的报名信息已提交，<br>请等待管理员审核后即可登录学习。
+            </div>
+            <button class="login-btn" style="margin-top:20px" onclick="location.href='/'">返回首页</button>
+          </div>
+        </div>
+      `;
+    }
+  } catch(e) {
+    showToast('提交失败：' + e.message, 'error');
+    btn.disabled = false;
+    btn.textContent = '提交报名';
   }
 }
 

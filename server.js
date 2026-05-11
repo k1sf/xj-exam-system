@@ -47,7 +47,7 @@ const MIMES = {
 };
 
 // ===== Security: table whitelist =====
-const ALLOWED_TABLES = ['students', 'questions', 'records', 'exams', 'admins'];
+const ALLOWED_TABLES = ['students', 'questions', 'records', 'exams', 'admins', 'enroll_configs', 'enrollments'];
 function validateTable(table) {
   if (!ALLOWED_TABLES.includes(table)) throw new Error('Invalid table: ' + table);
   return table;
@@ -146,7 +146,8 @@ function escVal(v, colType) {
 
 const ARRAY_COLUMNS = {
   'questions': { 'tags': 'text_array', 'options': 'jsonb' },
-  'exams': { 'question_ids': 'bigint_array' }
+  'exams': { 'question_ids': 'bigint_array' },
+  'enroll_configs': { 'levels': 'text_array' }
 };
 
 function getColType(table, col) {
@@ -186,7 +187,17 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     try {
-      await handleApi(req, res, url);
+      // Parse body first for all API calls
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      const params = body ? JSON.parse(body) : {};
+      
+      // Handle enrollment API separately
+      if (url.pathname.startsWith('/api/enroll')) {
+        await handleEnrollApi(req, res, url, params);
+        return;
+      }
+      await handleApi(req, res, url, params);
     } catch(e) {
       console.error('API Error:', e.message);
       sendJson(res, { error: e.message }, 500);
@@ -214,11 +225,8 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
-async function handleApi(req, res, url) {
-  let body = '';
-  for await (const chunk of req) body += chunk;
-  const params = body ? JSON.parse(body) : {};
-
+async function handleApi(req, res, url, sharedParams) {
+  const params = sharedParams || {};
   const route = url.pathname.replace('/api/', '');
 
   switch(route) {
@@ -699,6 +707,248 @@ async function handleApi(req, res, url) {
       } catch(e) {
         sendJson(res, { error: 'Import failed: ' + e.message }, 500);
       }
+      break;
+    }
+    default:
+      sendJson(res, { error: 'Unknown route: ' + route }, 404);
+  }
+}
+
+// ===== Enrollment API =====
+async function handleEnrollApi(req, res, url, params) {
+  // 支持格式：/api/enroll-config/xxx, /api/enroll/xxx, /api/enroll-xxx
+  let pathname = url.pathname.replace('/api/', '');
+  // 统一转换 enroll-config/xxx -> config/list 格式
+  if (pathname.startsWith('enroll-config/')) {
+    pathname = pathname.replace('enroll-config/', 'config/');
+  } else if (pathname.startsWith('enroll-')) {
+    pathname = pathname.replace('enroll-', '');
+  }
+  const route = pathname;
+  
+  switch(route) {
+    case 'config/list': {
+      // 查询报名配置列表
+      const result = await pool.query(
+        `SELECT ec.*, 
+          (SELECT COUNT(*) FROM enrollments WHERE config_id = ec.id) as enrollment_count,
+          (SELECT COUNT(*) FROM enrollments WHERE config_id = ec.id AND status = 'approved') as approved_count
+         FROM enroll_configs ec 
+         ORDER BY ec.created_at DESC`
+      );
+      sendJson(res, result.rows);
+      break;
+    }
+    case 'config/create': {
+      // 创建报名配置
+      const { title, levels, cohort, start_time, end_time, auto_sync, created_by } = params;
+      if (!title) { sendJson(res, { error: '缺少标题' }, 400); return; }
+      if (!levels || !levels.length) { sendJson(res, { error: '请选择至少一个级别' }, 400); return; }
+      
+      const result = await pool.query(
+        `INSERT INTO enroll_configs (title, levels, cohort, start_time, end_time, auto_sync, created_by) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        [title, levels, cohort || null, start_time || null, end_time || null, auto_sync || false, created_by || null]
+      );
+      sendJson(res, result.rows[0]);
+      break;
+    }
+    case 'config/update': {
+      // 更新报名配置
+      const { id, title, levels, cohort, start_time, end_time, auto_sync, status } = params;
+      if (!id) { sendJson(res, { error: '缺少ID' }, 400); return; }
+      
+      const updates = [];
+      const values = [];
+      let idx = 1;
+      if (title !== undefined) { updates.push(`title = $${idx++}`); values.push(title); }
+      if (levels !== undefined) { updates.push(`levels = $${idx++}`); values.push(levels); }
+      if (cohort !== undefined) { updates.push(`cohort = $${idx++}`); values.push(cohort); }
+      if (start_time !== undefined) { updates.push(`start_time = $${idx++}`); values.push(start_time); }
+      if (end_time !== undefined) { updates.push(`end_time = $${idx++}`); values.push(end_time); }
+      if (auto_sync !== undefined) { updates.push(`auto_sync = $${idx++}`); values.push(auto_sync); }
+      if (status !== undefined) { updates.push(`status = $${idx++}`); values.push(status); }
+      
+      if (updates.length === 0) { sendJson(res, { error: '没有更新字段' }, 400); return; }
+      
+      values.push(id);
+      const result = await pool.query(
+        `UPDATE enroll_configs SET ${updates.join(',')} WHERE id = $${idx} RETURNING *`,
+        values
+      );
+      sendJson(res, result.rows[0]);
+      break;
+    }
+    case 'config/delete': {
+      // 删除报名配置（级联删除报名记录）
+      const { id } = params;
+      if (!id) { sendJson(res, { error: '缺少ID' }, 400); return; }
+      await pool.query('DELETE FROM enroll_configs WHERE id = $1', [id]);
+      sendJson(res, { success: true });
+      break;
+    }
+    case 'config/get': {
+      // 获取单个报名配置
+      const { id } = params;
+      if (!id) { sendJson(res, { error: '缺少ID' }, 400); return; }
+      const result = await pool.query(
+        `SELECT ec.*, 
+          (SELECT COUNT(*) FROM enrollments WHERE config_id = ec.id) as enrollment_count,
+          (SELECT COUNT(*) FROM enrollments WHERE config_id = ec.id AND status = 'approved') as approved_count
+         FROM enroll_configs ec WHERE ec.id = $1`,
+        [id]
+      );
+      sendJson(res, result.rows[0] || null);
+      break;
+    }
+    case 'submit': {
+      // 学生提交报名
+      const { config_id, name, phone, level, cohort, ip_address } = params;
+      if (!config_id || !name || !phone || !level) {
+        sendJson(res, { error: '缺少必填字段' }, 400); return;
+      }
+      
+      // 验证报名配置是否存在且有效
+      const configResult = await pool.query(
+        'SELECT * FROM enroll_configs WHERE id = $1 AND status = $2',
+        [config_id, 'active']
+      );
+      if (!configResult.rows.length) {
+        sendJson(res, { error: '报名不存在或已关闭' }, 400); return;
+      }
+      const config = configResult.rows[0];
+      
+      // 验证时间范围
+      const now = new Date();
+      if (config.start_time && new Date(config.start_time) > now) {
+        sendJson(res, { error: '报名尚未开始' }, 400); return;
+      }
+      if (config.end_time && new Date(config.end_time) < now) {
+        sendJson(res, { error: '报名已截止' }, 400); return;
+      }
+      
+      // 验证级别
+      if (!config.levels.includes(level)) {
+        sendJson(res, { error: '您选择的级别不在本次报名范围内' }, 400); return;
+      }
+      
+      // 检查手机号是否已报名
+      const existResult = await pool.query(
+        'SELECT * FROM enrollments WHERE config_id = $1 AND phone = $2',
+        [config_id, phone]
+      );
+      if (existResult.rows.length) {
+        sendJson(res, { error: '该手机号已报名，请勿重复提交' }, 400); return;
+      }
+      
+      // 插入报名记录
+      const insertResult = await pool.query(
+        `INSERT INTO enrollments (config_id, name, phone, level, cohort, status, ip_address) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        [config_id, name, phone, level, cohort || null, 'pending', ip_address || null]
+      );
+      
+      // 如果开启自动同步，立即创建学生账号
+      if (config.auto_sync) {
+        // 检查学生是否已存在
+        const studentExist = await pool.query(
+          'SELECT id FROM students WHERE username = $1',
+          [phone]
+        );
+        if (!studentExist.rows.length) {
+          // 创建学生账号
+          const hashedPwd = hashPassword('123456');
+          await pool.query(
+            `INSERT INTO students (username, password, nickname, level, cohort, status, expires_at) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [phone, hashedPwd, name, level, cohort || null, 'active', new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)]
+          );
+        }
+        // 更新报名状态为已批准
+        await pool.query(
+          'UPDATE enrollments SET status = $1 WHERE id = $2',
+          ['approved', insertResult.rows[0].id]
+        );
+        insertResult.rows[0].status = 'approved';
+        insertResult.rows[0].auto_synced = true;
+      }
+      
+      sendJson(res, { success: true, enrollment: insertResult.rows[0], auto_sync: config.auto_sync });
+      break;
+    }
+    case 'list': {
+      // 查询报名列表
+      const { config_id, level, status, search } = params;
+      let sql = `SELECT * FROM enrollments WHERE 1=1`;
+      const values = [];
+      let idx = 1;
+      
+      if (config_id) { sql += ` AND config_id = $${idx++}`; values.push(config_id); }
+      if (level) { sql += ` AND level = $${idx++}`; values.push(level); }
+      if (status) { sql += ` AND status = $${idx++}`; values.push(status); }
+      if (search) { sql += ` AND (name LIKE $${idx} OR phone LIKE $${idx})`; values.push(`%${search}%`); idx++; }
+      
+      sql += ' ORDER BY created_at DESC';
+      
+      const result = await pool.query(sql, values);
+      sendJson(res, result.rows);
+      break;
+    }
+    case 'import-students': {
+      // 一键导入报名学生到学生列表
+      const { config_id, enrollment_ids } = params;
+      if (!config_id) { sendJson(res, { error: '缺少config_id' }, 400); return; }
+      
+      // 获取待导入的报名记录
+      let sql = 'SELECT * FROM enrollments WHERE config_id = $1 AND status = $2';
+      const values = [config_id, 'pending'];
+      if (enrollment_ids && enrollment_ids.length) {
+        sql += ` AND id = ANY($3)`;
+        values.push(enrollment_ids);
+      }
+      const enrollments = await pool.query(sql, values);
+      
+      let imported = 0;
+      let skipped = 0;
+      const errors = [];
+      const hashedPwd = hashPassword('123456');
+      
+      for (const e of enrollments.rows) {
+        try {
+          // 检查学生是否已存在
+          const existResult = await pool.query(
+            'SELECT id FROM students WHERE username = $1',
+            [e.phone]
+          );
+          if (existResult.rows.length) {
+            skipped++;
+            // 更新报名状态
+            await pool.query(
+              'UPDATE enrollments SET status = $1 WHERE id = $2',
+              ['approved', e.id]
+            );
+            continue;
+          }
+          
+          // 创建学生账号
+          await pool.query(
+            `INSERT INTO students (username, password, nickname, level, cohort, status, expires_at) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [e.phone, hashedPwd, e.name, e.level, e.cohort, 'active', new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)]
+          );
+          
+          // 更新报名状态
+          await pool.query(
+            'UPDATE enrollments SET status = $1 WHERE id = $2',
+            ['approved', e.id]
+          );
+          imported++;
+        } catch(err) {
+          errors.push({ phone: e.phone, error: err.message });
+        }
+      }
+      
+      sendJson(res, { success: true, imported, skipped, errors });
       break;
     }
     default:
