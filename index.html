@@ -486,6 +486,10 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 
 <script>
 /* ========================================
+// Global state
+let isOnline = navigator.onLine;
+let _sessionCheckInterval = null;
+
  *  修脚师考试通 - 完整前端应用
  *  安全加固 + 性能优化 + 界面增强版
  * ======================================== */
@@ -912,7 +916,6 @@ async function submitRegistration(e, level, cohort) {
     startSessionCheck();
   }
 })();
-let _sessionCheckInterval = null;
   if (_sessionCheckInterval) clearInterval(_sessionCheckInterval);
   _sessionCheckInterval = setInterval(checkDeviceSession, 10000); // check every 10s
   // Also check when page becomes visible or gains focus
@@ -1288,7 +1291,6 @@ async function processOfflineQueue() {
 
 // --- Network Status ---
 window.addEventListener('online', () => {
-let isOnline = navigator.onLine;
   isOnline = true;
   updateSyncUI();
   // Delay sync slightly to let network stabilize
