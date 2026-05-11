@@ -1944,11 +1944,42 @@ function togglePwd(btn) {
   }
 }
 
+// ===== 通用复制函数 =====
+function copyText(text) {
+  // 尝试 navigator.clipboard（现代浏览器）
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => {
+      showToast('已复制到剪贴板', 'success');
+    }).catch(() => {
+      // 降级方案：使用 textarea + execCommand
+      fallbackCopy(text);
+    });
+  } else {
+    fallbackCopy(text);
+  }
+}
+
+function fallbackCopy(text) {
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+    showToast('已复制到剪贴板', 'success');
+  } catch (e) {
+    showToast('复制失败，请手动复制', 'error');
+    console.error('Copy failed:', e);
+  }
+}
+
 function copyAllAccounts() {
   const text = createdAccounts.map(a => `${a.nickname}\t${a.username}\t${a.password}`).join('\n');
-  navigator.clipboard.writeText(text).then(() => {
-    showToast('账号信息已复制，默认密码123456', 'success');
-  }).catch(() => showToast('复制失败', 'error'));
+  copyText(text);
+  showToast('默认密码123456', 'info');
 }
 
 let _filteredStudents = [];
@@ -2962,7 +2993,7 @@ function showQuickExamQr(examId) {
       <img src="${qrImg}" alt="二维码" style="width:200px;height:200px;margin-bottom:16px;border-radius:12px;box-shadow:var(--shadow-m)" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
       <div style="display:none;color:var(--text2);font-size:0.85rem">二维码加载失败，请复制下方链接</div>
       <div style="background:var(--primary-light);border-radius:var(--radius-s);padding:10px;margin-top:12px;word-break:break-all;font-size:0.85rem;color:var(--primary)">${escHtml(qrUrl)}</div>
-      <button class="btn btn-outline" style="margin-top:12px" onclick="navigator.clipboard.writeText('${qrUrl}');showToast('链接已复制','success')">📋 复制链接</button>
+      <button class="btn btn-outline" style="margin-top:12px" onclick="copyText('${qrUrl}')">📋 复制链接</button>
     </div>
   `, { center: true });
 }
@@ -2970,7 +3001,7 @@ function showQuickExamQr(examId) {
 function copyQuickExamLink(examId) {
   const domain = window.location.origin;
   const qrUrl = `${domain}/#quick=${examId}`;
-  navigator.clipboard.writeText(qrUrl).then(() => showToast('链接已复制', 'success')).catch(() => showToast('复制失败', 'error'));
+  copyText(qrUrl);
 }
 
 async function viewQuickExamScores(examId) {
@@ -3416,7 +3447,7 @@ function showQrModal() {
       <img src="${qrUrl}" alt="二维码" style="width:200px;height:200px;margin-bottom:16px;border-radius:12px;box-shadow:var(--shadow-m)" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
       <div style="display:none;color:var(--text2);font-size:0.85rem">二维码加载失败，请复制下方链接</div>
       <div style="background:var(--primary-light);border-radius:var(--radius-s);padding:10px;margin-top:12px;word-break:break-all;font-size:0.85rem;color:var(--primary)">${escHtml(domain)}</div>
-      <button class="btn btn-outline" style="margin-top:12px" onclick="navigator.clipboard.writeText('${domain}');showToast('链接已复制','success')">📋 复制链接</button>
+      <button class="btn btn-outline" style="margin-top:12px" onclick="copyText('${domain}')">📋 复制链接</button>
     </div>
   `, { center: true });
 }
