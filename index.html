@@ -5522,6 +5522,8 @@ async function processFile(file) {
     showToast('正在解析Word文档...', 'info');
     try {
       content = await parseDocx(file);
+      console.log('docx解析结果长度:', content ? content.length : 0);
+      console.log('docx解析结果前200字:', content ? content.substring(0, 200) : '空');
     } catch (err) {
       showToast('Word文档解析失败: ' + err.message, 'error');
       return;
