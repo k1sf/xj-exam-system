@@ -1663,12 +1663,11 @@ async function handleLogin() {
       body: JSON.stringify({ table: 'admins', username, password })
     });
     const adminData = await adminRes.json();
-    // 如果返回错误，显示错误信息并停止
-    if (adminData.error) {
-      const msg = adminData.error === 'Wrong password' ? '密码错误' : 
-                  adminData.error === 'User not found' ? '管理员账号不存在' : adminData.error;
-      showToast(msg, 'error'); btn.disabled = false; btn.textContent = '登 录'; return;
+    // 只有密码错误才停止，账号不存在继续尝试学生登录
+    if (adminData.error === 'Wrong password') {
+      showToast('密码错误', 'error'); btn.disabled = false; btn.textContent = '登 录'; return;
     }
+    // 管理员登录成功
     if (adminData.username) {
       userRole = 'admin';
       currentAdmin = adminData;
