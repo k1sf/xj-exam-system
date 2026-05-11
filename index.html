@@ -4946,8 +4946,8 @@ async function viewExamResult(examId) {
 // ===== Student Tab3: Wrong Book =====
 let _filteredWrongQs = [];
 async function renderWrongBook() {
-  // 获取最新错题记录
-  let records = await dbSelect('records', { eq: { student_id: currentUser.username }, cacheBypass: true });
+  // 获取最新错题记录（依赖bufferRecord更新的缓存，无需每次查数据库）
+  let records = await dbSelect('records', { eq: { student_id: currentUser.username } });
   if (!records) records = [];
   const wrongRecords = records.filter(r => !r.is_correct); // 所有错题
   const wrongQIds = [...new Set(wrongRecords.map(r => r.question_id))];
