@@ -4946,13 +4946,13 @@ async function viewExamResult(examId) {
 // ===== Student Tab3: Wrong Book =====
 let _filteredWrongQs = [];
 async function renderWrongBook() {
-  // Cache-only: no cloud access needed for wrong book
-  let records = await dbSelect('records', { eq: { student_id: currentUser.username }, cacheOnly: true });
-  if (!records) records = await dbSelect('records', { eq: { student_id: currentUser.username } });
-  const wrongRecords = records.filter(r => !r.is_correct);
+  // 获取最新错题记录
+  let records = await dbSelect('records', { eq: { student_id: currentUser.username }, cacheBypass: true });
+  if (!records) records = [];
+  const wrongRecords = records.filter(r => !r.is_correct && !r.is_fav); // 排除收藏的错题
   const wrongQIds = [...new Set(wrongRecords.map(r => r.question_id))];
-  let allQ = await dbSelect('questions', { order: ['id', false], cacheOnly: true });
-  if (!allQ) allQ = await dbSelect('questions', { order: ['id', false] });
+  let allQ = await dbSelect('questions', { order: ['id', false], cacheBypass: true });
+  if (!allQ) allQ = [];
   // Filter by current level
   const levelQIds = new Set(allQ.filter(q => q.level === currentLevel).map(q => q.id));
   _filteredWrongQs = wrongQIds.filter(id => levelQIds.has(id)).map(id => {
