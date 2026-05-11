@@ -377,14 +377,19 @@ async function handleApi(req, res, url) {
     }
     case 'verify-password': {
       // Verify password without updating session_id (for admin operations)
+      console.log('verify-password called:', { table: rawTable, username });
       const { table: rawTable, username, password } = params;
       const table = validateTable(rawTable);
       if (!username || !password) { sendJson(res, { error: 'Missing credentials' }, 400); return; }
       const sql = `SELECT * FROM ${table} WHERE "username" = ${escVal(username)}`;
+      console.log('verify-password sql:', sql);
       const result = await pool.query(sql);
+      console.log('verify-password result:', result.rows.length, 'rows');
       if (!result.rows.length) { sendJson(res, { valid: false, error: 'User not found' }, 404); return; }
       const user = result.rows[0];
+      console.log('verify-password user password:', user.password ? user.password.substring(0, 20) + '...' : 'null');
       const valid = verifyPassword(password, user.password);
+      console.log('verify-password result:', valid);
       // Auto-upgrade plaintext password if valid
       if (valid && needsUpgrade(user.password)) {
         const upgradeSql = `UPDATE ${table} SET "password" = ${escVal(hashPassword(password))} WHERE "username" = ${escVal(username)}`;
