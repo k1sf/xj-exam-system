@@ -179,8 +179,10 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname.startsWith('/api/')) {
     // Verify API token: check both header and URL query param (for sendBeacon which can't set headers)
+    // Skip token verification for login and verify-password endpoints
+    const isAuthEndpoint = url.pathname === '/api/login' || url.pathname === '/api/verify-password';
     const reqToken = req.headers['x-api-token'] || url.searchParams.get('token');
-    if (reqToken !== API_TOKEN) {
+    if (!isAuthEndpoint && reqToken !== API_TOKEN) {
       sendJson(res, { error: 'Unauthorized' }, 401);
       return;
     }
