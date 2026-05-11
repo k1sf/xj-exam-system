@@ -205,8 +205,13 @@ const server = http.createServer(async (req, res) => {
       res.end('Not Found');
       return;
     }
+    let content = data;
+    // Inject API_TOKEN into index.html
+    if (filePath.endsWith('index.html')) {
+      content = data.toString().replace(/__API_TOKEN__/g, API_TOKEN);
+    }
     res.writeHead(200, { 'Content-Type': MIMES[ext] || 'application/octet-stream' });
-    res.end(data);
+    res.end(content);
   });
 });
 
