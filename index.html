@@ -998,6 +998,37 @@ async function manualSync() {
     btn.textContent = '已同步';
     setTimeout(() => { if (btn) btn.textContent = ''; }, 2000);
   }
+  // 刷新当前页面内容
+  refreshCurrentView();
+}
+
+// 根据当前视图刷新对应内容
+function refreshCurrentView() {
+  if (currentView === 'admin' && currentAdmin) {
+    // 管理员模式，刷新当前Tab
+    const tabs = document.querySelectorAll('.admin-tab-btn');
+    let activeTab = 'students';
+    tabs.forEach(t => { if (t.classList.contains('active')) activeTab = t.dataset.tab; });
+    switch(activeTab) {
+      case 'students': loadStudents(); break;
+      case 'questions': loadQuestions(); break;
+      case 'exams': loadExams(); break;
+      case 'quickExam': loadQuickExams(); break;
+      case 'enrollment': renderAdminEnrollment(); break;
+      case 'learning': loadLearningData(); break;
+    }
+  } else if (currentView === 'student' && currentUser) {
+    // 学生模式，刷新当前Tab
+    const tabs = document.querySelectorAll('.student-tab-btn');
+    let activeTab = 'practice';
+    tabs.forEach(t => { if (t.classList.contains('active')) activeTab = t.dataset.tab; });
+    switch(activeTab) {
+      case 'practice': renderPractice(); break;
+      case 'exam': loadExams(); break;
+      case 'wrong': renderWrongQuestions(); break;
+      case 'profile': renderProfile(); break;
+    }
+  }
 }
 
 // Update sync status periodically
@@ -1201,20 +1232,6 @@ function updateSyncUI() {
   } else {
     badge.style.display = 'none';
   }
-}
-
-// --- Manual Sync ---
-function manualSync() {
-  if (!isOnline) {
-    showToast('当前无网络连接，请恢复网络后重试', 'warning');
-    return;
-  }
-  const queue = getOfflineQueue();
-  if (!queue.length) {
-    showToast('所有数据已同步', 'success');
-    return;
-  }
-  processOfflineQueue();
 }
 
 // --- Init: process pending queue on page load ---
@@ -3368,6 +3385,7 @@ let _enrollmentConfigs = [];
 let _currentEnrollmentConfig = null;
 let _enrollmentList = [];
 let _enrollmentFilter = { level: '', status: '', search: '' };
+let _selectedEnrollments = new Set(); // 存储选中的报名ID
 
 async function renderAdminEnrollment() {
   try {
@@ -3433,8 +3451,8 @@ async function showCreateEnrollmentModal() {
           <div class="checkbox-grid">${levelsHtml}</div>
         </div>
         <div class="form-group">
-          <label>班级/期次（可选）</label>
-          <input type="text" id="enrollCohort" placeholder="如：2024春季班" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:0.9rem">
+          <label>班级/期次 *</label>
+          <input type="text" id="enrollCohort" placeholder="如：2024春季班" required style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:0.9rem">
         </div>
         <div class="form-group">
           <label>报名开始时间（可选）</label>
@@ -3478,6 +3496,7 @@ async function createEnrollment() {
   
   if (!title) { showToast('请输入报名标题', 'error'); return; }
   if (!levels.length) { showToast('请选择至少一个级别', 'error'); return; }
+  if (!cohort) { showToast('请输入班级/期次', 'error'); return; }
   if (!endTime) { showToast('请设置报名截止时间', 'error'); return; }
   
   try {
@@ -3551,7 +3570,7 @@ async function renderEnrollmentDetailPage() {
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
         <div style="font-weight:600">报名列表</div>
         <div style="display:flex;gap:8px">
-          <button class="admin-btn" onclick="importEnrollments()">📥 一键导入待审核</button>
+          <button class="admin-btn" onclick="importSelectedEnrollments()">📥 导入选中</button>
           <button class="admin-btn" onclick="exportEnrollmentCSV()">📊 导出CSV</button>
         </div>
       </div>
@@ -3578,10 +3597,24 @@ function renderEnrollmentTable() {
   const filtered = getFilteredEnrollments();
   if (!filtered.length) return '<div style="text-align:center;padding:20px;color:var(--text2)">暂无报名记录</div>';
   
+  // 默认选中未导入的学生
+  filtered.forEach(e => {
+    if (e.status === 'pending') _selectedEnrollments.add(e.id);
+    else _selectedEnrollments.delete(e.id);
+  });
+  
+  // 计算选中的待审核数量
+  const pendingSelected = filtered.filter(e => e.status === 'pending' && _selectedEnrollments.has(e.id)).length;
+  const allPending = filtered.filter(e => e.status === 'pending').length;
+  const allSelected = pendingSelected === allPending && allPending > 0;
+  
   return `
     <table style="width:100%;border-collapse:collapse;font-size:0.85rem">
       <thead>
         <tr style="background:var(--bg2)">
+          <th style="padding:8px;text-align:center;width:40px">
+            <input type="checkbox" ${allSelected ? 'checked' : ''} onchange="toggleAllEnrollments(this.checked)">
+          </th>
           <th style="padding:8px;text-align:left">姓名</th>
           <th style="padding:8px;text-align:left">手机号</th>
           <th style="padding:8px;text-align:left">级别</th>
@@ -3595,8 +3628,13 @@ function renderEnrollmentTable() {
           const statusBadge = e.status === 'approved' 
             ? '<span style="background:#28a745;color:#fff;padding:2px 6px;border-radius:4px;font-size:0.7rem">已导入</span>'
             : '<span style="background:#ffc107;color:#000;padding:2px 6px;border-radius:4px;font-size:0.7rem">待审核</span>';
+          const disabled = e.status === 'approved' ? 'disabled style="opacity:0.5"' : '';
+          const checked = _selectedEnrollments.has(e.id) ? 'checked' : '';
           return `
             <tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:8px;text-align:center">
+                <input type="checkbox" value="${e.id}" ${checked} ${disabled} onchange="toggleEnrollmentSelection(${e.id}, this.checked)">
+              </td>
               <td style="padding:8px">${escHtml(e.name)}</td>
               <td style="padding:8px">${escHtml(e.phone)}</td>
               <td style="padding:8px">${LEVEL_ICONS[e.level]||''}${escHtml(e.level)}</td>
@@ -3608,7 +3646,80 @@ function renderEnrollmentTable() {
         }).join('')}
       </tbody>
     </table>
+    <div style="padding:8px;font-size:0.8rem;color:var(--text2)">
+      已选 ${pendingSelected}/${allPending} 名待审核学生 <button class="admin-btn" style="padding:4px 8px;font-size:0.8rem" onclick="importSelectedEnrollments()">📥 导入选中</button>
+    </div>
   `;
+}
+
+function toggleEnrollmentSelection(id, checked) {
+  if (checked) _selectedEnrollments.add(id);
+  else _selectedEnrollments.delete(id);
+}
+
+function toggleAllEnrollments(checked) {
+  const filtered = getFilteredEnrollments();
+  if (checked) {
+    filtered.forEach(e => { if (e.status === 'pending') _selectedEnrollments.add(e.id); });
+  } else {
+    filtered.forEach(e => { if (e.status === 'pending') _selectedEnrollments.delete(e.id); });
+  }
+  // 重新渲染表格
+  const tbody = document.querySelector('#adminContent table tbody');
+  if (tbody) {
+    renderEnrollmentTableBody();
+  }
+}
+
+function renderEnrollmentTableBody() {
+  const filtered = getFilteredEnrollments();
+  const tbody = document.querySelector('#adminContent table tbody');
+  if (tbody) {
+    const allPending = filtered.filter(e => e.status === 'pending');
+    const pendingSelected = allPending.filter(e => _selectedEnrollments.has(e.id));
+    const allSelected = pendingSelected.length === allPending.length && allPending.length > 0;
+    
+    // 更新全选checkbox
+    const headerCheckbox = document.querySelector('#adminContent thead input[type="checkbox"]');
+    if (headerCheckbox) headerCheckbox.checked = allSelected;
+    
+    tbody.innerHTML = filtered.map(e => {
+      const statusBadge = e.status === 'approved' 
+        ? '<span style="background:#28a745;color:#fff;padding:2px 6px;border-radius:4px;font-size:0.7rem">已导入</span>'
+        : '<span style="background:#ffc107;color:#000;padding:2px 6px;border-radius:4px;font-size:0.7rem">待审核</span>';
+      const disabled = e.status === 'approved' ? 'disabled style="opacity:0.5"' : '';
+      const checked = _selectedEnrollments.has(e.id) ? 'checked' : '';
+      return `
+        <tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:8px;text-align:center">
+            <input type="checkbox" value="${e.id}" ${checked} ${disabled} onchange="toggleEnrollmentSelection(${e.id}, this.checked);renderEnrollmentTableBody()">
+          </td>
+          <td style="padding:8px">${escHtml(e.name)}</td>
+          <td style="padding:8px">${escHtml(e.phone)}</td>
+          <td style="padding:8px">${LEVEL_ICONS[e.level]||''}${escHtml(e.level)}</td>
+          <td style="padding:8px">${escHtml(e.cohort || '-')}</td>
+          <td style="padding:8px">${fmtLocalShort(e.created_at)}</td>
+          <td style="padding:8px">${statusBadge}</td>
+        </tr>
+      `;
+    }).join('');
+    
+    // 更新计数
+    const countDiv = document.querySelector('#adminContent [id*="selected"]');
+    if (!countDiv) {
+      // 如果没有计数div，创建一个
+      const table = document.querySelector('#adminContent table');
+      if (table) {
+        const div = document.createElement('div');
+        div.id = 'selectedCount';
+        div.style.cssText = 'padding:8px;font-size:0.8rem;color:var(--text2)';
+        div.innerHTML = `已选 ${pendingSelected.length}/${allPending.length} 名待审核学生 <button class="admin-btn" style="padding:4px 8px;font-size:0.8rem" onclick="importSelectedEnrollments()">📥 导入选中</button>`;
+        table.parentNode.insertBefore(div, table.nextSibling);
+      }
+    } else {
+      countDiv.innerHTML = `已选 ${pendingSelected.length}/${allPending.length} 名待审核学生 <button class="admin-btn" style="padding:4px 8px;font-size:0.8rem" onclick="importSelectedEnrollments()">📥 导入选中</button>`;
+    }
+  }
 }
 
 function getFilteredEnrollments() {
@@ -3629,24 +3740,17 @@ function filterEnrollmentList() {
   _enrollmentFilter.status = document.getElementById('enrollStatusFilter').value;
   _enrollmentFilter.search = document.getElementById('enrollSearch').value.trim();
   
-  const tbody = document.querySelector('#adminContent table tbody');
-  if (tbody) {
-    const filtered = getFilteredEnrollments();
-    tbody.innerHTML = filtered.map(e => {
-      const statusBadge = e.status === 'approved' 
-        ? '<span style="background:#28a745;color:#fff;padding:2px 6px;border-radius:4px;font-size:0.7rem">已导入</span>'
-        : '<span style="background:#ffc107;color:#000;padding:2px 6px;border-radius:4px;font-size:0.7rem">待审核</span>';
-      return `
-        <tr style="border-bottom:1px solid var(--border)">
-          <td style="padding:8px">${escHtml(e.name)}</td>
-          <td style="padding:8px">${escHtml(e.phone)}</td>
-          <td style="padding:8px">${LEVEL_ICONS[e.level]||''}${escHtml(e.level)}</td>
-          <td style="padding:8px">${escHtml(e.cohort || '-')}</td>
-          <td style="padding:8px">${fmtLocalShort(e.created_at)}</td>
-          <td style="padding:8px">${statusBadge}</td>
-        </tr>
-      `;
-    }).join('');
+  // 重新渲染整个表格（包含全选checkbox）
+  const container = document.querySelector('#adminContent .card:nth-child(2)');
+  if (container) {
+    const oldTable = container.querySelector('table');
+    if (oldTable) {
+      const div = document.createElement('div');
+      div.style.maxHeight = '400px';
+      div.style.overflowY = 'auto';
+      div.innerHTML = renderEnrollmentTable();
+      oldTable.parentNode.replaceChild(div.firstElementChild, oldTable);
+    }
   }
 }
 
@@ -3738,19 +3842,21 @@ async function deleteEnrollment(configId) {
 }
 
 async function importEnrollments() {
-  const pending = _enrollmentList.filter(e => e.status === 'pending');
+  // 导入所有选中的待审核学生
+  const selectedIds = Array.from(_selectedEnrollments);
+  const pending = _enrollmentList.filter(e => e.status === 'pending' && _selectedEnrollments.has(e.id));
   if (!pending.length) {
-    showToast('没有待审核的报名', 'info');
+    showToast('请选择要导入的待审核学生', 'info');
     return;
   }
   
-  if (!confirm(`确定导入 ${pending.length} 名待审核学生到学生列表？\n默认密码为 123456`)) return;
+  if (!confirm(`确定导入 ${pending.length} 名学生到学生列表？\n默认密码为 123456`)) return;
   
   try {
     const response = await fetch('/api/enroll-import-students', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-      body: JSON.stringify({ config_id: _currentEnrollmentConfig.id })
+      body: JSON.stringify({ config_id: _currentEnrollmentConfig.id, enrollment_ids: selectedIds })
     });
     const result = await response.json();
     if (result.error) { showToast(result.error, 'error'); return; }
@@ -3759,10 +3865,15 @@ async function importEnrollments() {
       console.error('导入错误：', result.errors);
     }
     // 刷新列表
+    _selectedEnrollments.clear();
     openEnrollmentDetail(_currentEnrollmentConfig.id);
   } catch(e) {
     showToast('导入失败：' + e.message, 'error');
   }
+}
+
+async function importSelectedEnrollments() {
+  await importEnrollments();
 }
 
 function exportEnrollmentCSV() {

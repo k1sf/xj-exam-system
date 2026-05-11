@@ -922,32 +922,40 @@ async function handleEnrollApi(req, res, url, params) {
         try {
           // 检查学生是否已存在
           const existResult = await pool.query(
-            'SELECT id FROM students WHERE username = $1',
+            'SELECT id, cohort as existing_cohort FROM students WHERE username = $1',
             [e.phone]
           );
-          if (existResult.rows.length) {
-            skipped++;
-            // 更新报名状态
-            await pool.query(
-              'UPDATE enrollments SET status = $1 WHERE id = $2',
-              ['approved', e.id]
-            );
-            continue;
-          }
           
-          // 创建学生账号
-          await pool.query(
-            `INSERT INTO students (username, password, nickname, level, cohort, status, expires_at) 
-             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [e.phone, hashedPwd, e.name, e.level, e.cohort, 'active', new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)]
-          );
+          if (existResult.rows.length) {
+            // 学生已存在，合并期次（用逗号隔开，不重复）
+            const existingCohort = existResult.rows[0].existing_cohort || '';
+            const cohorts = [...new Set(existingCohort.split(',').map(c => c.trim()).filter(Boolean))];
+            if (e.cohort && !cohorts.includes(e.cohort)) {
+              cohorts.push(e.cohort);
+            }
+            const mergedCohort = cohorts.join(', ');
+            
+            // 更新学生的期次和级别（如果需要）
+            await pool.query(
+              'UPDATE students SET cohort = $1, level = $2 WHERE username = $3',
+              [mergedCohort, e.level, e.phone]
+            );
+            skipped++;
+          } else {
+            // 创建学生账号
+            await pool.query(
+              `INSERT INTO students (username, password, nickname, level, cohort, status, expires_at) 
+               VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+              [e.phone, hashedPwd, e.name, e.level, e.cohort, 'active', new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)]
+            );
+            imported++;
+          }
           
           // 更新报名状态
           await pool.query(
             'UPDATE enrollments SET status = $1 WHERE id = $2',
             ['approved', e.id]
           );
-          imported++;
         } catch(err) {
           errors.push({ phone: e.phone, error: err.message });
         }
