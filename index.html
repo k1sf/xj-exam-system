@@ -3643,6 +3643,7 @@ function filterEnrollmentList() {
 
 async function showShareEnrollmentModal(configId) {
   const enrollUrl = `${window.location.origin}/#enroll=${configId}`;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(enrollUrl)}`;
   
   const modal = document.createElement('div');
   modal.id = 'shareEnrollmentModal';
@@ -3655,12 +3656,14 @@ async function showShareEnrollmentModal(configId) {
       </div>
       <div class="modal-body" style="text-align:center">
         <div style="margin-bottom:16px">
-          <div id="enrollQRCode" style="display:inline-block;padding:8px;background:#fff;border-radius:8px"></div>
+          <img src="${qrUrl}" alt="二维码" style="width:150px;height:150px;border-radius:8px;background:#fff" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <div style="display:none;width:150px;height:150px;background:#f0f0f0;border-radius:8px;align-items:center;justify-content:center;color:var(--text2);font-size:0.8rem">二维码加载失败</div>
         </div>
-        <div style="font-size:0.85rem;color:var(--text2);margin-bottom:12px">报名链接（点击复制）</div>
-        <div style="background:var(--bg2);padding:12px;border-radius:8px;word-break:break-all;font-size:0.85rem;cursor:pointer" onclick="copyEnrollmentLink('${escHtml(enrollUrl)}')">
+        <div style="font-size:0.85rem;color:var(--text2);margin-bottom:8px">报名链接</div>
+        <div style="background:var(--bg2);padding:12px;border-radius:8px;word-break:break-all;font-size:0.8rem;max-height:80px;overflow-y:auto" id="enrollLinkText">
           ${escHtml(enrollUrl)}
         </div>
+        <button class="admin-btn primary" style="margin-top:12px" onclick="copyEnrollmentLink()">📋 复制链接</button>
       </div>
       <div class="modal-footer">
         <button class="admin-btn" onclick="closeShareEnrollmentModal()">关闭</button>
@@ -3670,14 +3673,8 @@ async function showShareEnrollmentModal(configId) {
   document.body.appendChild(modal);
   modal.addEventListener('click', (e) => { if (e.target === modal) closeShareEnrollmentModal(); });
   
-  // 生成二维码
-  const qrContainer = document.getElementById('enrollQRCode');
-  if (qrContainer && typeof QRCode !== 'undefined') {
-    qrContainer.innerHTML = '';
-    new QRCode(qrContainer, { text: enrollUrl, width: 150, height: 150 });
-  } else {
-    qrContainer.innerHTML = '<div style="width:150px;height:150px;background:#f0f0f0;display:flex;align-items:center;justify-content:center">请截图分享</div>';
-  }
+  // 存储当前链接供复制使用
+  window._currentEnrollUrl = enrollUrl;
 }
 
 function closeShareEnrollmentModal() {
@@ -3685,7 +3682,12 @@ function closeShareEnrollmentModal() {
   if (modal) modal.remove();
 }
 
-function copyEnrollmentLink(url) {
+function copyEnrollmentLink() {
+  const url = window._currentEnrollUrl || document.getElementById('enrollLinkText')?.textContent?.trim();
+  if (!url) {
+    showToast('复制失败', 'error');
+    return;
+  }
   navigator.clipboard.writeText(url).then(() => {
     showToast('链接已复制', 'success');
   }).catch(() => {
