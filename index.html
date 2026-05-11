@@ -4949,7 +4949,7 @@ async function renderWrongBook() {
   // 获取最新错题记录
   let records = await dbSelect('records', { eq: { student_id: currentUser.username }, cacheBypass: true });
   if (!records) records = [];
-  const wrongRecords = records.filter(r => !r.is_correct && !r.is_fav); // 排除收藏的错题
+  const wrongRecords = records.filter(r => !r.is_correct); // 所有错题
   const wrongQIds = [...new Set(wrongRecords.map(r => r.question_id))];
   let allQ = await dbSelect('questions', { order: ['id', false], cacheBypass: true });
   if (!allQ) allQ = [];
