@@ -871,11 +871,13 @@ function setExamMode(enabled) {
 
 function startExamSyncTimer() {
   stopExamSyncTimer();
+  // 模拟考试使用10分钟定时，正式/快捷考试使用60秒定时
+  const interval = currentExamIsMock ? 600000 : 60000;
   _examSyncTimer = setInterval(() => {
     if (_hasUnsynced) {
       syncAll();
     }
-  }, 60000); // 每60秒检查并同步
+  }, interval); // 模拟考试10分钟，正式/快捷考试60秒
 }
 
 function stopExamSyncTimer() {
