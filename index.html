@@ -5528,7 +5528,7 @@ async function processFile(file) {
     }
   } else if (extension === 'doc') {
     // .doc 是旧版Word格式，提示用户转换为 .docx
-    showToast('.doc是旧版格式，请用Word/WPS另存为.docx或.pdf后重试', 'error');
+    alert('.doc是旧版格式，不支持直接导入！\n\n请使用以下方法转换：\n1. 用Word/WPS打开文件\n2. 文件 → 另存为\n3. 选择格式为 "Word 文档 (*.docx)"\n4. 保存后重新导入');
     return;
   } else {
     content = await file.text();
