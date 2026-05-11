@@ -5639,15 +5639,28 @@ async function parseExcel(arrayBuffer) {
 async function parseDocx(file) {
   // 动态加载 mammoth.js
   if (typeof mammoth === "undefined") {
+    console.log('正在加载 mammoth.js...');
     await loadScript("https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js");
+    // 等待 mammoth 加载完成
+    let retries = 0;
+    while (typeof mammoth === "undefined" && retries < 50) {
+      await new Promise(r => setTimeout(r, 100));
+      retries++;
+    }
+    if (typeof mammoth === "undefined") {
+      throw new Error('mammoth.js 加载失败');
+    }
+    console.log('mammoth.js 加载完成');
   }
   
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = async function(e) {
       try {
+        console.log('正在提取 Word 文本...');
         const result = await mammoth.extractRawText({ arrayBuffer: e.target.result });
         const text = result.value; // 纯文本内容
+        console.log('提取到的文本长度:', text ? text.length : 0);
         
         if (!text || text.trim().length < 10) {
           resolve("");
