@@ -2200,7 +2200,8 @@ async function renderAdminQuestions() {
   _pageRenderers.questions = () => goQuestionPage(_pg.questions || 1);
   const totalCount = await dbCount('questions');
   const totalPages = Math.max(1, Math.ceil(totalCount / PER_PAGE));
-  allQuestions = await dbSelect('questions', { order: ['id', false], limit: PER_PAGE, offset: 0 });
+  // 按ID升序排列，保持导入顺序
+  allQuestions = await dbSelect('questions', { order: ['id', true], limit: PER_PAGE, offset: 0 });
   renderQuestionUI(allQuestions, totalPages, totalCount);
 }
 
@@ -2260,7 +2261,8 @@ async function goQuestionPage(page) {
   } else {
     const totalCount = await dbCount('questions');
     const totalPages = Math.max(1, Math.ceil(totalCount / PER_PAGE));
-    allQuestions = await dbSelect('questions', { order: ['id', false], limit: PER_PAGE, offset: (page - 1) * PER_PAGE });
+    // 按ID升序排列，保持导入顺序
+    allQuestions = await dbSelect('questions', { order: ['id', true], limit: PER_PAGE, offset: (page - 1) * PER_PAGE });
     renderQuestionUI(allQuestions, totalPages, totalCount);
   }
 }
@@ -2276,7 +2278,7 @@ async function searchQuestions() {
   if (type) filter.type = type;
   if (level) filter.level = level;
   if (cohort) filter.cohort = cohort;
-  _searchResults = await dbSelect('questions', { eq: filter, order: ['id', false] });
+  _searchResults = await dbSelect('questions', { eq: filter, order: ['id', true] });
   if (keyword) _searchResults = _searchResults.filter(q => q.content.includes(keyword));
   _searchMode = _searchResults.length > 0;
   const totalCount = _searchResults.length;
@@ -2499,11 +2501,22 @@ async function doBatchImportConfirm() {
   try {
     const rows = window._batchImportRows;
     if (!rows || rows.length === 0) { showToast('没有可导入数据', 'error'); return; }
+    
+    // 获取当前最大sort_order，确保新题目按顺序排列
+    const existing = await dbSelect('questions', { select: 'id', cacheBypass: true });
+    const maxOrder = existing.length > 0 ? Math.max(...existing.map(q => q.id || 0)) : 0;
+    
+    // 为新题目分配sort_order（从最大ID+1开始）
+    rows.forEach((r, i) => {
+      r.sort_order = maxOrder + i + 1;
+    });
+    
     await dbInsert('questions', rows);
     showToast(`成功导入${rows.length}题`, 'success');
     closeModal();
+    cacheClearTable('questions');
     renderAdminQuestions();
-  } catch(e) { showToast('导入失败', 'error'); }
+  } catch(e) { showToast('导入失败', 'error'); console.error(e); }
   finally { if (btn) { btn.disabled = false; btn.textContent = '导入'; } }
 }
 
@@ -2541,7 +2554,7 @@ async function deleteQuestion(qId) {
 let _filteredAdminExams = [];
 async function renderAdminExams() {
   allExams = await dbSelect('exams', { order: ['id', false] });
-  allQuestions = await dbSelect('questions', { order: ['id', false] });
+  allQuestions = await dbSelect('questions', { order: ['id', true] });
   _examRecords = await dbSelect('records');
 
   // 快捷考试不在常规考试Tab显示
