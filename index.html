@@ -816,6 +816,199 @@ window.addEventListener('beforeunload', () => {
   if (typeof flushXpSync === 'function') flushXpSync();
 });
 
+// ===== Global Sync State & Smart Sync System =====
+// 全局同步状态管理
+let _isExamMode = false; // 是否在考试模式（正式/快捷考试）
+let _isSyncing = false; // 是否正在同步
+let _hasUnsynced = false; // 是否有未同步数据
+let _lastSyncTime = 0; // 上次同步时间
+let _tenMinuteTimer = null; // 10分钟定时器
+let _examSyncTimer = null; // 考试模式定时器
+
+// ===== Unified Sync Function =====
+async function syncAll() {
+  if (_isSyncing) return;
+  _isSyncing = true;
+  try {
+    // Flush all buffers
+    await Promise.all([
+      flushRecordBuffer(),
+      flushFavBuffer(),
+      flushXp()
+    ]);
+    _hasUnsynced = false;
+    _lastSyncTime = Date.now();
+    console.log('[Sync] All data synced successfully');
+  } catch(e) {
+    console.error('[Sync] Sync failed:', e);
+  } finally {
+    _isSyncing = false;
+  }
+}
+
+// 立即同步（用于关键操作）
+async function syncImmediately() {
+  await syncAll();
+  // 清除所有相关缓存
+  cacheRemoveAnywhere('records');
+  cacheRemoveAnywhere('students');
+  cacheRemoveAnywhere('questions');
+  cacheRemoveAnywhere('exams');
+}
+
+// ===== Exam Mode Control =====
+function setExamMode(enabled) {
+  _isExamMode = enabled;
+  if (enabled) {
+    // 考试模式：启动60秒定时器
+    startExamSyncTimer();
+  } else {
+    // 退出考试模式：停止定时器，立即同步
+    stopExamSyncTimer();
+    syncAll();
+  }
+}
+
+function startExamSyncTimer() {
+  stopExamSyncTimer();
+  _examSyncTimer = setInterval(() => {
+    if (_hasUnsynced) {
+      syncAll();
+    }
+  }, 60000); // 每60秒检查并同步
+}
+
+function stopExamSyncTimer() {
+  if (_examSyncTimer) {
+    clearInterval(_examSyncTimer);
+    _examSyncTimer = null;
+  }
+}
+
+// ===== 10 Minute Auto Sync =====
+function startTenMinuteTimer() {
+  stopTenMinuteTimer();
+  _tenMinuteTimer = setInterval(() => {
+    if (_hasUnsynced) {
+      syncAll();
+    }
+  }, 600000); // 10分钟
+}
+
+function stopTenMinuteTimer() {
+  if (_tenMinuteTimer) {
+    clearInterval(_tenMinuteTimer);
+    _tenMinuteTimer = null;
+  }
+}
+
+// 标记有未同步数据
+function markUnsynced() {
+  _hasUnsynced = true;
+}
+
+// ===== Page Visibility & Unload =====
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    // 页面隐藏时同步
+    syncAll();
+  }
+});
+
+window.addEventListener('beforeunload', () => {
+  // 页面离开时立即同步
+  syncAll();
+});
+
+window.addEventListener('pagehide', () => {
+  syncAll();
+});
+
+// ===== Enhanced Buffer Functions =====
+const _originalBufferRecord = bufferRecord;
+bufferRecord = function(record) {
+  markUnsynced();
+  return _originalBufferRecord(record);
+};
+
+const _originalBufferFavUpdate = bufferFavUpdate;
+bufferFavUpdate = function(id, isFav) {
+  markUnsynced();
+  return _originalBufferFavUpdate(id, isFav);
+};
+
+// ===== Manual Sync Button in Header =====
+function renderSyncButton() {
+  if (!currentUser) return '';
+  return `<button class="header-btn" onclick="manualSync()" title="点击立即同步数据" style="background:rgba(255,255,255,0.15);border:none;color:#fff;padding:6px 10px;border-radius:6px;font-size:13px;cursor:pointer;">
+    🔄 <span id="syncStatus"></span>
+  </button>`;
+}
+
+async function manualSync() {
+  const btn = document.getElementById('syncStatus');
+  if (btn) btn.textContent = '同步中...';
+  await syncImmediately();
+  if (btn) {
+    btn.textContent = '已同步';
+    setTimeout(() => { if (btn) btn.textContent = ''; }, 2000);
+  }
+}
+
+// Update sync status periodically
+function updateSyncStatus() {
+  const el = document.getElementById('syncStatus');
+  if (!el) return;
+  if (_isSyncing) {
+    el.textContent = '同步中...';
+  } else if (_hasUnsynced) {
+    el.textContent = '待同步';
+  } else {
+    el.textContent = '';
+  }
+}
+
+setInterval(updateSyncStatus, 1000);
+
+// ===== Admin Mode: Immediate Sync =====
+function isAdminMode() {
+  return currentView && currentView.startsWith('admin');
+}
+
+// Override admin operations to sync immediately
+const _originalDbInsert = dbInsert;
+dbInsert = async function(...args) {
+  const result = await _originalDbInsert.apply(this, args);
+  if (isAdminMode()) {
+    await syncImmediately();
+  } else {
+    markUnsynced();
+  }
+  return result;
+};
+
+const _originalDbUpdate = dbUpdate;
+dbUpdate = async function(...args) {
+  const result = await _originalDbUpdate.apply(this, args);
+  if (isAdminMode()) {
+    await syncImmediately();
+  } else {
+    markUnsynced();
+  }
+  return result;
+};
+
+const _originalDbDelete = dbDelete;
+dbDelete = async function(...args) {
+  const result = await _originalDbDelete.apply(this, args);
+  if (isAdminMode()) {
+    await syncImmediately();
+  } else {
+    markUnsynced();
+  }
+  return result;
+};
+
 // ===== Offline Queue & Sync System =====
 const OFFLINE_QUEUE_KEY = 'xjOfflineQueue';
 let isSyncing = false;
@@ -1785,6 +1978,7 @@ function renderAdmin() {
         <div class="admin-topbar-title">${adminName}${masterBadge}</div>
         <div class="admin-topbar-actions">
           <button class="admin-topbar-qrcode" onclick="showQrModal()" style="font-size:0.75rem">📋 二维码</button>
+	          <button class="admin-topbar-sync" onclick="manualSync()" style="font-size:0.75rem;background:#28a745;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer" title="点击立即同步数据">🔄 同步</button>
           <button class="admin-topbar-logout" onclick="handleLogout()">退出</button>
         </div>
       </div>
@@ -3691,6 +3885,7 @@ function renderStudent() {
         <div style="display:flex;align-items:center;gap:4px">${levelSwitchHtml()}</div>
         <div style="display:flex;align-items:center;gap:4px">
           <button onclick="showSettingsModal()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#fff;padding:3px 8px;font-size:0.78rem;cursor:pointer">⚙️</button>
+	          <button onclick="manualSync()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#fff;padding:3px 8px;font-size:0.78rem;cursor:pointer" title="点击立即同步数据">🔄</button>
           <button onclick="handleLogout()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#fff;padding:3px 10px;font-size:0.78rem;cursor:pointer">退出</button>
         </div>
       </div>
@@ -3809,6 +4004,9 @@ async function switchPracticeMode(mode) {
   const allQ = await dbSelect('questions', { eq: { level: currentLevel }, order: ['id', false] });
   // 使用 cacheBypass 确保获取最新的收藏状态
   const records = await dbSelect('records', { eq: { student_id: currentUser.username }, cacheBypass: true });
+
+  // 查看错题/收藏前如有未同步数据则立即同步
+  if (_hasUnsynced) syncImmediately();
 
   switch(mode) {
     case 'wrong': {
@@ -4418,6 +4616,7 @@ function renderExamTaking() {
   renderExamQNav();
   updateExamNavBtns();
   startExamTimer();
+  setExamMode(true);
 }
 
 let examCurrentQ = 0;
@@ -4759,6 +4958,10 @@ async function submitExamAnswers() {
     const questionXp = correct * XP_REWARDS.correct + (practiceQuestions.length - correct) * XP_REWARDS.wrong;
     addXp(questionXp, '考试答题');
   }
+  // 交卷后立即同步并退出考试模式
+  setExamMode(false);
+  syncAll();
+
   renderExamResult(correct, practiceQuestions.length);
 }
 
