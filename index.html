@@ -5453,7 +5453,7 @@ async function openFileImport() {
         <span style="color:var(--primary)">📄 TXT/CSV:</span> 按分隔符（|、逗号、Tab）格式化的文本<br>
         <span style="color:var(--primary)">📋 JSON:</span> 标准JSON数组，每项包含 type、content、options、answer<br>
         <span style="color:var(--primary)">📊 Excel:</span> .xlsx/.xls 文件，需要列名匹配<br>
-        <span style="color:var(--primary)">📝 Word:</span> .docx 文档，自动提取文本内容<br>
+        <span style="color:var(--primary)">📝 Word:</span> .docx 文档（.doc请另存为.docx）<br>
         <span style="color:var(--warning)">⚡ 智能识别：自动检测分隔符、编码、题型</span>
       </div>
       
@@ -5479,7 +5479,7 @@ async function openFileImport() {
           <div style="font-size:0.9rem;color:var(--text)">点击选择文件 或 拖拽文件到此处</div>
           <div style="font-size:0.78rem;color:var(--text2);margin-top:4px">支持 .txt .csv .json .xlsx .xls .docx</div>
         </div>
-        <input type="file" id="fileInput" accept=".txt,.csv,.json,.xlsx,.xls,.docx" style="display:none" onchange="handleFileSelect(this)">
+        <input type="file" id="fileInput" accept=".txt,.csv,.json,.xlsx,.xls,.docx,.doc" style="display:none" onchange="handleFileSelect(this)">
       </div>
       
       <div id="fileImportPreview" style="display:none;margin-bottom:16px">
@@ -5526,6 +5526,10 @@ async function processFile(file) {
       showToast('Word文档解析失败: ' + err.message, 'error');
       return;
     }
+  } else if (extension === 'doc') {
+    // .doc 是旧版Word格式，提示用户转换为 .docx
+    showToast('.doc是旧版格式，请用Word/WPS另存为.docx或.pdf后重试', 'error');
+    return;
   } else {
     content = await file.text();
   }
