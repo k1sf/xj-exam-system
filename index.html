@@ -549,7 +549,7 @@ let _sessionCheckInterval = null;
 
 function startSessionCheck() {
   if (_sessionCheckInterval) clearInterval(_sessionCheckInterval);
-  _sessionCheckInterval = setInterval(checkDeviceSession, 10000); // check every 10s
+  _sessionCheckInterval = setInterval(checkDeviceSession, 60000); // check every 60s
   // Also check when page becomes visible or gains focus
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) checkDeviceSession();
