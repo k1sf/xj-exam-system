@@ -3481,6 +3481,14 @@ async function renderAdminSettings() {
           <div style="font-size:0.75rem;color:var(--text2)">将已过期学生的答题记录移至归档表，释放主表空间，提升查询速度。归档后数据仍可查看。</div>
         </div>
       </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="card-title">🔐 超级管理员</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <button class="btn btn-warning" style="width:100%" onclick="openSuperAdminLogin()">🔑 数据库导出/导入</button>
+          <div style="font-size:0.75rem;color:var(--text2)">导出或导入数据库备份，需要超级管理员密码。</div>
+        </div>
+      </div>
       
       ${adminSection}
     </div>`;
