@@ -913,9 +913,6 @@ async function submitRegistration(e, level, cohort) {
   }
 })();
 let _sessionCheckInterval = null;
-// ===== Single Device Login =====
-
-function startSessionCheck() {
   if (_sessionCheckInterval) clearInterval(_sessionCheckInterval);
   _sessionCheckInterval = setInterval(checkDeviceSession, 10000); // check every 10s
   // Also check when page becomes visible or gains focus
@@ -1187,7 +1184,6 @@ window.addEventListener('beforeunload', () => {
 // ===== Offline Queue & Sync System =====
 const OFFLINE_QUEUE_KEY = 'xjOfflineQueue';
 let isSyncing = false;
-let isOnline = navigator.onLine;
 
 // --- Queue Persistence ---
 function getOfflineQueue() {
@@ -1292,6 +1288,7 @@ async function processOfflineQueue() {
 
 // --- Network Status ---
 window.addEventListener('online', () => {
+let isOnline = navigator.onLine;
   isOnline = true;
   updateSyncUI();
   // Delay sync slightly to let network stabilize
