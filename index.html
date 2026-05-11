@@ -483,40 +483,23 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 
 <!-- Session warning -->
 <div id="session-warning" class="session-warning" style="display:none"></div>
-
+<!-- ========================================
+ *  修脚师考试通 - 完整前端应用
+ *  ======================================== -->
 <script>
-/* ========================================
-// Global state
+/* Global State */
 let isOnline = navigator.onLine;
 let _sessionCheckInterval = null;
 
- *  修脚师考试通 - 完整前端应用
- *  安全加固 + 性能优化 + 界面增强版
- * ======================================== */
-
-
-// ===== Theme & Display Settings =====
+/* Dark Mode Toggle */
 function toggleDarkMode(on) {
   document.documentElement.classList.toggle('dark', on);
-  localStorage.setItem('xjDarkMode', on ? '1' : '0');
-}
-function toggleLargeText(on) {
-  document.documentElement.classList.toggle('large-text', on);
-  localStorage.setItem('xjLargeText', on ? '1' : '0');
-}
-function initTheme() {
-  const dark = localStorage.getItem('xjDarkMode') === '1';
-  const large = localStorage.getItem('xjLargeText') === '1';
-  document.documentElement.classList.toggle('dark', dark);
-  document.documentElement.classList.toggle('large-text', large);
   // Sync toggle checkboxes if they exist
   const dt = document.getElementById('darkToggle');
   const lt = document.getElementById('largeToggle');
-  if (dt) dt.checked = dark;
-  if (lt) lt.checked = large;
+  if (dt) dt.checked = on;
+  localStorage.setItem('xjDarkMode', on ? '1' : '0');
 }
-
-
 function showSettingsModal() {
   const dark = localStorage.getItem('xjDarkMode') === '1';
   const large = localStorage.getItem('xjLargeText') === '1';
