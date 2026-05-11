@@ -726,6 +726,11 @@ async function handleEnrollApi(req, res, url, params) {
   }
   const route = pathname;
   
+  // 对于 GET 请求，从 URL query string 获取参数
+  const queryParams = {};
+  url.searchParams.forEach((value, key) => { queryParams[key] = value; });
+  const allParams = { ...params, ...queryParams };
+  
   switch(route) {
     case 'config/list': {
       // 查询报名配置列表
@@ -741,7 +746,7 @@ async function handleEnrollApi(req, res, url, params) {
     }
     case 'config/create': {
       // 创建报名配置
-      const { title, levels, cohort, start_time, end_time, auto_sync, created_by } = params;
+      const { title, levels, cohort, start_time, end_time, auto_sync, created_by } = allParams;
       if (!title) { sendJson(res, { error: '缺少标题' }, 400); return; }
       if (!levels || !levels.length) { sendJson(res, { error: '请选择至少一个级别' }, 400); return; }
       
@@ -755,7 +760,7 @@ async function handleEnrollApi(req, res, url, params) {
     }
     case 'config/update': {
       // 更新报名配置
-      const { id, title, levels, cohort, start_time, end_time, auto_sync, status } = params;
+      const { id, title, levels, cohort, start_time, end_time, auto_sync, status } = allParams;
       if (!id) { sendJson(res, { error: '缺少ID' }, 400); return; }
       
       const updates = [];
@@ -781,7 +786,7 @@ async function handleEnrollApi(req, res, url, params) {
     }
     case 'config/delete': {
       // 删除报名配置（级联删除报名记录）
-      const { id } = params;
+      const { id } = allParams;
       if (!id) { sendJson(res, { error: '缺少ID' }, 400); return; }
       await pool.query('DELETE FROM enroll_configs WHERE id = $1', [id]);
       sendJson(res, { success: true });
@@ -789,7 +794,7 @@ async function handleEnrollApi(req, res, url, params) {
     }
     case 'config/get': {
       // 获取单个报名配置
-      const { id } = params;
+      const { id } = allParams;
       if (!id) { sendJson(res, { error: '缺少ID' }, 400); return; }
       const result = await pool.query(
         `SELECT ec.*, 
@@ -803,7 +808,7 @@ async function handleEnrollApi(req, res, url, params) {
     }
     case 'submit': {
       // 学生提交报名
-      const { config_id, name, phone, level, cohort, ip_address } = params;
+      const { config_id, name, phone, level, cohort, ip_address } = allParams;
       if (!config_id || !name || !phone || !level) {
         sendJson(res, { error: '缺少必填字段' }, 400); return;
       }
@@ -878,7 +883,7 @@ async function handleEnrollApi(req, res, url, params) {
     }
     case 'list': {
       // 查询报名列表
-      const { config_id, level, status, search } = params;
+      const { config_id, level, status, search } = allParams;
       let sql = `SELECT * FROM enrollments WHERE 1=1`;
       const values = [];
       let idx = 1;
@@ -896,7 +901,7 @@ async function handleEnrollApi(req, res, url, params) {
     }
     case 'import-students': {
       // 一键导入报名学生到学生列表
-      const { config_id, enrollment_ids } = params;
+      const { config_id, enrollment_ids } = allParams;
       if (!config_id) { sendJson(res, { error: '缺少config_id' }, 400); return; }
       
       // 获取待导入的报名记录
