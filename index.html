@@ -1985,6 +1985,30 @@ async function dbUpdate(table, data, match) {
   }
 }
 
+// 批量更新函数 - 一次请求更新多条记录
+async function dbBatchUpdate(table, batch) {
+  if (!batch || batch.length === 0) return { success: true, successCount: 0, failCount: 0 };
+  
+  try {
+    const res = await fetch(`${API_BASE}/update`, { 
+      method: 'POST', 
+      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, 
+      body: JSON.stringify({ table, batch }) 
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    let result = await res.json();
+    if (result.error) throw new Error(result.error);
+    
+    // 清除缓存
+    cacheClearTable(table);
+    
+    return result;
+  } catch(e) {
+    console.error('dbBatchUpdate error:', e);
+    throw e;
+  }
+}
+
 async function dbDelete(table, match = {}, force = false) {
   try {
     const body = { table, match: match || {}, force };
@@ -2608,18 +2632,20 @@ function renderStudentListPage() {
 
 async function batchRenewStudents() {
   if (!requireAdmin()) return;
-  const cohort = document.getElementById('studentCohortFilter').value;
   const students = _filteredStudents.filter(s => s.status !== 'disabled');
   if (students.length === 0) return showToast('当前筛选无可用学生', 'error');
   showConfirm(`确定为当前筛选的 ${students.length} 名学生续期一年？`, async () => {
     try {
-      for (const s of students) {
-        const newExp = new Date(Date.now() + 365*24*60*60*1000);
-        await dbUpdate('students', { expires_at: newExp.toISOString(), status: 'active' }, { id: s.id });
-      }
-      cacheClearTable('students');
-      showToast(`已为 ${students.length} 名学生续期`, 'success');
-      // 使用 cacheBypass 确保获取最新数据
+      const newExp = new Date(Date.now() + 365*24*60*60*1000).toISOString();
+      // 使用批量更新
+      const batch = students.map(s => ({
+        data: { expires_at: newExp, status: 'active' },
+        match: { id: s.id }
+      }));
+      
+      const result = await dbBatchUpdate('students', batch);
+      
+      showToast(`已为 ${result.successCount || students.length} 名学生续期`, 'success');
       allStudents = await dbSelect('students', { cacheBypass: true });
       filterStudents();
     } catch(e) { showToast('批量续期失败', 'error'); }
@@ -2632,12 +2658,16 @@ async function batchToggleStudents(disable) {
   if (students.length === 0) return showToast(disable ? '当前筛选无可用学生' : '当前筛选无禁用学生', 'error');
   showConfirm(`确定${disable ? '禁用' : '启用'}当前筛选的 ${students.length} 名学生？`, async () => {
     try {
-      for (const s of students) {
-        await dbUpdate('students', { status: disable ? 'disabled' : 'active' }, { id: s.id });
-      }
-      cacheClearTable('students');
-      showToast(`已${disable ? '禁用' : '启用'} ${students.length} 名学生`, 'success');
-      // 使用 cacheBypass 确保获取最新数据
+      const newStatus = disable ? 'disabled' : 'active';
+      // 使用批量更新
+      const batch = students.map(s => ({
+        data: { status: newStatus },
+        match: { id: s.id }
+      }));
+      
+      const result = await dbBatchUpdate('students', batch);
+      
+      showToast(`已${disable ? '禁用' : '启用'} ${result.successCount || students.length} 名学生`, 'success');
       allStudents = await dbSelect('students', { cacheBypass: true });
       filterStudents();
     } catch(e) { showToast('批量操作失败', 'error'); }
@@ -2650,12 +2680,15 @@ async function batchLockLevel(lock) {
   if (students.length === 0) return showToast('当前筛选无学生', 'error');
   showConfirm(`确定${lock ? '锁定' : '解锁'}当前筛选 ${students.length} 名学生的等级修改权限？`, async () => {
     try {
-      for (const s of students) {
-        await dbUpdate('students', { can_change_level: !lock }, { id: s.id });
-      }
-      cacheClearTable('students');
-      showToast(`已${lock ? '锁定' : '解锁'} ${students.length} 名学生等级`, 'success');
-      // 使用 cacheBypass 确保获取最新数据
+      // 使用批量更新
+      const batch = students.map(s => ({
+        data: { can_change_level: !lock },
+        match: { id: s.id }
+      }));
+      
+      const result = await dbBatchUpdate('students', batch);
+      
+      showToast(`已${lock ? '锁定' : '解锁'} ${result.successCount || students.length} 名学生等级`, 'success');
       allStudents = await dbSelect('students', { cacheBypass: true });
       filterStudents();
     } catch(e) { showToast('批量操作失败', 'error'); }
@@ -7381,7 +7414,13 @@ async function renderProfile() {
       <div class="stat-card orange"><div class="stat-icon">❌</div><div class="stat-value" data-target="${wrongCount}">0</div><div class="stat-label">错题数</div></div>
       <div class="stat-card purple"><div class="stat-icon">⭐</div><div class="stat-value" data-target="${favCount}">0</div><div class="stat-label">收藏数</div></div>
     </div>
-    <div class="card" style="animation-delay:0.2s;margin-top:16px">
+    <div class="card" style="animation-delay:0.2s;margin-top:16px" id="wrongAnalysisCard">
+      <div class="card-title">📊 错题分析</div>
+      <div id="wrongAnalysisContent" style="min-height:80px">
+        <div style="text-align:center;padding:20px;color:var(--text3)"><span class="spinner"></span> 加载中...</div>
+      </div>
+    </div>
+    <div class="card" style="animation-delay:0.3s;margin-top:12px">
       <div class="card-title">🔐 修改密码</div>
       <div style="display:flex;flex-direction:column;gap:10px">
         <input class="input" type="password" id="oldPwd" placeholder="当前密码">
@@ -7390,12 +7429,184 @@ async function renderProfile() {
         <button class="btn btn-primary btn-full" onclick="changePassword()">修改密码</button>
       </div>
     </div>
+    <div class="card" style="animation-delay:0.4s;margin-top:12px" id="rankingCard">
+      <div class="card-title">🏆 学习排名</div>
+      <div id="rankingContent" style="min-height:100px">
+        <div style="text-align:center;padding:20px;color:var(--text3)"><span class="spinner"></span> 加载排名...</div>
+      </div>
+    </div>
 
   `;
 
   document.querySelectorAll('.stat-value[data-target]').forEach(el => {
     animateNumber(el, parseInt(el.dataset.target));
   });
+  
+  // 加载错题分析
+  loadWrongAnalysis();
+  // 加载排名
+  loadRanking('today');
+}
+
+async function loadWrongAnalysis() {
+  try {
+    const res = await fetch(`/api/daily-task/wrong-analysis?student_id=${currentUser.id}`);
+    const data = await res.json();
+    
+    const container = document.getElementById('wrongAnalysisContent');
+    if (!container) return;
+    
+    // 题型分析
+    const typeMap = { single: '单选题', multiple: '多选题', judge: '判断题' };
+    let typeHtml = '<div style="margin-bottom:12px"><div style="font-size:.85rem;font-weight:600;margin-bottom:8px;color:var(--text2)">题型分析</div>';
+    
+    if (data.typeStats && data.typeStats.length > 0) {
+      typeHtml += '<div style="display:flex;flex-direction:column;gap:6px">';
+      data.typeStats.forEach(stat => {
+        const rate = stat.total > 0 ? Math.round(stat.correct / stat.total * 100) : 0;
+        const rateColor = rate >= 80 ? '#10b981' : rate >= 60 ? '#f59e0b' : '#ef4444';
+        typeHtml += `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg);border-radius:8px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-weight:600">${typeMap[stat.type] || stat.type}</span>
+              <span style="font-size:.75rem;color:var(--text3)">错${stat.wrong}题</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="width:60px;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+                <div style="width:${rate}%;height:100%;background:${rateColor}"></div>
+              </div>
+              <span style="font-size:.8rem;font-weight:600;color:${rateColor}">${rate}%</span>
+            </div>
+          </div>
+        `;
+      });
+      typeHtml += '</div>';
+    } else {
+      typeHtml += '<div style="text-align:center;color:var(--text3);padding:12px">暂无答题数据</div>';
+    }
+    typeHtml += '</div>';
+    
+    // 知识点分析（如果有tags）
+    let tagHtml = '';
+    if (data.tagStats && data.tagStats.length > 0) {
+      tagHtml = '<div style="margin-top:12px"><div style="font-size:.85rem;font-weight:600;margin-bottom:8px;color:var(--text2)">薄弱知识点 TOP 5</div>';
+      tagHtml += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
+      data.tagStats.slice(0, 5).forEach(stat => {
+        const rate = stat.total > 0 ? Math.round(stat.correct / stat.total * 100) : 0;
+        tagHtml += `<span class="tag tag-red" style="cursor:pointer" onclick="practiceByTag('${stat.tag}')">${stat.tag} (${rate}%)</span>`;
+      });
+      tagHtml += '</div></div>';
+    }
+    
+    // 快捷操作
+    let actionHtml = `
+      <div style="margin-top:16px;display:flex;gap:8px">
+        <button class="btn btn-outline" style="flex:1" onclick="switchStudentTab('wrong')">
+          ❌ 错题练习
+        </button>
+        <button class="btn btn-outline" style="flex:1" onclick="startTargetPractice()">
+          🎯 针对练习
+        </button>
+      </div>
+    `;
+    
+    container.innerHTML = typeHtml + tagHtml + actionHtml;
+  } catch (e) {
+    console.error('加载错题分析失败:', e);
+    const container = document.getElementById('wrongAnalysisContent');
+    if (container) {
+      container.innerHTML = '<div style="text-align:center;color:var(--text3);padding:12px">加载失败，请刷新重试</div>';
+    }
+  }
+}
+
+function practiceByTag(tag) {
+  // 按知识点练习（目前题目没有tags，提示用户）
+  showToast(`即将练习"${tag}"相关题目`, 'info');
+  // 切换到错题模式
+  practiceMode = 'wrong';
+  switchStudentTab('practice');
+}
+
+function startTargetPractice() {
+  // 开始针对性练习：基于薄弱题型
+  showToast('将针对你的薄弱题型进行强化练习', 'info');
+  practiceMode = 'wrong';
+  switchStudentTab('practice');
+}
+
+// ===== 学习排名功能 =====
+let _currentRankPeriod = 'today';
+
+async function loadRanking(period = 'today') {
+  _currentRankPeriod = period;
+  const container = document.getElementById('rankingContent');
+  if (!container) return;
+  
+  container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3)"><span class="spinner"></span> 加载排名...</div>';
+  
+  try {
+    const res = await fetch(`/api/daily-task/ranking?period=${period}&level=${currentLevel}&my_student_id=${currentUser.id}`);
+    const data = await res.json();
+    
+    const periodLabels = { today: '今日', week: '本周', month: '本月' };
+    const periodBtns = ['today', 'week', 'month'].map(p => 
+      `<button class="mode-btn ${period === p ? 'active' : ''}" onclick="loadRanking('${p}')">${periodLabels[p]}</button>`
+    ).join('');
+    
+    let html = `
+      <div class="practice-modes" style="margin-bottom:12px">${periodBtns}</div>
+    `;
+    
+    // 我的排名
+    if (data.myRank) {
+      html += `
+        <div style="background:linear-gradient(135deg,var(--primary),#7c3aed);color:#fff;padding:10px 14px;border-radius:10px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:1.5rem">🏆</span>
+            <div>
+              <div style="font-weight:700">我的排名</div>
+              <div style="font-size:.75rem;opacity:.9">${periodLabels[period]}第 ${data.myRank} 名</div>
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-weight:700">${currentUser.xp || 0} XP</div>
+            <div style="font-size:.7rem;opacity:.9">Lv.${currentUser.study_level || 1}</div>
+          </div>
+        </div>
+      `;
+    }
+    
+    // 排名列表
+    if (data.rankings && data.rankings.length > 0) {
+      html += '<div style="display:flex;flex-direction:column;gap:6px">';
+      data.rankings.slice(0, 10).forEach((r, i) => {
+        const rankIcon = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}`;
+        const isMe = r.id === currentUser.id;
+        html += `
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:${isMe ? 'var(--primary-light)' : 'var(--bg)'};border-radius:10px;border:${isMe ? '2px solid var(--primary)' : 'none'}">
+            <div style="width:28px;text-align:center;font-weight:700;font-size:1.1rem">${rankIcon}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(r.nickname || '匿名')}</div>
+              <div style="font-size:.7rem;color:var(--text3)">${r.level || ''}${r.cohort ? ' · ' + r.cohort : ''}</div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-weight:700;color:var(--primary)">${r.total_questions || 0}题</div>
+              <div style="font-size:.7rem;color:var(--text3)">${r.accuracy || 0}%正确</div>
+            </div>
+          </div>
+        `;
+      });
+      html += '</div>';
+    } else {
+      html += '<div style="text-align:center;color:var(--text3);padding:20px">暂无排名数据</div>';
+    }
+    
+    container.innerHTML = html;
+  } catch (e) {
+    console.error('加载排名失败:', e);
+    container.innerHTML = '<div style="text-align:center;color:var(--text3);padding:12px">加载失败，请重试</div>';
+  }
 }
 
 async function changePassword() {

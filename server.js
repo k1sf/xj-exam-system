@@ -318,6 +318,86 @@ async function handleApi(req, res, url, sharedParams) {
       sendJson(res, result.rows);
       break;
     }
+    case 'update': {
+      // 批量更新支持：支持单个match或match数组
+      const { table: rawTable, data, match, batch } = params;
+      const table = validateTable(rawTable);
+      
+      // 处理批量更新
+      if (batch && Array.isArray(batch)) {
+        // batch模式：[{data: {...}, match: {...}}, ...]
+        let successCount = 0;
+        let failCount = 0;
+        
+        for (const item of batch) {
+          try {
+            const processedData = { ...item.data };
+            if ('password' in processedData && processedData.password && !String(processedData.password).startsWith('sha256:')) {
+              processedData.password = hashPassword(processedData.password);
+            }
+            const sets = Object.entries(processedData).map(([k, v]) => `${escKey(k)} = ${escVal(v, getColType(table, k))}`);
+            const conds = Object.entries(item.match || {}).map(([k, v]) => {
+              if (v === null || v === undefined) return `${escKey(k)} IS NULL`;
+              if (Array.isArray(v)) {
+                const vals = v.map(item => {
+                  if (typeof item === 'number') return item;
+                  if (typeof item === 'boolean') return item;
+                  return escVal(item, getColType(table, k));
+                });
+                return `${escKey(k)} IN (${vals.join(',')})`;
+              }
+              if (typeof v === 'boolean') return `${escKey(k)} = ${v}`;
+              if (typeof v === 'number') return `${escKey(k)} = ${v}`;
+              return `${escKey(k)} = ${escVal(v, getColType(table, k))}`;
+            });
+            
+            if (conds.length > 0) {
+              const sql = `UPDATE ${table} SET ${sets.join(',')} WHERE ${conds.join(' AND ')}`;
+              await pool.query(sql);
+              successCount++;
+            } else {
+              failCount++;
+            }
+          } catch(e) {
+            failCount++;
+            console.error('Batch update error:', e.message);
+          }
+        }
+        
+        sendJson(res, { success: true, successCount, failCount });
+        return;
+      }
+      
+      // 单个更新
+      const processedData = { ...data };
+      // Hash password field on update if it's plaintext
+      if ('password' in processedData && processedData.password && !String(processedData.password).startsWith('sha256:')) {
+        processedData.password = hashPassword(processedData.password);
+      }
+      const sets = Object.entries(processedData).map(([k, v]) => `${escKey(k)} = ${escVal(v, getColType(table, k))}`);
+      const conds = Object.entries(match || {}).map(([k, v]) => {
+        if (v === null || v === undefined) return `${escKey(k)} IS NULL`;
+        if (Array.isArray(v)) {
+          const vals = v.map(item => {
+            if (typeof item === 'number') return item;
+            if (typeof item === 'boolean') return item;
+            return escVal(item, getColType(table, k));
+          });
+          return `${escKey(k)} IN (${vals.join(',')})`;
+        }
+        if (typeof v === 'boolean') return `${escKey(k)} = ${v}`;
+        if (typeof v === 'number') return `${escKey(k)} = ${v}`;
+        return `${escKey(k)} = ${escVal(v, getColType(table, k))}`;
+      });
+      if (conds.length === 0) {
+        sendJson(res, { error: 'Empty match requires condition' }, 400);
+        return;
+      }
+      const sql = `UPDATE ${table} SET ${sets.join(',')} WHERE ${conds.join(' AND ')} RETURNING *`;
+      const result = await pool.query(sql);
+      sendJson(res, result.rows);
+      break;
+    }
     case 'progress': {
       const { table: rawTable, data, match } = params;
       const table = validateTable(rawTable);
@@ -1454,6 +1534,128 @@ async function handleDailyTaskApi(req, res, url, params) {
         total_days: 7,
         completed_days: completedDays,
         completion_rate: Math.round((completedDays / 7) * 100)
+      });
+      break;
+    }
+    
+    case 'wrong-analysis': {
+      // 错题分析：按题型和知识点统计
+      const { student_id } = allParams;
+      if (!student_id) {
+        sendJson(res, { error: '缺少student_id' }, 400);
+        return;
+      }
+      
+      // 按题型统计
+      const typeStats = await pool.query(`
+        SELECT q.type, 
+               COUNT(*) as total,
+               SUM(CASE WHEN r.is_correct THEN 1 ELSE 0 END) as correct,
+               SUM(CASE WHEN NOT r.is_correct THEN 1 ELSE 0 END) as wrong
+        FROM records r
+        JOIN questions q ON q.id = r.question_id
+        WHERE r.student_id = $1
+        GROUP BY q.type
+        ORDER BY wrong DESC
+      `, [student_id]);
+      
+      // 按知识点(tags)统计 - 只有题目有tags时才有效
+      const tagStats = await pool.query(`
+        SELECT tag, 
+               COUNT(*) as total,
+               SUM(CASE WHEN r.is_correct THEN 1 ELSE 0 END) as correct,
+               SUM(CASE WHEN NOT r.is_correct THEN 1 ELSE 0 END) as wrong
+        FROM records r
+        JOIN questions q ON q.id = r.question_id
+        CROSS JOIN LATERAL unnest(q.tags) as tag
+        WHERE r.student_id = $1
+        GROUP BY tag
+        ORDER BY wrong DESC
+        LIMIT 10
+      `, [student_id]);
+      
+      // 最近错题趋势（最近7天）
+      const trendStats = await pool.query(`
+        SELECT DATE(r.created_at) as date,
+               COUNT(*) as total,
+               SUM(CASE WHEN r.is_correct THEN 1 ELSE 0 END) as correct
+        FROM records r
+        WHERE r.student_id = $1
+        AND r.created_at >= CURRENT_DATE - INTERVAL '6 days'
+        GROUP BY DATE(r.created_at)
+        ORDER BY date
+      `, [student_id]);
+      
+      sendJson(res, {
+        typeStats: typeStats.rows,
+        tagStats: tagStats.rows,
+        trendStats: trendStats.rows
+      });
+      break;
+    }
+    
+    case 'ranking': {
+      // 学习排名：今日/本周/本月
+      const { period, level, limit, my_student_id } = allParams;
+      const lim = parseInt(limit) || 20;
+      
+      let dateFilter = '';
+      if (period === 'today') {
+        dateFilter = "AND r.created_at >= CURRENT_DATE";
+      } else if (period === 'week') {
+        dateFilter = "AND r.created_at >= CURRENT_DATE - INTERVAL '6 days'";
+      } else if (period === 'month') {
+        dateFilter = "AND r.created_at >= CURRENT_DATE - INTERVAL '29 days'";
+      }
+      
+      // 按答题数量排名（records.student_id是手机号，students.username也是手机号）
+      const rankingResult = await pool.query(`
+        SELECT s.id, s.username, s.nickname, s.level, s.cohort, s.xp, s.study_level,
+               COUNT(r.id) as total_questions,
+               SUM(CASE WHEN r.is_correct THEN 1 ELSE 0 END) as correct_count,
+               ROUND(100.0 * SUM(CASE WHEN r.is_correct THEN 1 ELSE 0 END) / NULLIF(COUNT(r.id), 0), 1) as accuracy
+        FROM students s
+        LEFT JOIN records r ON r.student_id = s.username ${dateFilter.replace('AND', 'AND')}
+        WHERE s.status = 'active'
+        ${level ? `AND s.level = $1` : ''}
+        GROUP BY s.id, s.username
+        HAVING COUNT(r.id) > 0
+        ORDER BY total_questions DESC, accuracy DESC
+        LIMIT ${lim}
+      `, level ? [level] : []);
+      
+      // 获取当前学生的排名
+      let myRank = null;
+      if (my_student_id) {
+        // my_student_id可能是uuid或手机号，需要查找对应的username
+        const myStudentResult = await pool.query(`
+          SELECT username FROM students WHERE id = $1 OR username = $1
+        `, [my_student_id]);
+        
+        if (myStudentResult.rows.length > 0) {
+          const myUsername = myStudentResult.rows[0].username;
+          const myRankResult = await pool.query(`
+            WITH ranked AS (
+              SELECT s.username, 
+                     COUNT(r.id) as total_questions,
+                     RANK() OVER (ORDER BY COUNT(r.id) DESC) as rank
+              FROM students s
+              LEFT JOIN records r ON r.student_id = s.username ${dateFilter.replace('AND', 'AND')}
+              WHERE s.status = 'active'
+              ${level ? `AND s.level = $1` : ''}
+              GROUP BY s.username
+              HAVING COUNT(r.id) > 0
+            )
+            SELECT rank FROM ranked WHERE username = $2
+          `, level ? [level, myUsername] : [myUsername]);
+          myRank = myRankResult.rows[0]?.rank || null;
+        }
+      }
+      
+      sendJson(res, {
+        period: period || 'today',
+        rankings: rankingResult.rows,
+        myRank: myRank
       });
       break;
     }
