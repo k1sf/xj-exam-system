@@ -489,6 +489,34 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .sync-badge{background:var(--error);color:#fff;border-radius:10px;min-width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;font-size:.65rem;padding:0 4px;line-height:1}
 .sync-indicator:active{transform:scale(.95)}
 .sync-indicator:hover{opacity:1}
+
+/* Homework Styles */
+.homework-banner{display:flex;align-items:center;gap:8px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:10px 16px;margin:8px 0;border-radius:10px;cursor:pointer;transition:transform .15s,box-shadow .15s}
+.homework-banner:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(102,126,234,.3)}
+.homework-banner-icon{font-size:1.2rem}
+.homework-banner-text{flex:1;font-weight:500}
+.homework-banner-arrow{font-size:1.2rem;opacity:.6}
+.homework-list{max-height:60vh;overflow-y:auto}
+.homework-item{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;cursor:pointer;transition:background .15s}
+.homework-item:hover{background:var(--hover)}
+.homework-item-title{font-weight:600;margin-bottom:6px}
+.homework-item-info{font-size:.82rem;color:var(--text2);display:flex;flex-wrap:wrap;gap:8px}
+.homework-header{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--card);border-bottom:1px solid var(--border)}
+.homework-title{flex:1;font-weight:600;text-align:center}
+.homework-progress{font-size:.82rem;color:var(--text2)}
+.homework-complete{text-align:center;padding:40px 20px}
+.homework-complete .complete-icon{font-size:4rem;margin-bottom:16px}
+.homework-complete h3{margin-bottom:20px}
+.homework-complete .complete-stats{display:flex;justify-content:center;gap:24px;margin-bottom:24px}
+.homework-complete .stat-item{display:flex;flex-direction:column;align-items:center}
+.homework-complete .stat-label{font-size:.78rem;color:var(--text2);margin-bottom:4px}
+.homework-complete .stat-value{font-size:1.2rem;font-weight:600}
+.homework-info-bar{display:flex;flex-wrap:wrap;gap:12px;padding:12px 16px;background:var(--card);border-bottom:1px solid var(--border);font-size:.85rem;color:var(--text2)}
+.homework-records{padding:16px}
+.data-table{width:100%;border-collapse:collapse;font-size:.85rem}
+.data-table th,.data-table td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--border)}
+.data-table th{background:var(--hover);font-weight:600}
+.data-table tr:hover{background:var(--hover)}
 </style>
 </head>
 <body>
@@ -2051,6 +2079,7 @@ function renderAdmin() {
         <button class="admin-tab" data-tab="exams" onclick="switchAdminTab('exams')">📅 考试</button>
         <button class="admin-tab" data-tab="quickexam" onclick="switchAdminTab('quickexam')">⚡ 快考</button>
         <button class="admin-tab" data-tab="enrollment" onclick="switchAdminTab('enrollment')">📋 报名</button>
+        <button class="admin-tab" data-tab="homework" onclick="switchAdminTab('homework')">📝 作业</button>
         <button class="admin-tab" data-tab="learning" onclick="switchAdminTab('learning')">📖 学情</button>
         <button class="admin-tab" data-tab="settings" onclick="switchAdminTab('settings')">⚙️ 设置</button>
       </div>
@@ -2072,6 +2101,7 @@ function switchAdminTab(tab) {
       case 'exams': renderAdminExams(); break;
       case 'quickexam': renderQuickExam(); break;
       case 'enrollment': renderAdminEnrollment(); break;
+      case 'homework': renderAdminHomework(); break;
       case 'learning': renderLearning(); break;
       case 'settings': renderAdminSettings(); break;
     }
@@ -3918,6 +3948,285 @@ function exportEnrollmentCSV() {
 }
 
 
+// ===== Homework Management =====
+let _homeworkList = [];
+let _currentHomework = null;
+
+async function renderAdminHomework() {
+  const content = document.getElementById('adminContent');
+  content.innerHTML = `
+    <div class="page-header">
+      <h3>📝 作业管理</h3>
+      <button class="admin-btn primary" onclick="showCreateHomeworkModal()">+ 布置作业</button>
+    </div>
+    <div id="homeworkListContainer">加载中...</div>
+  `;
+  
+  await loadHomeworkList();
+}
+
+async function loadHomeworkList() {
+  try {
+    _homeworkList = await fetch('/api/homework/list').then(r => r.json());
+    renderHomeworkList();
+  } catch (e) {
+    document.getElementById('homeworkListContainer').innerHTML = '<p class="error">加载失败</p>';
+  }
+}
+
+function renderHomeworkList() {
+  const container = document.getElementById('homeworkListContainer');
+  if (_homeworkList.length === 0) {
+    container.innerHTML = '<p class="empty-hint">暂无作业，点击"布置作业"创建</p>';
+    return;
+  }
+  
+  container.innerHTML = _homeworkList.map(h => {
+    const typeText = h.type === 'practice' ? '刷题' : h.type === 'exercise' ? '错题练习' : '模拟考试';
+    const targetText = h.target_type === 'level' ? `级别：${h.level}` : 
+                       h.target_type === 'cohort' ? `班级：${h.cohort}` : 
+                       `指定学生：${h.target_ids?.length || 0}人`;
+    const endTime = h.end_time ? `截止：${fmtLocalShort(h.end_time)}` : '无截止时间';
+    const progress = `${h.completed_students || 0}/${h.total_students || 0}人完成`;
+    
+    return `
+      <div class="card" onclick="openHomeworkDetail(${h.id})">
+        <div class="card-title">📝 ${escHtml(h.title)}</div>
+        <div class="card-info">
+          <span>${typeText} | ${h.question_count}题</span>
+          <span>${targetText}</span>
+          <span>${endTime}</span>
+          <span>${progress}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function showCreateHomeworkModal() {
+  const levelOpts = LEVELS.map(l => `
+    <label class="checkbox-item">
+      <input type="checkbox" value="${l}" name="homeworkLevel"> ${l}
+    </label>
+  `).join('');
+  
+  const cohortOpts = [...new Set(allStudents.map(s => s.cohort).filter(Boolean))].map(c => `
+    <label class="checkbox-item">
+      <input type="checkbox" value="${escHtml(c)}" name="homeworkCohort"> ${escHtml(c)}
+    </label>
+  `).join('');
+  
+  const now = new Date();
+  const defaultEndTime = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16);
+  
+  showModal(`
+    <h3>📝 布置作业</h3>
+    <div class="form-group">
+      <label>作业标题 *</label>
+      <input type="text" id="homeworkTitle" placeholder="如：初级刷题作业">
+    </div>
+    <div class="form-group">
+      <label>作业类型</label>
+      <select id="homeworkType" onchange="toggleHomeworkTypeOptions()">
+        <option value="practice">刷题作业</option>
+        <option value="exercise">错题练习</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>题目数量 *</label>
+      <input type="number" id="homeworkQuestionCount" value="50" min="1" max="500">
+    </div>
+    <div class="form-group">
+      <label>分配方式</label>
+      <select id="homeworkTargetType" onchange="toggleHomeworkTargetOptions()">
+        <option value="level">按级别</option>
+        <option value="cohort">按班级</option>
+        <option value="student">指定学生</option>
+      </select>
+    </div>
+    <div class="form-group" id="homeworkLevelGroup">
+      <label>选择级别</label>
+      <div class="checkbox-grid">${levelOpts}</div>
+    </div>
+    <div class="form-group" id="homeworkCohortGroup" style="display:none;">
+      <label>选择班级</label>
+      <div class="checkbox-grid">${cohortOpts}</div>
+    </div>
+    <div class="form-group" id="homeworkStudentGroup" style="display:none;">
+      <label>选择学生</label>
+      <div id="homeworkStudentList" style="max-height:200px;overflow-y:auto;">
+        ${allStudents.map(s => `
+          <label class="checkbox-item">
+            <input type="checkbox" value="${s.id}" name="homeworkStudent"> ${escHtml(s.nickname || s.username)} (${s.level})
+          </label>
+        `).join('')}
+      </div>
+    </div>
+    <div class="form-group">
+      <label>截止时间（可选）</label>
+      <input type="datetime-local" id="homeworkEndTime" value="${defaultEndTime}">
+    </div>
+    <div class="modal-actions">
+      <button class="btn secondary" onclick="closeModal()">取消</button>
+      <button class="btn primary" onclick="createHomework()">布置</button>
+    </div>
+  `);
+}
+
+function toggleHomeworkTypeOptions() {
+  // 预留：不同类型作业的特殊选项
+}
+
+function toggleHomeworkTargetOptions() {
+  const type = document.getElementById('homeworkTargetType').value;
+  document.getElementById('homeworkLevelGroup').style.display = type === 'level' ? 'block' : 'none';
+  document.getElementById('homeworkCohortGroup').style.display = type === 'cohort' ? 'block' : 'none';
+  document.getElementById('homeworkStudentGroup').style.display = type === 'student' ? 'block' : 'none';
+}
+
+async function createHomework() {
+  const title = document.getElementById('homeworkTitle').value.trim();
+  const type = document.getElementById('homeworkType').value;
+  const questionCount = parseInt(document.getElementById('homeworkQuestionCount').value);
+  const targetType = document.getElementById('homeworkTargetType').value;
+  const endTime = document.getElementById('homeworkEndTime').value;
+  
+  if (!title) {
+    showToast('请输入作业标题', 'error');
+    return;
+  }
+  if (!questionCount || questionCount < 1) {
+    showToast('请输入有效的题目数量', 'error');
+    return;
+  }
+  
+  let level = null, cohort = null, targetIds = null;
+  
+  if (targetType === 'level') {
+    const selectedLevels = [...document.querySelectorAll('input[name="homeworkLevel"]:checked')].map(c => c.value);
+    if (selectedLevels.length === 0) {
+      showToast('请选择至少一个级别', 'error');
+      return;
+    }
+    level = selectedLevels[0]; // 暂时只支持单级别
+  } else if (targetType === 'cohort') {
+    const selectedCohorts = [...document.querySelectorAll('input[name="homeworkCohort"]:checked')].map(c => c.value);
+    if (selectedCohorts.length === 0) {
+      showToast('请选择至少一个班级', 'error');
+      return;
+    }
+    cohort = selectedCohorts[0]; // 暂时只支持单班级
+  } else {
+    const selectedStudents = [...document.querySelectorAll('input[name="homeworkStudent"]:checked')].map(c => c.value);
+    if (selectedStudents.length === 0) {
+      showToast('请选择至少一个学生', 'error');
+      return;
+    }
+    targetIds = selectedStudents;
+  }
+  
+  try {
+    const res = await fetch('/api/homework/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title, type, level, cohort, target_type: targetType, target_ids: targetIds,
+        question_count: questionCount, end_time: endTime ? new Date(endTime).toISOString() : null
+      })
+    }).then(r => r.json());
+    
+    if (res.error) throw new Error(res.error);
+    
+    closeModal();
+    showToast('作业布置成功', 'success');
+    await loadHomeworkList();
+  } catch (e) {
+    showToast('创建失败：' + e.message, 'error');
+  }
+}
+
+async function openHomeworkDetail(id) {
+  try {
+    const homework = await fetch(`/api/homework/get?id=${id}`).then(r => r.json());
+    if (homework.error) throw new Error(homework.error);
+    
+    const records = await fetch(`/api/homework/records?homework_id=${id}`).then(r => r.json());
+    _currentHomework = homework;
+    
+    const typeText = homework.type === 'practice' ? '刷题' : homework.type === 'exercise' ? '错题练习' : '模拟考试';
+    const targetText = homework.target_type === 'level' ? `级别：${homework.level}` : 
+                       homework.target_type === 'cohort' ? `班级：${homework.cohort}` : 
+                       `指定学生`;
+    
+    const completedCount = records.filter(r => r.is_completed).length;
+    const totalCount = records.length;
+    
+    document.getElementById('adminContent').innerHTML = `
+      <div class="page-header">
+        <button class="btn secondary" onclick="renderAdminHomework()">← 返回</button>
+        <h3>📝 ${escHtml(homework.title)}</h3>
+        <div>
+          <button class="btn danger" onclick="deleteHomework(${id})">删除作业</button>
+        </div>
+      </div>
+      <div class="homework-info-bar">
+        <span>${typeText} | ${homework.question_count}题</span>
+        <span>${targetText}</span>
+        <span>截止：${homework.end_time ? fmtLocalShort(homework.end_time) : '无'}</span>
+        <span>完成：${completedCount}/${totalCount}人</span>
+      </div>
+      <div class="homework-records">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>学生</th>
+              <th>级别</th>
+              <th>班级</th>
+              <th>进度</th>
+              <th>状态</th>
+              <th>完成时间</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${records.map(r => `
+              <tr>
+                <td>${escHtml(r.nickname || r.username || '未知')}</td>
+                <td>${r.level || '-'}</td>
+                <td>${escHtml(r.cohort || '-')}</td>
+                <td>${r.total_count}/${homework.question_count} (${r.correct_count}对)</td>
+                <td>${r.is_completed ? '✅ 已完成' : r.total_count > 0 ? '🔄 进行中' : '⏳ 未开始'}</td>
+                <td>${r.completed_at ? fmtLocalShort(r.completed_at) : '-'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (e) {
+    showToast('加载失败：' + e.message, 'error');
+  }
+}
+
+async function deleteHomework(id) {
+  if (!confirm('确定要删除这个作业吗？')) return;
+  
+  try {
+    const res = await fetch('/api/homework/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    }).then(r => r.json());
+    
+    if (res.error) throw new Error(res.error);
+    
+    showToast('删除成功', 'success');
+    renderAdminHomework();
+  } catch (e) {
+    showToast('删除失败：' + e.message, 'error');
+  }
+}
+
+
 async function renderLearning() {
   allStudents = await dbSelect('students', { order: ['created_at', false] });
   // 拆分合并的期次为独立选项
@@ -4474,6 +4783,296 @@ function levelSwitchHtml() {
   const sIcon = studyLevelIcon(sLv);
   return `<span style="display:flex;align-items:center;gap:4px"><span style="font-size:.75rem;background:rgba(255,255,255,.2);padding:1px 6px;border-radius:8px">${sIcon} Lv.${sLv}</span> ${LEVEL_ICONS[currentLevel]||''} ${escHtml(currentLevel)}</span>`;
 }
+
+// ===== Student Homework Functions =====
+let _studentHomeworkList = [];
+let _currentStudentHomework = null;
+let _homeworkQuestions = [];
+let _homeworkIndex = 0;
+let _homeworkAnswered = {};
+let _homeworkMultiSelected = {};
+
+async function loadStudentHomework() {
+  const banner = document.getElementById('homeworkBanner');
+  if (!banner) return;
+  
+  try {
+    const res = await fetch(`/api/homework/student-list?student_id=${currentUser.id}&level=${encodeURIComponent(currentLevel)}&cohort=${encodeURIComponent(currentUser.cohort || '')}`);
+    _studentHomeworkList = await res.json();
+    
+    const pending = _studentHomeworkList.filter(h => !h.my_completed);
+    if (pending.length === 0) {
+      banner.innerHTML = '';
+      return;
+    }
+    
+    banner.innerHTML = `
+      <div class="homework-banner" onclick="showHomeworkList()">
+        <span class="homework-banner-icon">📝</span>
+        <span class="homework-banner-text">待完成作业：${pending.length}个</span>
+        <span class="homework-banner-arrow">›</span>
+      </div>
+    `;
+  } catch (e) {
+    banner.innerHTML = '';
+  }
+}
+
+function showHomeworkList() {
+  const pending = _studentHomeworkList.filter(h => !h.my_completed);
+  
+  showModal(`
+    <h3>📝 待完成作业</h3>
+    <div class="homework-list">
+      ${pending.length === 0 ? '<p class="empty-hint">暂无待完成作业</p>' : 
+        pending.map(h => `
+          <div class="homework-item" onclick="startHomework(${h.id})">
+            <div class="homework-item-title">${escHtml(h.title)}</div>
+            <div class="homework-item-info">
+              <span>${h.type === 'practice' ? '刷题' : '错题练习'} | ${h.question_count}题</span>
+              <span>进度：${h.my_total_count}/${h.question_count}</span>
+              ${h.end_time ? `<span>截止：${fmtLocalShort(h.end_time)}</span>` : ''}
+            </div>
+            <button class="btn primary btn-sm">${h.my_total_count > 0 ? '继续' : '开始'}</button>
+          </div>
+        `).join('')
+      }
+    </div>
+    <div class="modal-actions">
+      <button class="btn secondary" onclick="closeModal()">关闭</button>
+    </div>
+  `);
+}
+
+async function startHomework(homeworkId) {
+  try {
+    // 获取作业详情
+    const homework = await fetch(`/api/homework/get?id=${homeworkId}`).then(r => r.json());
+    if (homework.error) throw new Error(homework.error);
+    
+    // 开始/继续作业
+    const record = await fetch('/api/homework/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ homework_id: homeworkId, student_id: currentUser.id })
+    }).then(r => r.json());
+    
+    _currentStudentHomework = homework;
+    
+    // 获取题目
+    let allQuestions = await dbSelect('questions', { eq: { level: homework.level || currentLevel }, order: ['id', false] });
+    
+    // 排除已答过的题
+    const answeredIds = record.question_ids || [];
+    _homeworkQuestions = allQuestions.filter(q => !answeredIds.includes(q.id));
+    
+    // 如果作业类型是错题练习，筛选错题
+    if (homework.type === 'exercise') {
+      const records = await dbSelect('records', { eq: { student_id: currentUser.username } });
+      const wrongQIds = [...new Set(records.filter(r => !r.is_correct).map(r => r.question_id))];
+      _homeworkQuestions = _homeworkQuestions.filter(q => wrongQIds.includes(q.id));
+    }
+    
+    // 如果题目不够，随机补充
+    if (_homeworkQuestions.length < homework.question_count) {
+      const remaining = homework.question_count - _homeworkQuestions.length;
+      const otherQs = allQuestions.filter(q => !_homeworkQuestions.find(hq => hq.id === q.id));
+      const shuffled = otherQs.sort(() => Math.random() - 0.5);
+      _homeworkQuestions = [..._homeworkQuestions, ...shuffled.slice(0, remaining)];
+    }
+    
+    _homeworkIndex = 0;
+    _homeworkAnswered = {};
+    _homeworkMultiSelected = {};
+    
+    closeModal();
+    renderHomeworkUI();
+  } catch (e) {
+    showToast('加载作业失败：' + e.message, 'error');
+  }
+}
+
+function renderHomeworkUI() {
+  const h = _currentStudentHomework;
+  const total = h.question_count;
+  const progress = _homeworkQuestions.length;
+  
+  document.getElementById('studentContent').innerHTML = `
+    <div class="homework-header">
+      <button class="btn secondary btn-sm" onclick="exitHomework()">← 返回</button>
+      <span class="homework-title">${escHtml(h.title)}</span>
+      <span class="homework-progress">剩余 ${progress} 题</span>
+    </div>
+    <div id="homeworkCardArea"></div>
+  `;
+  
+  renderHomeworkCard();
+}
+
+function renderHomeworkCard() {
+  const area = document.getElementById('homeworkCardArea');
+  if (!area) return;
+  
+  if (_homeworkIndex >= _homeworkQuestions.length || _homeworkIndex >= _currentStudentHomework.question_count) {
+    renderHomeworkComplete();
+    return;
+  }
+  
+  const q = _homeworkQuestions[_homeworkIndex];
+  const isMulti = q.type === '多选';
+  const opts = Array.isArray(q.options) ? q.options : JSON.parse(q.options || '[]');
+  const answered = _homeworkAnswered[q.id];
+  const answeredOpts = answered?.selected || [];
+  const isCorrect = answered?.isCorrect;
+  const answerArr = Array.isArray(q.answer) ? q.answer : (typeof q.answer === 'string' ? q.answer.split(',').map(s => s.trim()) : [q.answer]);
+  
+  area.innerHTML = `
+    <div class="question-card">
+      <div class="question-header">
+        <span class="question-type ${q.type}">${q.type}</span>
+        <span class="question-number">第 ${_homeworkIndex + 1} / ${_currentStudentHomework.question_count} 题</span>
+      </div>
+      <div class="question-content">${escHtml(q.content)}</div>
+      <div class="question-options">
+        ${opts.map((opt, i) => {
+          const key = opt.key || opt.label || String.fromCharCode(65 + i);
+          const val = opt.value || opt.text || opt;
+          const isSelected = answeredOpts.includes(key);
+          const isCorrectOpt = answerArr.includes(key);
+          let optClass = 'option';
+          if (answered) {
+            if (isCorrectOpt) optClass += ' correct';
+            else if (isSelected && !isCorrectOpt) optClass += ' wrong';
+          } else if (isSelected) {
+            optClass += ' selected';
+          }
+          return `<div class="${optClass}" onclick="${answered ? '' : `selectHomeworkOption('${q.id}','${key}',${isMulti})`}">
+            <span class="option-key">${key}</span>
+            <span class="option-value">${escHtml(val)}</span>
+          </div>`;
+        }).join('')}
+      </div>
+      ${answered ? `
+        <div class="question-result ${isCorrect ? 'correct' : 'wrong'}">
+          ${isCorrect ? '✅ 回答正确' : `❌ 回答错误，正确答案：${answerArr.join(', ')}`}
+        </div>
+        ${q.analysis ? `<div class="question-analysis"><strong>解析：</strong>${escHtml(q.analysis)}</div>` : ''}
+        <button class="btn primary btn-full" onclick="nextHomeworkQuestion()">下一题</button>
+      ` : `
+        ${isMulti ? `<button class="btn primary btn-full" onclick="submitHomeworkMulti('${q.id}')" ${answeredOpts.length === 0 ? 'disabled' : ''}>确认提交</button>` : ''}
+      `}
+    </div>
+  `;
+}
+
+function selectHomeworkOption(qId, key, isMulti) {
+  if (isMulti) {
+    if (!_homeworkMultiSelected[qId]) _homeworkMultiSelected[qId] = [];
+    const idx = _homeworkMultiSelected[qId].indexOf(key);
+    if (idx >= 0) _homeworkMultiSelected[qId].splice(idx, 1);
+    else _homeworkMultiSelected[qId].push(key);
+    _homeworkAnswered[qId] = { selected: _homeworkMultiSelected[qId] };
+    renderHomeworkCard();
+  } else {
+    _homeworkAnswered[qId] = { selected: [key] };
+    submitHomeworkAnswer(qId, [key]);
+  }
+}
+
+function submitHomeworkMulti(qId) {
+  const selected = _homeworkMultiSelected[qId] || [];
+  if (selected.length === 0) return;
+  submitHomeworkAnswer(qId, selected);
+}
+
+async function submitHomeworkAnswer(qId, selected) {
+  const q = _homeworkQuestions.find(q => q.id == qId);
+  const answerArr = Array.isArray(q.answer) ? q.answer : (typeof q.answer === 'string' ? q.answer.split(',').map(s => s.trim()) : [q.answer]);
+  const isCorrect = selected.length === answerArr.length && selected.every(s => answerArr.includes(s));
+  
+  _homeworkAnswered[qId] = { selected, isCorrect };
+  
+  // 提交到服务器
+  try {
+    await fetch('/api/homework/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        homework_id: _currentStudentHomework.id,
+        student_id: currentUser.id,
+        question_id: qId,
+        is_correct: isCorrect
+      })
+    });
+    
+    // 同时记录到 records 表
+    await dbInsert('records', {
+      student_id: currentUser.username,
+      question_id: qId,
+      is_correct: isCorrect,
+      user_answer: selected.join(','),
+      exam_id: null,
+      is_fav: false
+    });
+    
+    // 加 XP
+    addXp(isCorrect ? XP_REWARDS.correct : XP_REWARDS.wrong, isCorrect ? '答对' : '答错');
+    
+    // 清除缓存
+    clearCache('records');
+  } catch (e) {
+    console.error('提交作业答案失败:', e);
+  }
+  
+  renderHomeworkCard();
+}
+
+function nextHomeworkQuestion() {
+  _homeworkIndex++;
+  renderHomeworkCard();
+}
+
+async function renderHomeworkComplete() {
+  // 获取最终进度
+  try {
+    const progress = await fetch(`/api/homework/record-progress?homework_id=${_currentStudentHomework.id}&student_id=${currentUser.id}`).then(r => r.json());
+    
+    const area = document.getElementById('homeworkCardArea');
+    area.innerHTML = `
+      <div class="homework-complete">
+        <div class="complete-icon">${progress.is_completed ? '🎉' : '📚'}</div>
+        <h3>${progress.is_completed ? '作业已完成！' : '继续加油！'}</h3>
+        <div class="complete-stats">
+          <div class="stat-item">
+            <span class="stat-label">答题数</span>
+            <span class="stat-value">${progress.total_count} / ${_currentStudentHomework.question_count}</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">答对数</span>
+            <span class="stat-value">${progress.correct_count}</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">正确率</span>
+            <span class="stat-value">${progress.total_count > 0 ? Math.round(progress.correct_count / progress.total_count * 100) : 0}%</span>
+          </div>
+        </div>
+        <button class="btn primary btn-full" onclick="exitHomework()">返回刷题</button>
+      </div>
+    `;
+  } catch (e) {
+    showToast('获取进度失败', 'error');
+  }
+}
+
+function exitHomework() {
+  _currentStudentHomework = null;
+  _homeworkQuestions = [];
+  _homeworkIndex = 0;
+  _homeworkAnswered = {};
+  _homeworkMultiSelected = {};
+  switchStudentTab('practice');
+}
+
 function renderStudent() {
   // Daily login XP bonus
   const lastLoginDate = localStorage.getItem('xjLastLoginDate');
@@ -4593,9 +5192,11 @@ function renderPracticeUI() {
   ];
   const modeBtns = modes.map(m => `<button class="mode-btn ${practiceMode===m.key?'active':''}" onclick="switchPracticeMode('${m.key}')">${m.icon} ${m.label}</button>`).join('');
   document.getElementById('studentContent').innerHTML = `
+    <div id="homeworkBanner"></div>
     <div class="practice-modes">${modeBtns}</div>
     <div id="practiceCardArea"></div>
   `;
+  loadStudentHomework();
   renderPracticeCard();
 }
 

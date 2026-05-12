@@ -197,6 +197,11 @@ const server = http.createServer(async (req, res) => {
         await handleEnrollApi(req, res, url, params);
         return;
       }
+      // Handle homework API separately
+      if (url.pathname.startsWith('/api/homework')) {
+        await handleHomeworkApi(req, res, url, params);
+        return;
+      }
       await handleApi(req, res, url, params);
     } catch(e) {
       console.error('API Error:', e.message);
@@ -962,6 +967,247 @@ async function handleEnrollApi(req, res, url, params) {
       }
       
       sendJson(res, { success: true, imported, updated, errors });
+      break;
+    }
+    default:
+      sendJson(res, { error: 'Unknown route: ' + route }, 404);
+  }
+}
+
+// ===== Homework API Handler =====
+async function handleHomeworkApi(req, res, url, params) {
+  const route = url.pathname.replace('/api/homework/', '');
+  
+  // 对于 GET 请求，从 URL query string 获取参数
+  const queryParams = {};
+  url.searchParams.forEach((value, key) => { queryParams[key] = value; });
+  const allParams = { ...params, ...queryParams };
+  
+  switch (route) {
+    case 'list': {
+      // 获取作业列表
+      const result = await pool.query(`
+        SELECT h.*, 
+          (SELECT COUNT(*) FROM homework_records hr WHERE hr.homework_id = h.id) as total_students,
+          (SELECT COUNT(*) FROM homework_records hr WHERE hr.homework_id = h.id AND hr.is_completed = true) as completed_students
+        FROM homeworks h
+        WHERE h.status = 'active'
+        ORDER BY h.created_at DESC
+      `);
+      sendJson(res, result.rows);
+      break;
+    }
+    case 'create': {
+      // 创建作业
+      const { title, type = 'practice', level, cohort, target_type = 'level', target_ids, question_count = 50, correct_count, end_time } = allParams;
+      if (!title) throw new Error('作业标题不能为空');
+      if (!question_count || question_count < 1) throw new Error('题目数量必须大于0');
+      
+      const result = await pool.query(`
+        INSERT INTO homeworks (title, type, level, cohort, target_type, target_ids, question_count, correct_count, end_time, created_by)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        RETURNING *
+      `, [title, type, level || null, cohort || null, target_type, target_ids || null, question_count, correct_count || null, end_time || null, allParams.created_by || null]);
+      
+      sendJson(res, result.rows[0]);
+      break;
+    }
+    case 'update': {
+      // 更新作业
+      const { id, title, level, cohort, target_type, target_ids, question_count, correct_count, end_time, status } = allParams;
+      if (!id) throw new Error('缺少作业ID');
+      
+      const updates = [];
+      const values = [id];
+      let idx = 2;
+      
+      if (title !== undefined) { updates.push(`title = $${idx++}`); values.push(title); }
+      if (level !== undefined) { updates.push(`level = $${idx++}`); values.push(level); }
+      if (cohort !== undefined) { updates.push(`cohort = $${idx++}`); values.push(cohort); }
+      if (target_type !== undefined) { updates.push(`target_type = $${idx++}`); values.push(target_type); }
+      if (target_ids !== undefined) { updates.push(`target_ids = $${idx++}`); values.push(target_ids); }
+      if (question_count !== undefined) { updates.push(`question_count = $${idx++}`); values.push(question_count); }
+      if (correct_count !== undefined) { updates.push(`correct_count = $${idx++}`); values.push(correct_count); }
+      if (end_time !== undefined) { updates.push(`end_time = $${idx++}`); values.push(end_time); }
+      if (status !== undefined) { updates.push(`status = $${idx++}`); values.push(status); }
+      
+      if (updates.length === 0) {
+        sendJson(res, { success: true, message: '无更新内容' });
+        break;
+      }
+      
+      const result = await pool.query(`
+        UPDATE homeworks SET ${updates.join(', ')} WHERE id = $1 RETURNING *
+      `, values);
+      
+      sendJson(res, result.rows[0]);
+      break;
+    }
+    case 'delete': {
+      // 删除作业
+      const { id } = allParams;
+      if (!id) throw new Error('缺少作业ID');
+      
+      await pool.query(`DELETE FROM homeworks WHERE id = $1`, [id]);
+      sendJson(res, { success: true });
+      break;
+    }
+    case 'get': {
+      // 获取单个作业详情
+      const { id } = allParams;
+      if (!id) throw new Error('缺少作业ID');
+      
+      const result = await pool.query(`
+        SELECT * FROM homeworks WHERE id = $1
+      `, [id]);
+      
+      if (result.rows.length === 0) {
+        sendJson(res, { error: '作业不存在' }, 404);
+      } else {
+        sendJson(res, result.rows[0]);
+      }
+      break;
+    }
+    case 'records': {
+      // 获取作业完成记录（管理员查看）
+      const { homework_id } = allParams;
+      if (!homework_id) throw new Error('缺少作业ID');
+      
+      const result = await pool.query(`
+        SELECT hr.*, s.username, s.nickname, s.level, s.cohort
+        FROM homework_records hr
+        LEFT JOIN students s ON hr.student_id = s.id
+        WHERE hr.homework_id = $1
+        ORDER BY hr.is_completed DESC, hr.completed_at DESC
+      `, [homework_id]);
+      
+      sendJson(res, result.rows);
+      break;
+    }
+    case 'student-list': {
+      // 获取学生的作业列表
+      const { student_id, level, cohort } = allParams;
+      if (!student_id) throw new Error('缺少学生ID');
+      
+      // 获取符合条件的作业：按级别、按班级、或指定学生
+      const result = await pool.query(`
+        SELECT h.*, 
+          COALESCE(hr.question_ids, '{}') as question_ids,
+          COALESCE(hr.correct_count, 0) as my_correct_count,
+          COALESCE(hr.total_count, 0) as my_total_count,
+          COALESCE(hr.is_completed, false) as my_completed,
+          hr.completed_at as my_completed_at
+        FROM homeworks h
+        LEFT JOIN homework_records hr ON h.id = hr.homework_id AND hr.student_id = $1
+        WHERE h.status = 'active'
+          AND (
+            (h.target_type = 'level' AND h.level = $2)
+            OR (h.target_type = 'cohort' AND h.cohort = $3)
+            OR (h.target_type = 'student' AND $1 = ANY(h.target_ids))
+          )
+          AND (h.end_time IS NULL OR h.end_time > NOW())
+        ORDER BY h.end_time ASC, h.created_at DESC
+      `, [student_id, level || '', cohort || '']);
+      
+      sendJson(res, result.rows);
+      break;
+    }
+    case 'start': {
+      // 学生开始作业
+      const { homework_id, student_id } = allParams;
+      if (!homework_id || !student_id) throw new Error('缺少必要参数');
+      
+      // 检查作业是否存在
+      const homeworkResult = await pool.query(`SELECT * FROM homeworks WHERE id = $1 AND status = 'active'`, [homework_id]);
+      if (homeworkResult.rows.length === 0) throw new Error('作业不存在或已关闭');
+      
+      // 检查是否已过期
+      const homework = homeworkResult.rows[0];
+      if (homework.end_time && new Date(homework.end_time) < new Date()) {
+        throw new Error('作业已过期');
+      }
+      
+      // 创建或获取作业记录
+      const result = await pool.query(`
+        INSERT INTO homework_records (homework_id, student_id, question_ids, correct_count, total_count)
+        VALUES ($1, $2, '{}', 0, 0)
+        ON CONFLICT (homework_id, student_id) DO UPDATE SET homework_id = EXCLUDED.homework_id
+        RETURNING *
+      `, [homework_id, student_id]);
+      
+      sendJson(res, result.rows[0]);
+      break;
+    }
+    case 'submit': {
+      // 学生提交作业答题记录
+      const { homework_id, student_id, question_id, is_correct } = allParams;
+      if (!homework_id || !student_id || !question_id) throw new Error('缺少必要参数');
+      
+      // 获取当前记录
+      const currentResult = await pool.query(`
+        SELECT * FROM homework_records WHERE homework_id = $1 AND student_id = $2
+      `, [homework_id, student_id]);
+      
+      if (currentResult.rows.length === 0) throw new Error('请先开始作业');
+      
+      const current = currentResult.rows[0];
+      const questionIds = current.question_ids || [];
+      
+      // 检查是否已答过此题
+      if (questionIds.includes(parseInt(question_id))) {
+        sendJson(res, current);
+        break;
+      }
+      
+      // 更新记录
+      const newQuestionIds = [...questionIds, parseInt(question_id)];
+      const newTotalCount = current.total_count + 1;
+      const newCorrectCount = current.correct_count + (is_correct ? 1 : 0);
+      
+      // 获取作业信息检查是否完成
+      const homeworkResult = await pool.query(`SELECT question_count, correct_count FROM homeworks WHERE id = $1`, [homework_id]);
+      const homework = homeworkResult.rows[0];
+      
+      let isCompleted = false;
+      let completedAt = null;
+      
+      // 判断是否完成：总答题数达标 或 答对数达标
+      if (homework.correct_count) {
+        // 有答对要求
+        isCompleted = newCorrectCount >= homework.correct_count;
+      } else {
+        // 无答对要求，只需答题数达标
+        isCompleted = newTotalCount >= homework.question_count;
+      }
+      
+      if (isCompleted && !current.is_completed) {
+        completedAt = new Date();
+      }
+      
+      const result = await pool.query(`
+        UPDATE homework_records 
+        SET question_ids = $3, total_count = $4, correct_count = $5, is_completed = $6, completed_at = $7
+        WHERE homework_id = $1 AND student_id = $2
+        RETURNING *
+      `, [homework_id, student_id, newQuestionIds, newTotalCount, newCorrectCount, isCompleted || current.is_completed, completedAt || current.completed_at]);
+      
+      sendJson(res, result.rows[0]);
+      break;
+    }
+    case 'record-progress': {
+      // 获取学生单个作业进度
+      const { homework_id, student_id } = allParams;
+      if (!homework_id || !student_id) throw new Error('缺少必要参数');
+      
+      const result = await pool.query(`
+        SELECT * FROM homework_records WHERE homework_id = $1 AND student_id = $2
+      `, [homework_id, student_id]);
+      
+      if (result.rows.length === 0) {
+        sendJson(res, { question_ids: [], correct_count: 0, total_count: 0, is_completed: false });
+      } else {
+        sendJson(res, result.rows[0]);
+      }
       break;
     }
     default:
