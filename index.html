@@ -3384,7 +3384,7 @@ let learningRankData = [];   // sorted data for export
 let _enrollmentConfigs = [];
 let _currentEnrollmentConfig = null;
 let _enrollmentList = [];
-let _enrollmentFilter = { level: '', status: '', search: '' };
+let _enrollmentFilter = { level: '', status: '', cohort: '', search: '' };
 let _selectedEnrollments = new Set(); // 存储选中的报名ID
 
 async function renderAdminEnrollment() {
@@ -3478,6 +3478,8 @@ async function showCreateEnrollmentModal() {
   `;
   document.body.appendChild(modal);
   modal.addEventListener('click', (e) => { if (e.target === modal) closeEnrollmentModal(); });
+  // 阻止内容区点击事件冒泡到遮罩层
+  modal.querySelector('.enrollment-modal-content').addEventListener('click', (e) => e.stopPropagation());
 }
 
 function closeEnrollmentModal() {
@@ -3583,6 +3585,13 @@ async function renderEnrollmentDetailPage() {
           <option value="">全部状态</option>
           <option value="pending">待审核</option>
           <option value="approved">已导入</option>
+        </select>
+        <select id="enrollCohortFilter" onchange="filterEnrollmentList()" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem">
+          <option value="">全部班级</option>
+          ${(() => {
+            const cohorts = [...new Set(_enrollmentList.map(e => e.cohort).filter(Boolean))];
+            return cohorts.map(co => `<option value="${escHtml(co)}">${escHtml(co)}</option>`).join('');
+          })()}
         </select>
         <input type="text" id="enrollSearch" placeholder="搜索姓名/手机号" onkeyup="filterEnrollmentList()" style="flex:1;min-width:120px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem">
       </div>
@@ -3725,11 +3734,14 @@ function renderEnrollmentTableBody() {
 function getFilteredEnrollments() {
   const level = _enrollmentFilter.level;
   const status = _enrollmentFilter.status;
+  const cohort = _enrollmentFilter.cohort;
   const search = _enrollmentFilter.search.toLowerCase();
   
   return _enrollmentList.filter(e => {
     if (level && e.level !== level) return false;
     if (status && e.status !== status) return false;
+    // 班级筛选：使用包含匹配（支持逗号分隔的多班级查询）
+    if (cohort && e.cohort && !e.cohort.includes(cohort)) return false;
     if (search && !e.name.toLowerCase().includes(search) && !e.phone.includes(search)) return false;
     return true;
   });
@@ -3738,6 +3750,7 @@ function getFilteredEnrollments() {
 function filterEnrollmentList() {
   _enrollmentFilter.level = document.getElementById('enrollLevelFilter').value;
   _enrollmentFilter.status = document.getElementById('enrollStatusFilter').value;
+  _enrollmentFilter.cohort = document.getElementById('enrollCohortFilter').value;
   _enrollmentFilter.search = document.getElementById('enrollSearch').value.trim();
   
   // 重新渲染整个表格（包含全选checkbox）
