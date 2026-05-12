@@ -2084,7 +2084,9 @@ function switchAdminTab(tab) {
 // ===== Admin Tab1: Students =====
 async function renderAdminStudents() {
   allStudents = await dbSelect('students', { order: ['created_at', false], cacheBypass: true });
-  const cohorts = [...new Set(allStudents.map(s => s.cohort))];
+  // 拆分合并的期次为独立选项（如 "60真, 2026测试期" 拆分为 "60真" 和 "2026测试期"）
+  const allCohorts = allStudents.flatMap(s => (s.cohort || '').split(',').map(c => c.trim()).filter(Boolean));
+  const cohorts = [...new Set(allCohorts)];
   const cohortOpts = cohorts.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('');
 
   document.getElementById('adminContent').innerHTML = `
@@ -2247,7 +2249,8 @@ function filterStudents() {
   const searchEl = document.getElementById('studentSearch');
   const search = searchEl ? searchEl.value.trim().toLowerCase() : '';
   let filtered = allStudents;
-  if (cohort) filtered = filtered.filter(s => s.cohort === cohort);
+  // 使用包含匹配，支持搜索合并期次中的任意一个
+  if (cohort) filtered = filtered.filter(s => (s.cohort || '').split(',').map(c => c.trim()).includes(cohort));
   if (search) filtered = filtered.filter(s => (s.nickname||'').toLowerCase().includes(search) || (s.username||'').includes(search));
   _filteredStudents = filtered;
   _pg.student = 1;
@@ -2495,7 +2498,9 @@ async function renderAdminQuestions() {
 }
 
 function renderQuestionUI(questions, totalPages, totalCount) {
-  const cohorts = [...new Set(allStudents.map(s => s.cohort))];
+  // 拆分合并的期次为独立选项
+  const allCohorts = allStudents.flatMap(s => (s.cohort || '').split(',').map(c => c.trim()).filter(Boolean));
+  const cohorts = [...new Set(allCohorts)];
   const cohortOpts = `<option value="">全部班级</option>` + cohorts.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('');
   const levelOpts = `<option value="">全部级别</option>` + LEVELS.map(l => `<option value="${l}">${LEVEL_ICONS[l]} ${l}</option>`).join('');
   const qList = questions.length ? questions.map(q => {
@@ -2592,7 +2597,9 @@ function openQuestionEditor(qId) {
   const tags = q ? (q.tags || []) : [];
   const cohort = q ? (q.cohort || '') : '';
   const level = q ? (q.level || '初级') : '初级';
-  const cohorts = [...new Set(allStudents.map(s => s.cohort))];
+  // 拆分合并的期次为独立选项
+  const allCohorts = allStudents.flatMap(s => (s.cohort || '').split(',').map(c => c.trim()).filter(Boolean));
+  const cohorts = [...new Set(allCohorts)];
   const cohortOpts = `<option value="">通用</option>` + cohorts.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('');
   const levelOpts = LEVELS.map(l => `<option value="${l}" ${l===level?'selected':''}>${LEVEL_ICONS[l]} ${l}</option>`).join('');
 
@@ -2887,7 +2894,9 @@ function renderAdminExamPage() {
 
 function openCreateExam() {
   if (!requireAdmin()) return;
-  const cohorts = [...new Set(allStudents.map(s => s.cohort))];
+  // 拆分合并的期次为独立选项
+  const allCohorts = allStudents.flatMap(s => (s.cohort || '').split(',').map(c => c.trim()).filter(Boolean));
+  const cohorts = [...new Set(allCohorts)];
   const cohortOpts = cohorts.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('');
   const levelOpts = LEVELS.map(l => `<option value="${l}">${LEVEL_ICONS[l]} ${l}</option>`).join('');
   openModal('创建考试', `
@@ -3911,7 +3920,9 @@ function exportEnrollmentCSV() {
 
 async function renderLearning() {
   allStudents = await dbSelect('students', { order: ['created_at', false] });
-  const cohorts = [...new Set(allStudents.map(s => s.cohort).filter(Boolean))];
+  // 拆分合并的期次为独立选项
+  const allCohorts = allStudents.flatMap(s => (s.cohort || '').split(',').map(c => c.trim()).filter(Boolean));
+  const cohorts = [...new Set(allCohorts)];
   const cohortOpts = cohorts.map(c => `<option value="${escHtml(c)}" ${learningCohort===c?'selected':''}>${escHtml(c)}</option>`).join('');
   const _today = new Date(); const today = `${_today.getFullYear()}-${String(_today.getMonth()+1).padStart(2,'0')}-${String(_today.getDate()).padStart(2,'0')}`;
   if (!learningDate) learningDate = today;
@@ -4007,7 +4018,7 @@ async function loadLearningData() {
   // 使用 cacheBypass 确保获取最新数据
   const allRecords = await dbSelect('records', { order: ['created_at', false], gte: { created_at: start.toISOString() }, lt: { created_at: end.toISOString() }, cacheBypass: true });
   const students = learningCohort
-    ? allStudents.filter(s => s.cohort === learningCohort)
+    ? allStudents.filter(s => (s.cohort || '').split(',').map(c => c.trim()).includes(learningCohort))
     : allStudents;
   const studentIds = new Set(students.map(s => s.username));
 
