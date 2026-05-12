@@ -1010,7 +1010,7 @@ function refreshCurrentView() {
     let activeTab = 'students';
     tabs.forEach(t => { if (t.classList.contains('active')) activeTab = t.dataset.tab; });
     switch(activeTab) {
-      case 'students': renderAdminStudents(); break;
+      case 'students': loadStudents(); break;
       case 'questions': loadQuestions(); break;
       case 'exams': loadExams(); break;
       case 'quickExam': loadQuickExams(); break;
@@ -3864,15 +3864,9 @@ async function importEnrollments() {
     if (result.errors?.length) {
       console.error('导入错误：', result.errors);
     }
-    // 清除学生缓存，刷新列表
-    cacheClearTable('students');
+    // 刷新列表
     _selectedEnrollments.clear();
     openEnrollmentDetail(_currentEnrollmentConfig.id);
-    // 如果当前在学生管理Tab，刷新学生列表
-    const tabs = document.querySelectorAll('.admin-tab-btn');
-    let activeTab = 'students';
-    tabs.forEach(t => { if (t.classList.contains('active')) activeTab = t.dataset.tab; });
-    if (activeTab === 'students') { renderAdminStudents(); }
   } catch(e) {
     showToast('导入失败：' + e.message, 'error');
   }
