@@ -999,18 +999,15 @@ async function handleHomeworkApi(req, res, url, params) {
     }
     case 'create': {
       // 创建作业
-      const { title, type = 'practice', level, cohort, target_type = 'level', target_ids, question_count = 50, question_min, question_max, correct_count, end_time } = allParams;
+      const { title, type = 'practice', level, cohort, target_type = 'level', target_ids, question_count = 50, correct_count, end_time } = allParams;
       if (!title) throw new Error('作业标题不能为空');
-      
-      const minQ = question_min || question_count || 10;
-      const maxQ = question_max || question_count || 50;
-      if (minQ < 1 || maxQ < minQ) throw new Error('题目数量范围无效');
+      if (!question_count || question_count < 1) throw new Error('题目数量必须大于0');
       
       const result = await pool.query(`
-        INSERT INTO homeworks (title, type, level, cohort, target_type, target_ids, question_count, question_min, question_max, correct_count, end_time, created_by)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        INSERT INTO homeworks (title, type, level, cohort, target_type, target_ids, question_count, correct_count, end_time, created_by)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         RETURNING *
-      `, [title, type, level || null, cohort || null, target_type, target_ids || null, maxQ, minQ, maxQ, correct_count || null, end_time || null, allParams.created_by || null]);
+      `, [title, type, level || null, cohort || null, target_type, target_ids || null, question_count, correct_count || null, end_time || null, allParams.created_by || null]);
       
       sendJson(res, result.rows[0]);
       break;
