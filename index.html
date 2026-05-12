@@ -5227,7 +5227,7 @@ async function loadDailyTasks() {
     const res = await fetch(`/api/daily-task/status?student_id=${currentUser.id}`);
     _dailyTasks = await res.json();
     
-    const weekRes = await fetch(`/api/study-stats/week?student_id=${currentUser.id}`);
+    const weekRes = await fetch(`/api/daily-task/week-progress?student_id=${currentUser.id}`);
     _weeklyStats = await weekRes.json();
     
     renderDailyTaskPanel();
