@@ -629,6 +629,23 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .empty-state .empty-hint{font-size:.85rem;color:#999}
 .cohort-select-box{background:linear-gradient(145deg,#fff,#f8f9ff);border:1px solid #e0e6f0;border-radius:14px;padding:14px 16px;max-height:180px;overflow-y:auto;transition:all .2s}
 .cohort-select-box::-webkit-scrollbar{width:6px}
+.daily-task-card{background:linear-gradient(145deg,#fff,#f0f4ff);border-radius:16px;padding:16px;margin-bottom:16px;box-shadow:0 4px 16px rgba(102,126,234,.1)}
+.task-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.task-title{font-size:1rem;font-weight:700;color:#333}
+.task-progress{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:4px 12px;border-radius:12px;font-size:.8rem;font-weight:600}
+.task-list{display:flex;flex-direction:column;gap:8px}
+.task-item{display:flex;align-items:center;padding:10px 12px;background:#fff;border-radius:10px;gap:10px;cursor:pointer;transition:all .2s}
+.task-item:hover{background:#f8f9ff;transform:translateX(4px)}
+.task-item.done{background:linear-gradient(135deg,#e8f5e9,#f1f8e9)}
+.task-check{font-size:1.1rem}
+.task-name{flex:1;font-size:.9rem;color:#333}
+.task-reward{font-size:.75rem;color:#4caf50;font-weight:600}
+.task-detail{font-size:.75rem;color:#667eea;font-weight:500}
+.week-progress{margin-top:12px;padding-top:12px;border-top:1px solid #e8ecf3}
+.week-label{font-size:.85rem;color:#666;margin-bottom:8px;display:block}
+.week-bar{height:8px;background:#e8ecf3;border-radius:4px;overflow:hidden;margin-bottom:6px}
+.week-fill{height:100%;background:linear-gradient(90deg,#4caf50,#8bc34a);border-radius:4px;transition:width .5s ease}
+.week-text{font-size:.75rem;color:#999}
 .homework-detail-card{background:linear-gradient(145deg,#fff,#f8f9ff);border-radius:16px;padding:20px;margin-bottom:20px;box-shadow:0 4px 20px rgba(102,126,234,.08)}
 .homework-detail-type{display:inline-flex;align-items:center;gap:6px;color:#fff;padding:8px 16px;border-radius:20px;font-size:.85rem;font-weight:600;margin-bottom:16px}
 .homework-detail-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px}
@@ -5198,6 +5215,111 @@ let _homeworkQuestions = [];
 let _homeworkIndex = 0;
 let _homeworkAnswered = {};
 let _homeworkMultiSelected = {};
+let _dailyTasks = null;
+let _weeklyStats = null;
+
+async function loadDailyTasks() {
+  const panel = document.getElementById('dailyTaskPanel');
+  if (!panel || !currentUser) return;
+  
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const res = await fetch(`/api/daily-task/status?student_id=${currentUser.id}`);
+    _dailyTasks = await res.json();
+    
+    const weekRes = await fetch(`/api/study-stats/week?student_id=${currentUser.id}`);
+    _weeklyStats = await weekRes.json();
+    
+    renderDailyTaskPanel();
+  } catch (e) {
+    console.error('加载每日任务失败:', e);
+  }
+}
+
+function renderDailyTaskPanel() {
+  const panel = document.getElementById('dailyTaskPanel');
+  if (!panel || !_dailyTasks) return;
+  
+  const tasks = _dailyTasks;
+  const completedCount = [
+    tasks.login_bonus,
+    tasks.practice_count >= tasks.practice_target,
+    tasks.homework_done,
+    tasks.wrong_practice_count >= tasks.wrong_practice_target
+  ].filter(Boolean).length;
+  
+  const weekDays = _weeklyStats?.days || [];
+  const today = new Date().getDay();
+  const weekProgress = weekDays.length;
+  
+  panel.innerHTML = `
+    <div class="daily-task-card">
+      <div class="task-header">
+        <span class="task-title">📋 今日任务</span>
+        <span class="task-progress">${completedCount}/4</span>
+      </div>
+      <div class="task-list">
+        <div class="task-item ${tasks.login_bonus ? 'done' : ''}">
+          <span class="task-check">${tasks.login_bonus ? '✅' : '⬜'}</span>
+          <span class="task-name">每日登录</span>
+          <span class="task-reward">+20 XP</span>
+        </div>
+        <div class="task-item ${tasks.practice_count >= tasks.practice_target ? 'done' : ''}" onclick="goPractice()">
+          <span class="task-check">${tasks.practice_count >= tasks.practice_target ? '✅' : '⬜'}</span>
+          <span class="task-name">刷题${tasks.practice_target}道</span>
+          <span class="task-detail">${tasks.practice_count}/${tasks.practice_target}</span>
+        </div>
+        <div class="task-item ${tasks.homework_done ? 'done' : ''}" onclick="showHomeworkList()">
+          <span class="task-check">${tasks.homework_done ? '✅' : '⬜'}</span>
+          <span class="task-name">完成作业</span>
+          <span class="task-detail">${tasks.homework_done ? '已完成' : '待完成'}</span>
+        </div>
+        <div class="task-item ${tasks.wrong_practice_count >= tasks.wrong_practice_target ? 'done' : ''}" onclick="goWrongPractice()">
+          <span class="task-check">${tasks.wrong_practice_count >= tasks.wrong_practice_target ? '✅' : '⬜'}</span>
+          <span class="task-name">错题练习${tasks.wrong_practice_target}道</span>
+          <span class="task-detail">${tasks.wrong_practice_count}/${tasks.wrong_practice_target}</span>
+        </div>
+      </div>
+      <div class="week-progress">
+        <span class="week-label">📊 本周学习</span>
+        <div class="week-bar">
+          <div class="week-fill" style="width: ${Math.min(weekProgress / 7 * 100, 100)}%"></div>
+        </div>
+        <span class="week-text">${weekProgress}/7 天</span>
+      </div>
+    </div>
+  `;
+}
+
+function goPractice() {
+  switchStudentTab('practice');
+}
+
+function goWrongPractice() {
+  practiceMode = 'wrong';
+  switchStudentTab('practice');
+}
+
+async function updateDailyTaskProgress(type, value) {
+  if (!currentUser || !_dailyTasks) return;
+  
+  try {
+    const body = { student_id: currentUser.id };
+    if (type === 'practice') body.practice_count = value;
+    else if (type === 'wrong') body.wrong_practice_count = value;
+    else if (type === 'homework') body.homework_done = value;
+    
+    await fetch('/api/daily-task/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    
+    await loadDailyTasks();
+  } catch (e) {
+    console.error('更新任务进度失败:', e);
+  }
+}
 
 async function loadStudentHomework() {
   const banner = document.getElementById('homeworkBanner');
@@ -5987,10 +6109,12 @@ function renderPracticeUI() {
   ];
   const modeBtns = modes.map(m => `<button class="mode-btn ${practiceMode===m.key?'active':''}" onclick="switchPracticeMode('${m.key}')">${m.icon} ${m.label}</button>`).join('');
   document.getElementById('studentContent').innerHTML = `
+    <div id="dailyTaskPanel"></div>
     <div id="homeworkBanner"></div>
     <div class="practice-modes">${modeBtns}</div>
     <div id="practiceCardArea"></div>
   `;
+  loadDailyTasks();
   loadStudentHomework();
   renderPracticeCard();
 }

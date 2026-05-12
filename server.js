@@ -202,6 +202,11 @@ const server = http.createServer(async (req, res) => {
         await handleHomeworkApi(req, res, url, params);
         return;
       }
+      // Handle daily task API separately
+      if (url.pathname.startsWith('/api/daily-task')) {
+        await handleDailyTaskApi(req, res, url, params);
+        return;
+      }
       await handleApi(req, res, url, params);
     } catch(e) {
       console.error('API Error:', e.message);
@@ -313,7 +318,7 @@ async function handleApi(req, res, url, sharedParams) {
       sendJson(res, result.rows);
       break;
     }
-    case 'update': {
+    case 'progress': {
       const { table: rawTable, data, match } = params;
       const table = validateTable(rawTable);
       const processedData = { ...data };
@@ -1279,6 +1284,256 @@ async function handleHomeworkApi(req, res, url, params) {
       sendJson(res, { total: parseInt(result.rows[0].total) });
       break;
     }
+    default:
+      sendJson(res, { error: 'Unknown route: ' + route }, 404);
+  }
+}
+
+// ===== Daily Task API Handler =====
+async function handleDailyTaskApi(req, res, url, params) {
+  const route = url.pathname.replace('/api/daily-task/', '').replace('/api/daily-task', '');
+  
+  // 解析GET请求参数
+  const queryParams = {};
+  url.searchParams.forEach((value, key) => { queryParams[key] = value; });
+  const allParams = { ...params, ...queryParams };
+
+  switch (route) {
+    case 'status': {
+      // 获取今日任务状态
+      const { student_id } = allParams;
+      if (!student_id) {
+        sendJson(res, { error: '缺少student_id' }, 400);
+        return;
+      }
+      
+      const today = new Date().toISOString().split('T')[0];
+      
+      // 获取或创建今日任务记录
+      let result = await pool.query(`
+        SELECT * FROM daily_tasks WHERE student_id = $1 AND task_date = $2
+      `, [student_id, today]);
+      
+      if (result.rows.length === 0) {
+        // 创建今日任务记录
+        await pool.query(`
+          INSERT INTO daily_tasks (student_id, task_date, login_bonus, practice_count, homework_done, wrong_practice_count)
+          VALUES ($1, $2, true, 0, false, 0)
+        `, [student_id, today]);
+        
+        result = await pool.query(`
+          SELECT * FROM daily_tasks WHERE student_id = $1 AND task_date = $2
+        `, [student_id, today]);
+        
+        // 给予登录奖励XP
+        await pool.query(`
+          UPDATE students SET xp = COALESCE(xp, 0) + 20 WHERE id = $1
+        `, [student_id]);
+      }
+      
+      // 检查今日作业是否完成
+      const homeworkCheck = await pool.query(`
+        SELECT COUNT(*) as pending FROM homeworks h
+        JOIN students s ON (s.cohort = ANY(h.cohorts) OR s.level = h.level OR h.target_type = 'all')
+        LEFT JOIN homework_records hr ON hr.homework_id = h.id AND hr.student_id = $1
+        WHERE h.status = 'active' AND h.end_time > NOW()
+        AND (hr.is_completed = false OR hr.is_completed IS NULL)
+      `, [student_id]);
+      
+      const taskData = result.rows[0] || {};
+      sendJson(res, {
+        ...taskData,
+        has_pending_homework: parseInt(homeworkCheck.rows[0].pending) > 0
+      });
+      break;
+    }
+    
+    case 'update': {
+      // 更新任务进度
+      const { student_id, practice_count, wrong_practice_count, homework_done } = allParams;
+      if (!student_id) {
+        sendJson(res, { error: '缺少student_id' }, 400);
+        return;
+      }
+      
+      const today = new Date().toISOString().split('T')[0];
+      
+      const updates = [];
+      const values = [student_id, today];
+      let paramIndex = 3;
+      
+      if (practice_count !== undefined) {
+        updates.push(`practice_count = $${paramIndex}`);
+        values.push(parseInt(practice_count));
+        paramIndex++;
+      }
+      if (wrong_practice_count !== undefined) {
+        updates.push(`wrong_practice_count = $${paramIndex}`);
+        values.push(parseInt(wrong_practice_count));
+        paramIndex++;
+      }
+      if (homework_done !== undefined) {
+        updates.push(`homework_done = $${paramIndex}`);
+        values.push(homework_done);
+        paramIndex++;
+      }
+      
+      if (updates.length > 0) {
+        updates.push('updated_at = NOW()');
+        
+        // 先尝试更新
+        const updateResult = await pool.query(`
+          UPDATE daily_tasks SET ${updates.join(', ')}
+          WHERE student_id = $1 AND task_date = $2
+        `, values);
+        
+        // 如果没有更新到任何行，则插入新记录
+        if (updateResult.rowCount === 0) {
+          const insertCols = ['student_id', 'task_date'];
+          const insertVals = ['$1', '$2'];
+          const insertValues = [student_id, today];
+          let insertIdx = 3;
+          
+          if (practice_count !== undefined) {
+            insertCols.push('practice_count');
+            insertVals.push(`$${insertIdx}`);
+            insertValues.push(parseInt(practice_count));
+            insertIdx++;
+          }
+          if (wrong_practice_count !== undefined) {
+            insertCols.push('wrong_practice_count');
+            insertVals.push(`$${insertIdx}`);
+            insertValues.push(parseInt(wrong_practice_count));
+            insertIdx++;
+          }
+          if (homework_done !== undefined) {
+            insertCols.push('homework_done');
+            insertVals.push(`$${insertIdx}`);
+            insertValues.push(homework_done);
+            insertIdx++;
+          }
+          
+          await pool.query(`
+            INSERT INTO daily_tasks (${insertCols.join(', ')})
+            VALUES (${insertVals.join(', ')})
+          `, insertValues);
+        }
+      }
+      
+      sendJson(res, { success: true });
+      break;
+    }
+    
+    case 'week-progress': {
+      // 获取本周学习进度
+      const { student_id } = allParams;
+      if (!student_id) {
+        sendJson(res, { error: '缺少student_id' }, 400);
+        return;
+      }
+      
+      // 获取最近7天的学习记录
+      const result = await pool.query(`
+        SELECT task_date, login_bonus, practice_count, practice_target, 
+               homework_done, wrong_practice_count, wrong_practice_target
+        FROM daily_tasks 
+        WHERE student_id = $1 
+        AND task_date >= CURRENT_DATE - INTERVAL '6 days'
+        ORDER BY task_date DESC
+      `, [student_id]);
+      
+      // 计算完成率
+      const days = result.rows;
+      const completedDays = days.filter(d => 
+        d.practice_count >= d.practice_target && 
+        d.homework_done === true
+      ).length;
+      
+      sendJson(res, {
+        days: days,
+        total_days: 7,
+        completed_days: completedDays,
+        completion_rate: Math.round((completedDays / 7) * 100)
+      });
+      break;
+    }
+    
+    case 'study-stats': {
+      // 更新学习统计
+      const { student_id, questions_answered, correct_count, study_time, xp } = allParams;
+      if (!student_id) {
+        sendJson(res, { error: '缺少student_id' }, 400);
+        return;
+      }
+      
+      const today = new Date().toISOString().split('T')[0];
+      
+      await pool.query(`
+        INSERT INTO study_stats (student_id, stat_date, total_questions, correct_questions, study_time_minutes, xp_earned)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (student_id, stat_date) DO UPDATE SET
+          total_questions = study_stats.total_questions + $3,
+          correct_questions = study_stats.correct_questions + $4,
+          study_time_minutes = study_stats.study_time_minutes + $5,
+          xp_earned = study_stats.xp_earned + $6
+      `, [student_id, today, questions_answered || 0, correct_count || 0, study_time || 0, xp || 0]);
+      
+      sendJson(res, { success: true });
+      break;
+    }
+    
+    case 'overview': {
+      // 获取学生总体学习概览
+      const { student_id } = allParams;
+      if (!student_id) {
+        sendJson(res, { error: '缺少student_id' }, 400);
+        return;
+      }
+      
+      // 获取总学习天数
+      const totalDaysResult = await pool.query(`
+        SELECT COUNT(DISTINCT task_date) as total_days FROM daily_tasks WHERE student_id = $1
+      `, [student_id]);
+      
+      // 获取总答题数和正确率
+      const statsResult = await pool.query(`
+        SELECT 
+          COALESCE(SUM(total_questions), 0) as total_questions,
+          COALESCE(SUM(correct_questions), 0) as correct_questions,
+          COALESCE(SUM(xp_earned), 0) as total_xp
+        FROM study_stats WHERE student_id = $1
+      `, [student_id]);
+      
+      // 获取连续学习天数
+      const streakResult = await pool.query(`
+        WITH RECURSIVE streak AS (
+          SELECT task_date, 1 as streak_length
+          FROM daily_tasks 
+          WHERE student_id = $1 AND task_date = CURRENT_DATE
+          
+          UNION ALL
+          
+          SELECT d.task_date, s.streak_length + 1
+          FROM daily_tasks d
+          JOIN streak s ON d.task_date = s.task_date - INTERVAL '1 day'
+          WHERE d.student_id = $1 AND d.login_bonus = true
+        )
+        SELECT MAX(streak_length) as streak FROM streak
+      `, [student_id]);
+      
+      sendJson(res, {
+        total_study_days: parseInt(totalDaysResult.rows[0].total_days) || 0,
+        total_questions: parseInt(statsResult.rows[0].total_questions) || 0,
+        correct_questions: parseInt(statsResult.rows[0].correct_questions) || 0,
+        accuracy: statsResult.rows[0].total_questions > 0 
+          ? Math.round((statsResult.rows[0].correct_questions / statsResult.rows[0].total_questions) * 100)
+          : 0,
+        total_xp: parseInt(statsResult.rows[0].total_xp) || 0,
+        streak_days: parseInt(streakResult.rows[0].streak) || 0
+      });
+      break;
+    }
+    
     default:
       sendJson(res, { error: 'Unknown route: ' + route }, 404);
   }
