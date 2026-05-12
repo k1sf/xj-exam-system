@@ -1035,26 +1035,27 @@ function refreshCurrentView() {
   // 根据是否有 currentAdmin 或 currentUser 判断视图
   if (currentAdmin) {
     // 管理员模式，刷新当前Tab
-    const tabs = document.querySelectorAll('.admin-tab-btn');
+    const tabs = document.querySelectorAll('.admin-tab');
     let activeTab = 'students';
     tabs.forEach(t => { if (t.classList.contains('active')) activeTab = t.dataset.tab; });
     switch(activeTab) {
-      case 'students': loadStudents(); break;
-      case 'questions': loadQuestions(); break;
-      case 'exams': loadExams(); break;
-      case 'quickExam': loadQuickExams(); break;
+      case 'students': renderAdminStudents(); break;
+      case 'questions': renderAdminQuestions(); break;
+      case 'exams': renderAdminExams(); break;
+      case 'quickExam': renderQuickExam(); break;
       case 'enrollment': renderAdminEnrollment(); break;
+      case 'homework': renderAdminHomework(); break;
       case 'learning': loadLearningData(); break;
     }
   } else if (currentUser) {
     // 学生模式，刷新当前Tab
-    const tabs = document.querySelectorAll('.student-tab-btn');
+    const tabs = document.querySelectorAll('.student-tab');
     let activeTab = 'practice';
     tabs.forEach(t => { if (t.classList.contains('active')) activeTab = t.dataset.tab; });
     switch(activeTab) {
       case 'practice': renderPractice(); break;
-      case 'exam': loadExams(); break;
-      case 'wrong': renderWrongQuestions(); break;
+      case 'exam': renderStudentExam(); break;
+      case 'wrong': renderWrongBook(); break;
       case 'profile': renderProfile(); break;
     }
   }
@@ -4019,8 +4020,7 @@ function showCreateHomeworkModal() {
   const now = new Date();
   const defaultEndTime = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16);
   
-  showModal(`
-    <h3>📝 布置作业</h3>
+  openModal('📝 布置作业', `
     <div class="form-group">
       <label>作业标题 *</label>
       <input type="text" id="homeworkTitle" placeholder="如：初级刷题作业">
@@ -4066,11 +4066,7 @@ function showCreateHomeworkModal() {
       <label>截止时间（可选）</label>
       <input type="datetime-local" id="homeworkEndTime" value="${defaultEndTime}">
     </div>
-    <div class="modal-actions">
-      <button class="btn secondary" onclick="closeModal()">取消</button>
-      <button class="btn primary" onclick="createHomework()">布置</button>
-    </div>
-  `);
+  `, { footer: '<button class="btn secondary" onclick="closeModal()">取消</button><button class="btn primary" onclick="createHomework()">布置</button>' });
 }
 
 function toggleHomeworkTypeOptions() {
@@ -4821,8 +4817,7 @@ async function loadStudentHomework() {
 function showHomeworkList() {
   const pending = _studentHomeworkList.filter(h => !h.my_completed);
   
-  showModal(`
-    <h3>📝 待完成作业</h3>
+  openModal('📝 待完成作业', `
     <div class="homework-list">
       ${pending.length === 0 ? '<p class="empty-hint">暂无待完成作业</p>' : 
         pending.map(h => `
@@ -4838,10 +4833,7 @@ function showHomeworkList() {
         `).join('')
       }
     </div>
-    <div class="modal-actions">
-      <button class="btn secondary" onclick="closeModal()">关闭</button>
-    </div>
-  `);
+  `, { footer: '<button class="btn secondary" onclick="closeModal()">关闭</button>' });
 }
 
 async function startHomework(homeworkId) {
