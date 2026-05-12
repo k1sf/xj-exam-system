@@ -620,6 +620,53 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .homework-item-detail .detail-label{font-size:.78rem;color:#999}
 .homework-item-detail .detail-value{font-size:.85rem;color:#333;font-weight:500}
 .homework-item-footer{display:flex;align-items:center;gap:10px;padding:12px 16px;background:#f8f9ff;border-top:1px solid #f0f2f5}
+/* 作业答题页面样式 */
+.homework-quiz-card{background:linear-gradient(145deg,#fff,#f8f9ff);border-radius:20px;box-shadow:0 4px 20px rgba(102,126,234,.1);overflow:hidden;border:1px solid rgba(102,126,234,.1)}
+.homework-quiz-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;gap:12px}
+.homework-quiz-header .btn-outline{background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.3);color:#fff}
+.homework-quiz-header .btn-outline:hover{background:rgba(255,255,255,.3)}
+.homework-quiz-header .homework-info{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1}
+.homework-quiz-header .homework-title-text{font-weight:700;font-size:1.1rem}
+.homework-quiz-header .homework-count{font-size:.8rem;opacity:.9}
+.homework-quiz-header .homework-timer{font-size:1rem;font-weight:600;font-family:monospace;background:rgba(255,255,255,.15);padding:6px 14px;border-radius:20px}
+.homework-quiz-body{padding:24px}
+.homework-progress-nav{display:flex;align-items:center;justify-content:center;gap:8px;padding:16px;background:#f8f9ff;border-bottom:1px solid #f0f2f5;flex-wrap:wrap}
+.progress-dot{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:600;cursor:pointer;transition:all .2s;border:2px solid #e0e6f0;background:#fff;color:#999}
+.progress-dot.current{border-color:#667eea;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;transform:scale(1.15);box-shadow:0 4px 12px rgba(102,126,234,.3)}
+.progress-dot.answered{border-color:#4caf50;background:linear-gradient(135deg,#4caf50,#66bb6a);color:#fff}
+.progress-dot.wrong{border-color:#f44336;background:linear-gradient(135deg,#f44336,#ef5350);color:#fff}
+.homework-question-area{padding:20px 0}
+.homework-question-num{display:inline-flex;align-items:center;gap:8px;padding:6px 16px;background:linear-gradient(135deg,#e3f2fd,#bbdefb);border-radius:20px;font-size:.85rem;font-weight:600;color:#1565c0;margin-bottom:16px}
+.homework-question-content{font-size:1.1rem;line-height:1.8;color:#333;margin-bottom:24px}
+.homework-options{display:flex;flex-direction:column;gap:12px}
+.homework-option{display:flex;align-items:flex-start;gap:12px;padding:14px 18px;background:linear-gradient(145deg,#fff,#f8f9ff);border:2px solid #e8ecf3;border-radius:14px;cursor:pointer;transition:all .2s}
+.homework-option:hover{border-color:#667eea;background:linear-gradient(145deg,#f8f9ff,#fff)}
+.homework-option.selected{border-color:#667eea;background:linear-gradient(145deg,#e8eaf6,#c5cae9)}
+.homework-option.correct{border-color:#4caf50;background:linear-gradient(145deg,#e8f5e9,#c8e6c9)}
+.homework-option.wrong{border-color:#f44336;background:linear-gradient(145deg,#ffebee,#ffcdd2)}
+.homework-option-key{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;font-weight:700;font-size:.85rem;flex-shrink:0}
+.homework-option.selected .homework-option-key{background:linear-gradient(135deg,#764ba2,#667eea)}
+.homework-option.correct .homework-option-key{background:linear-gradient(135deg,#4caf50,#66bb6a)}
+.homework-option.wrong .homework-option-key{background:linear-gradient(135deg,#f44336,#ef5350)}
+.homework-option-text{flex:1;font-size:.95rem;line-height:1.6;color:#333}
+.homework-quiz-footer{display:flex;justify-content:space-between;align-items:center;padding:16px 24px;background:#f8f9ff;border-top:1px solid #f0f2f5}
+.homework-nav-btns{display:flex;gap:10px}
+.homework-submit-area{padding:20px 24px;background:linear-gradient(135deg,#f8f9ff,#fff);border-top:1px solid #f0f2f5;text-align:center}
+.homework-analysis{margin-top:20px;padding:16px;background:linear-gradient(145deg,#e8f5e9,#c8e6c9);border-radius:14px;border-left:4px solid #4caf50}
+.homework-analysis-title{font-weight:700;color:#2e7d32;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.homework-analysis-content{color:#333;line-height:1.7}
+.homework-complete{padding:50px 24px;background:linear-gradient(180deg,#f8f9ff 0%,#fff 100%)}
+.homework-complete .complete-icon{font-size:5rem;margin-bottom:20px;animation:successPop .5s ease}
+.homework-complete h3{margin-bottom:8px;color:#333;font-size:1.3rem}
+.homework-complete .complete-subtitle{color:var(--text2);margin-bottom:24px}
+.homework-complete .complete-stats{display:flex;justify-content:center;gap:20px;margin-bottom:28px;flex-wrap:wrap}
+.homework-complete .stat-item{display:flex;flex-direction:column;align-items:center;padding:16px 24px;background:var(--card);border-radius:16px;box-shadow:0 4px 15px rgba(0,0,0,.05);min-width:90px}
+.homework-complete .stat-label{font-size:.78rem;color:var(--text2);margin-bottom:6px}
+.homework-complete .stat-value{font-size:1.5rem;font-weight:700;background:linear-gradient(135deg,#667eea,#764ba2);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.homework-complete .retry-hint{background:linear-gradient(135deg,#fff3e0,#ffe0b2);border-radius:12px;padding:12px 20px;margin-bottom:20px;color:#e65100;font-size:.9rem}
+.homework-complete.success .complete-icon{color:#4caf50}
+.homework-complete.has-wrong .complete-icon{color:#ff9800}
+.homework-complete .wrong-count{color:#f44336;font-weight:700}
 .progress-mini{flex:1;height:6px;background:#e8ecf3;border-radius:3px;overflow:hidden}
 .progress-mini-fill{height:100%;background:linear-gradient(90deg,#667eea,#764ba2);border-radius:3px;transition:width .3s ease}
 .progress-mini-text{font-size:.78rem;color:#666;min-width:40px;text-align:right}
@@ -5180,6 +5227,9 @@ function showHomeworkList() {
 
 async function startHomework(homeworkId) {
   try {
+    // 检查是否有保存的进度
+    const savedProgress = await loadHomeworkProgress(homeworkId);
+    
     // 获取作业详情
     const homework = await fetch(`/api/homework/get?id=${homeworkId}`).then(r => r.json());
     if (homework.error) throw new Error(homework.error);
@@ -5193,31 +5243,46 @@ async function startHomework(homeworkId) {
     
     _currentStudentHomework = homework;
     
-    // 获取题目
-    let allQuestions = await dbSelect('questions', { eq: { level: homework.level || currentLevel }, order: ['id', false] });
+    // 获取题目（按题库顺序）
+    let allQuestions = await dbSelect('questions', { 
+      eq: homework.level ? { level: homework.level } : {},
+      order: ['id', false] 
+    });
     
-    // 排除已答过的题
-    const answeredIds = record.question_ids || [];
-    _homeworkQuestions = allQuestions.filter(q => !answeredIds.includes(q.id));
-    
-    // 如果作业类型是错题练习，筛选错题
-    if (homework.type === 'exercise') {
-      const records = await dbSelect('records', { eq: { student_id: currentUser.username } });
-      const wrongQIds = [...new Set(records.filter(r => !r.is_correct).map(r => r.question_id))];
-      _homeworkQuestions = _homeworkQuestions.filter(q => wrongQIds.includes(q.id));
+    // 如果有题目范围设置，使用范围
+    if (homework.question_start && homework.question_end) {
+      allQuestions = allQuestions.filter(q => q.id >= homework.question_start && q.id <= homework.question_end);
     }
     
-    // 如果题目不够，随机补充
-    if (_homeworkQuestions.length < homework.question_count) {
-      const remaining = homework.question_count - _homeworkQuestions.length;
-      const otherQs = allQuestions.filter(q => !_homeworkQuestions.find(hq => hq.id === q.id));
-      const shuffled = otherQs.sort(() => Math.random() - 0.5);
-      _homeworkQuestions = [..._homeworkQuestions, ...shuffled.slice(0, remaining)];
+    // 检查是否有保存的进度
+    if (savedProgress && savedProgress.questions) {
+      // 恢复保存的进度
+      _homeworkQuestions = allQuestions.filter(q => savedProgress.questions.includes(q.id));
+      _homeworkIndex = savedProgress.index || 0;
+      _homeworkAnswered = savedProgress.answered || {};
+      _homeworkMultiSelected = {};
+      
+      showToast('已恢复上次进度', 'info');
+    } else {
+      // 排除已答过的题
+      const answeredIds = record.question_ids || [];
+      _homeworkQuestions = allQuestions.filter(q => !answeredIds.includes(q.id));
+      
+      // 如果题目不够，随机补充
+      if (_homeworkQuestions.length < homework.question_count) {
+        const remaining = homework.question_count - _homeworkQuestions.length;
+        const otherQs = allQuestions.filter(q => !_homeworkQuestions.find(hq => hq.id === q.id));
+        const shuffled = otherQs.sort(() => Math.random() - 0.5);
+        _homeworkQuestions = [..._homeworkQuestions, ...shuffled.slice(0, remaining)];
+      }
+      
+      // 截取指定数量
+      _homeworkQuestions = _homeworkQuestions.slice(0, homework.question_count);
+      
+      _homeworkIndex = 0;
+      _homeworkAnswered = {};
+      _homeworkMultiSelected = {};
     }
-    
-    _homeworkIndex = 0;
-    _homeworkAnswered = {};
-    _homeworkMultiSelected = {};
     
     closeModal();
     renderHomeworkUI();
@@ -5231,15 +5296,42 @@ function renderHomeworkUI() {
   const total = h.question_count;
   const progress = _homeworkQuestions.length;
   
+  // 生成进度导航点
+  const dotsHtml = _homeworkQuestions.slice(0, total).map((q, i) => {
+    const answered = _homeworkAnswered[q.id];
+    let cls = 'progress-dot';
+    if (i === _homeworkIndex) cls += ' current';
+    else if (answered) {
+      cls += answered.isCorrect ? ' answered' : ' wrong';
+    }
+    return `<div class="${cls}" onclick="goToHomeworkQuestion(${i})">${i + 1}</div>`;
+  }).join('');
+  
   document.getElementById('studentContent').innerHTML = `
-    <div class="homework-header">
-      <button class="btn secondary btn-sm" onclick="exitHomework()">← 返回</button>
-      <span class="homework-title">${escHtml(h.title)}</span>
-      <span class="homework-progress">剩余 ${progress} 题</span>
+    <div class="homework-quiz-card">
+      <div class="homework-quiz-header">
+        <button class="btn btn-outline btn-sm" onclick="confirmExitHomework()">← 退出</button>
+        <div class="homework-info">
+          <span class="homework-title-text">${escHtml(h.title)}</span>
+          <span class="homework-count">共 ${total} 题</span>
+        </div>
+        <div class="homework-timer" id="homeworkTimer">
+          <span>⏱️</span>
+          <span id="homeworkTimeDisplay">00:00</span>
+        </div>
+      </div>
+      <div class="homework-progress-nav">
+        ${dotsHtml}
+      </div>
+      <div id="homeworkCardArea"></div>
+      <div class="homework-submit-area" id="homeworkSubmitArea" style="display:none">
+        <button class="btn btn-primary btn-lg" onclick="submitHomeworkFinal()">📤 提交作业</button>
+      </div>
     </div>
-    <div id="homeworkCardArea"></div>
   `;
   
+  // 开始计时
+  startHomeworkTimer();
   renderHomeworkCard();
 }
 
@@ -5247,12 +5339,34 @@ function renderHomeworkCard() {
   const area = document.getElementById('homeworkCardArea');
   if (!area) return;
   
-  if (_homeworkIndex >= _homeworkQuestions.length || _homeworkIndex >= _currentStudentHomework.question_count) {
+  // 更新进度导航点
+  const total = _currentStudentHomework.question_count;
+  document.querySelectorAll('.progress-dot').forEach((dot, i) => {
+    dot.classList.remove('current', 'answered', 'wrong');
+    if (i === _homeworkIndex) dot.classList.add('current');
+    else {
+      const q = _homeworkQuestions[i];
+      if (q && _homeworkAnswered[q.id]) {
+        dot.classList.add(_homeworkAnswered[q.id].isCorrect ? 'answered' : 'wrong');
+      }
+    }
+  });
+  
+  // 检查是否全部答完
+  const answeredCount = Object.keys(_homeworkAnswered).length;
+  const submitArea = document.getElementById('homeworkSubmitArea');
+  if (submitArea) {
+    submitArea.style.display = answeredCount >= total ? 'block' : 'none';
+  }
+  
+  if (_homeworkIndex >= _homeworkQuestions.length || _homeworkIndex >= total) {
     renderHomeworkComplete();
     return;
   }
   
   const q = _homeworkQuestions[_homeworkIndex];
+  const typeMap = { '单选': ['单选', 'tag-blue'], '多选': ['多选', 'tag-purple'], '判断': ['判断', 'tag-green'] };
+  const [typeLabel, typeClass] = typeMap[q.type] || ['未知', 'tag-gray'];
   const isMulti = q.type === '多选';
   const opts = Array.isArray(q.options) ? q.options : JSON.parse(q.options || '[]');
   const answered = _homeworkAnswered[q.id];
@@ -5260,43 +5374,66 @@ function renderHomeworkCard() {
   const isCorrect = answered?.isCorrect;
   const answerArr = Array.isArray(q.answer) ? q.answer : (typeof q.answer === 'string' ? q.answer.split(',').map(s => s.trim()) : [q.answer]);
   
+  // 构建选项HTML
+  const optHtml = opts.map((opt, i) => {
+    const key = opt.key || opt.label || String.fromCharCode(65 + i);
+    const val = opt.value || opt.text || opt;
+    const isSelected = answeredOpts.includes(key);
+    const isCorrectOpt = answerArr.includes(key);
+    let cls = 'opt-btn';
+    let icon = '';
+    
+    if (answered) {
+      if (isCorrectOpt) {
+        cls += ' correct';
+        icon = '<span class="opt-icon">✓</span>';
+      }
+      if (isSelected && !isCorrectOpt) {
+        cls += ' wrong';
+        icon = '<span class="opt-icon">✗</span>';
+      }
+    } else if (isSelected) {
+      cls += ' selected';
+    }
+    
+    return `<button class="${cls}" data-letter="${key}" onclick="${answered ? '' : `selectHomeworkOption('${q.id}','${key}',${isMulti})`}">${icon}<span>${key}. ${escHtml(val)}</span></button>`;
+  }).join('');
+  
+  const analysisHtml = answered && q.analysis ? `
+    <div class="analysis-box"><span class="analysis-icon">💡</span>${escHtml(q.analysis)}</div>
+  ` : '';
+  
+  const multiConfirmHtml = isMulti && !answered ? `
+    <div class="confirm-submit-bar">
+      <button class="multi-confirm-btn" onclick="submitHomeworkMulti('${q.id}')" ${answeredOpts.length === 0 ? 'disabled' : ''}>确认提交</button>
+    </div>
+  ` : '';
+  
+  const actionHtml = answered ? `
+    <div class="practice-actions">
+      <button class="btn btn-outline" onclick="prevHomeworkQuestion()" ${_homeworkIndex === 0 ? 'disabled' : ''}>上一题</button>
+      <button class="btn btn-primary" onclick="nextHomeworkQuestion()">下一题</button>
+    </div>
+  ` : '';
+  
   area.innerHTML = `
-    <div class="question-card">
-      <div class="question-header">
-        <span class="question-type ${q.type}">${q.type}</span>
-        <span class="question-number">第 ${_homeworkIndex + 1} / ${_currentStudentHomework.question_count} 题</span>
-      </div>
-      <div class="question-content">${escHtml(q.content)}</div>
-      <div class="question-options">
-        ${opts.map((opt, i) => {
-          const key = opt.key || opt.label || String.fromCharCode(65 + i);
-          const val = opt.value || opt.text || opt;
-          const isSelected = answeredOpts.includes(key);
-          const isCorrectOpt = answerArr.includes(key);
-          let optClass = 'option';
-          if (answered) {
-            if (isCorrectOpt) optClass += ' correct';
-            else if (isSelected && !isCorrectOpt) optClass += ' wrong';
-          } else if (isSelected) {
-            optClass += ' selected';
-          }
-          return `<div class="${optClass}" onclick="${answered ? '' : `selectHomeworkOption('${q.id}','${key}',${isMulti})`}">
-            <span class="option-key">${key}</span>
-            <span class="option-value">${escHtml(val)}</span>
-          </div>`;
-        }).join('')}
-      </div>
-      ${answered ? `
-        <div class="question-result ${isCorrect ? 'correct' : 'wrong'}">
-          ${isCorrect ? '✅ 回答正确' : `❌ 回答错误，正确答案：${answerArr.join(', ')}`}
-        </div>
-        ${q.analysis ? `<div class="question-analysis"><strong>解析：</strong>${escHtml(q.analysis)}</div>` : ''}
-        <button class="btn primary btn-full" onclick="nextHomeworkQuestion()">下一题</button>
-      ` : `
-        ${isMulti ? `<button class="btn primary btn-full" onclick="submitHomeworkMulti('${q.id}')" ${answeredOpts.length === 0 ? 'disabled' : ''}>确认提交</button>` : ''}
-      `}
+    <div class="practice-card">
+      <div class="question-number">第 ${_homeworkIndex + 1} / ${total} 题</div>
+      <span class="tag ${typeClass} q-type-tag">${typeLabel}</span>
+      <div class="q-content">${escHtml(q.content)}</div>
+      <div id="homeworkOptionsArea">${optHtml}</div>
+      ${multiConfirmHtml}
+      ${analysisHtml}
+      ${actionHtml}
     </div>
   `;
+}
+
+function goToHomeworkQuestion(index) {
+  if (index >= 0 && index < _homeworkQuestions.length) {
+    _homeworkIndex = index;
+    renderHomeworkCard();
+  }
 }
 
 function selectHomeworkOption(qId, key, isMulti) {
@@ -5371,31 +5508,95 @@ async function renderHomeworkComplete() {
   try {
     const progress = await fetch(`/api/homework/record-progress?homework_id=${_currentStudentHomework.id}&student_id=${currentUser.id}`).then(r => r.json());
     
+    // 计算错题（使用 isCorrect 标记）
+    const wrongQuestions = _homeworkQuestions.filter(q => {
+      const ans = _homeworkAnswered[q.id];
+      if (!ans) return false;
+      return ans.isCorrect === false;
+    });
+    
     const area = document.getElementById('homeworkCardArea');
-    area.innerHTML = `
-      <div class="homework-complete">
-        <div class="complete-icon">${progress.is_completed ? '🎉' : '📚'}</div>
-        <h3>${progress.is_completed ? '作业已完成！' : '继续加油！'}</h3>
-        <div class="complete-stats">
-          <div class="stat-item">
-            <span class="stat-label">答题数</span>
-            <span class="stat-value">${progress.total_count} / ${_currentStudentHomework.question_count}</span>
+    
+    if (wrongQuestions.length > 0) {
+      // 有错题，显示错题重做提示
+      area.innerHTML = `
+        <div class="homework-complete">
+          <div class="complete-icon wrong">📝</div>
+          <h3>还有 ${wrongQuestions.length} 道错题需要重做</h3>
+          <div class="complete-stats">
+            <div class="stat-item">
+              <span class="stat-label">答题数</span>
+              <span class="stat-value">${_homeworkQuestions.length}</span>
+            </div>
+            <div class="stat-item correct">
+              <span class="stat-label">答对数</span>
+              <span class="stat-value">${_homeworkQuestions.length - wrongQuestions.length}</span>
+            </div>
+            <div class="stat-item wrong">
+              <span class="stat-label">错题数</span>
+              <span class="stat-value">${wrongQuestions.length}</span>
+            </div>
           </div>
-          <div class="stat-item">
-            <span class="stat-label">答对数</span>
-            <span class="stat-value">${progress.correct_count}</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">正确率</span>
-            <span class="stat-value">${progress.total_count > 0 ? Math.round(progress.correct_count / progress.total_count * 100) : 0}%</span>
+          <div class="complete-actions">
+            <button class="btn primary btn-full" onclick="retryWrongQuestions()">🔄 重做错题</button>
+            <button class="btn btn-outline btn-full" onclick="confirmExitHomework()">暂不重做，下次继续</button>
           </div>
         </div>
-        <button class="btn primary btn-full" onclick="exitHomework()">返回刷题</button>
-      </div>
-    `;
+      `;
+    } else {
+      // 全部正确，作业完成
+      stopHomeworkTimer();
+      clearHomeworkProgress(_currentStudentHomework.id);
+      
+      area.innerHTML = `
+        <div class="homework-complete success">
+          <div class="complete-icon">🎉</div>
+          <h3>作业全部完成！</h3>
+          <div class="complete-stats">
+            <div class="stat-item">
+              <span class="stat-label">答题数</span>
+              <span class="stat-value">${_homeworkQuestions.length}</span>
+            </div>
+            <div class="stat-item correct">
+              <span class="stat-label">答对数</span>
+              <span class="stat-value">${_homeworkQuestions.length}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">用时</span>
+              <span class="stat-value">${Math.floor(_homeworkTimerSeconds / 60)}分${_homeworkTimerSeconds % 60}秒</span>
+            </div>
+          </div>
+          <button class="btn primary btn-full" onclick="exitHomework()">返回刷题</button>
+        </div>
+      `;
+    }
   } catch (e) {
     showToast('获取进度失败', 'error');
   }
+}
+
+function retryWrongQuestions() {
+  // 筛出错题，重新开始
+  const wrongQuestions = _homeworkQuestions.filter(q => {
+    const ans = _homeworkAnswered[q.id];
+    if (!ans) return false;
+    return ans.isCorrect === false;
+  });
+  
+  if (wrongQuestions.length === 0) {
+    renderHomeworkComplete();
+    return;
+  }
+  
+  // 重置为错题
+  _homeworkQuestions = wrongQuestions;
+  _homeworkIndex = 0;
+  _homeworkAnswered = {};
+  _homeworkMultiSelected = {};
+  
+  showToast(`开始重做 ${wrongQuestions.length} 道错题`, 'info');
+  saveHomeworkProgress();
+  renderHomeworkUI();
 }
 
 function exitHomework() {
@@ -5404,7 +5605,74 @@ function exitHomework() {
   _homeworkIndex = 0;
   _homeworkAnswered = {};
   _homeworkMultiSelected = {};
+  stopHomeworkTimer();
   switchStudentTab('practice');
+}
+
+let _homeworkTimerInterval = null;
+let _homeworkTimerSeconds = 0;
+
+function startHomeworkTimer() {
+  _homeworkTimerSeconds = 0;
+  updateHomeworkTimerDisplay();
+  _homeworkTimerInterval = setInterval(() => {
+    _homeworkTimerSeconds++;
+    updateHomeworkTimerDisplay();
+  }, 1000);
+}
+
+function stopHomeworkTimer() {
+  if (_homeworkTimerInterval) {
+    clearInterval(_homeworkTimerInterval);
+    _homeworkTimerInterval = null;
+  }
+}
+
+function updateHomeworkTimerDisplay() {
+  const display = document.getElementById('homeworkTimeDisplay');
+  if (display) {
+    const mins = Math.floor(_homeworkTimerSeconds / 60);
+    const secs = _homeworkTimerSeconds % 60;
+    display.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
+}
+
+function confirmExitHomework() {
+  if (confirm('确定要退出作业吗？下次可以继续做。')) {
+    saveHomeworkProgress();
+    exitHomework();
+  }
+}
+
+function saveHomeworkProgress() {
+  if (!_currentStudentHomework || !_homeworkQuestions.length) return;
+  
+  const progress = {
+    homeworkId: _currentStudentHomework.id,
+    homeworkTitle: _currentStudentHomework.title,
+    questionCount: _currentStudentHomework.question_count,
+    questions: _homeworkQuestions.map(q => q.id),
+    index: _homeworkIndex,
+    answered: _homeworkAnswered,
+    timestamp: Date.now()
+  };
+  
+  localStorage.setItem(`homework_progress_${_currentStudentHomework.id}`, JSON.stringify(progress));
+}
+
+async function loadHomeworkProgress(homeworkId) {
+  const saved = localStorage.getItem(`homework_progress_${homeworkId}`);
+  if (!saved) return null;
+  
+  try {
+    return JSON.parse(saved);
+  } catch (e) {
+    return null;
+  }
+}
+
+function clearHomeworkProgress(homeworkId) {
+  localStorage.removeItem(`homework_progress_${homeworkId}`);
 }
 
 function renderStudent() {
