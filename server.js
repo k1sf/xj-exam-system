@@ -714,6 +714,42 @@ async function handleApi(req, res, url, sharedParams) {
       }
       break;
     }
+    case 'config/get': {
+      // 获取作业配置
+      const { key } = allParams;
+      const configKey = key || 'last_homework';
+      
+      const result = await pool.query(`
+        SELECT * FROM homework_config WHERE config_key = $1
+      `, [configKey]);
+      
+      if (result.rows.length === 0) {
+        sendJson(res, { question_end: 0, default_count: 20 });
+      } else {
+        sendJson(res, result.rows[0].config_value);
+      }
+      break;
+    }
+    case 'config/set': {
+      // 设置作业配置
+      const { key, value } = allParams;
+      const configKey = key || 'last_homework';
+      
+      await pool.query(`
+        INSERT INTO homework_config (config_key, config_value, updated_at)
+        VALUES ($1, $2, NOW())
+        ON CONFLICT (config_key) DO UPDATE SET config_value = $2, updated_at = NOW()
+      `, [configKey, JSON.stringify(value)]);
+      
+      sendJson(res, { success: true });
+      break;
+    }
+    case 'question-count': {
+      // 获取题库总数
+      const result = await pool.query(`SELECT COUNT(*) as total FROM questions`);
+      sendJson(res, { total: parseInt(result.rows[0].total) });
+      break;
+    }
     default:
       sendJson(res, { error: 'Unknown route: ' + route }, 404);
   }
@@ -999,15 +1035,21 @@ async function handleHomeworkApi(req, res, url, params) {
     }
     case 'create': {
       // 创建作业
-      const { title, type = 'practice', level, cohort, target_type = 'level', target_ids, question_count = 50, correct_count, end_time } = allParams;
+      const { title, type = 'practice', level, cohort, cohorts, target_type = 'cohort', target_ids, 
+              question_count = 20, question_start, question_end, correct_count, end_time, auto_create = false } = allParams;
       if (!title) throw new Error('作业标题不能为空');
-      if (!question_count || question_count < 1) throw new Error('题目数量必须大于0');
+      
+      // 支持多个班级
+      const cohortsArray = cohorts || (cohort ? [cohort] : null);
       
       const result = await pool.query(`
-        INSERT INTO homeworks (title, type, level, cohort, target_type, target_ids, question_count, correct_count, end_time, created_by)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        INSERT INTO homeworks (title, type, level, cohort, cohorts, target_type, target_ids, 
+                               question_count, question_start, question_end, correct_count, end_time, auto_create, created_by)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         RETURNING *
-      `, [title, type, level || null, cohort || null, target_type, target_ids || null, question_count, correct_count || null, end_time || null, allParams.created_by || null]);
+      `, [title, type, level || null, cohort || null, cohortsArray, target_type, target_ids || null, 
+          question_count, question_start || null, question_end || null, 
+          correct_count || null, end_time || null, auto_create, allParams.created_by || null]);
       
       sendJson(res, result.rows[0]);
       break;
@@ -1208,6 +1250,33 @@ async function handleHomeworkApi(req, res, url, params) {
       } else {
         sendJson(res, result.rows[0]);
       }
+      break;
+    }
+    case 'config': {
+      // 获取作业配置
+      const result = await pool.query(`SELECT * FROM homework_config WHERE config_key = 'last_homework'`);
+      if (result.rows.length === 0) {
+        sendJson(res, { question_end: 0, default_count: 20 });
+      } else {
+        sendJson(res, result.rows[0].config_value);
+      }
+      break;
+    }
+    case 'save-config': {
+      // 保存作业配置
+      const { question_end, default_count } = allParams;
+      await pool.query(`
+        INSERT INTO homework_config (config_key, config_value, updated_at)
+        VALUES ('last_homework', $1, NOW())
+        ON CONFLICT (config_key) DO UPDATE SET config_value = $1, updated_at = NOW()
+      `, [JSON.stringify({ question_end: question_end || 0, default_count: default_count || 20 })]);
+      sendJson(res, { success: true });
+      break;
+    }
+    case 'count': {
+      // 获取题目总数
+      const result = await pool.query(`SELECT COUNT(*) as total FROM questions`);
+      sendJson(res, { total: parseInt(result.rows[0].total) });
       break;
     }
     default:

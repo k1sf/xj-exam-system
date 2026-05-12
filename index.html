@@ -496,6 +496,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .homework-banner-icon{font-size:1.2rem}
 .homework-banner-text{flex:1;font-weight:500}
 .homework-banner-arrow{font-size:1.2rem;opacity:.6}
+.cohort-tag{display:inline-block;background:#e3f2fd;color:#1976d2;padding:4px 10px;border-radius:16px;margin:2px;font-size:13px;cursor:pointer;transition:all .2s}
+.cohort-tag:hover{background:#bbdefb}
 .homework-list{max-height:60vh;overflow-y:auto}
 .homework-item{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;cursor:pointer;transition:background .15s}
 .homework-item:hover{background:var(--hover)}
@@ -3984,17 +3986,29 @@ function renderHomeworkList() {
   
   container.innerHTML = _homeworkList.map(h => {
     const typeText = h.type === 'practice' ? '刷题' : h.type === 'exercise' ? '错题练习' : '模拟考试';
-    const targetText = h.target_type === 'level' ? `级别：${h.level}` : 
-                       h.target_type === 'cohort' ? `班级：${h.cohort}` : 
-                       `指定学生：${h.target_ids?.length || 0}人`;
+    // 支持多个班级显示
+    let targetText = '';
+    if (h.target_type === 'level') {
+      targetText = `级别：${h.level}`;
+    } else if (h.target_type === 'cohort') {
+      const cohorts = h.cohorts || (h.cohort ? [h.cohort] : []);
+      targetText = `班级：${cohorts.join('、') || '未指定'}`;
+    } else {
+      targetText = `指定学生：${h.target_ids?.length || 0}人`;
+    }
+    // 显示题目范围
+    const questionRange = h.question_start && h.question_end ? 
+      `题目：第${h.question_start}题 - 第${h.question_end}题` : 
+      `${h.question_count}题`;
     const endTime = h.end_time ? `截止：${fmtLocalShort(h.end_time)}` : '无截止时间';
     const progress = `${h.completed_students || 0}/${h.total_students || 0}人完成`;
+    const autoText = h.auto_create ? '🔄 自动' : '📍 手动';
     
     return `
       <div class="card" onclick="openHomeworkDetail(${h.id})">
-        <div class="card-title">📝 ${escHtml(h.title)}</div>
+        <div class="card-title">📝 ${escHtml(h.title)} <span style="font-size:12px;color:${h.auto_create ? '#4caf50' : '#666'}">${autoText}</span></div>
         <div class="card-info">
-          <span>${typeText} | ${h.question_count}题</span>
+          <span>${typeText} | ${questionRange}</span>
           <span>${targetText}</span>
           <span>${endTime}</span>
           <span>${progress}</span>
@@ -4004,121 +4018,156 @@ function renderHomeworkList() {
   }).join('');
 }
 
-function showCreateHomeworkModal() {
-  const levelOpts = LEVELS.map(l => `
-    <label class="checkbox-item">
-      <input type="checkbox" value="${l}" name="homeworkLevel"> ${l}
-    </label>
-  `).join('');
+// 作业相关全局变量
+let _homeworkConfig = { question_end: 0, default_count: 20 };
+let _selectedHomeworkCohorts = [];
+let _totalQuestionCount = 367;
+
+async function showCreateHomeworkModal() {
+  // 获取班级列表（拆分合并的期次）
+  const allCohorts = new Set();
+  allStudents.forEach(s => {
+    if (s.cohort) {
+      s.cohort.split(',').forEach(c => allCohorts.add(c.trim()));
+    }
+  });
+  const cohortList = [...allCohorts].sort((a, b) => b.localeCompare(a)); // 按时间倒序
   
-  const cohortOpts = [...new Set(allStudents.map(s => s.cohort).filter(Boolean))].map(c => `
-    <label class="checkbox-item">
-      <input type="checkbox" value="${escHtml(c)}" name="homeworkCohort"> ${escHtml(c)}
-    </label>
-  `).join('');
+  // 获取配置
+  try {
+    const configRes = await fetch('/api/homework/config/get').then(r => r.json());
+    if (!configRes.error) _homeworkConfig = configRes;
+    
+    const countRes = await fetch('/api/homework/question-count').then(r => r.json());
+    if (!countRes.error) _totalQuestionCount = countRes.total;
+  } catch (e) {}
   
+  // 计算默认题目范围
+  const defaultCount = _homeworkConfig.default_count || 20;
+  let start = (_homeworkConfig.question_end || 0) + 1;
+  if (start > _totalQuestionCount) start = 1;
+  let end = start + defaultCount - 1;
+  if (end > _totalQuestionCount) end = _totalQuestionCount;
+  
+  // 默认截止时间：24小时后
   const now = new Date();
-  const defaultEndTime = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16);
+  const defaultEndTime = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 16);
+  
+  // 默认班级：最近一期
+  _selectedHomeworkCohorts = cohortList.length > 0 ? [cohortList[0]] : [];
+  
+  // 今天的日期字符串
+  const today = now.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' });
   
   openModal('📝 布置作业', `
     <div class="form-group">
-      <label>作业标题 *</label>
-      <input type="text" id="homeworkTitle" placeholder="如：初级刷题作业">
+      <label>作业标题</label>
+      <input type="text" id="homeworkTitle" value="今日作业" placeholder="如：今日作业">
     </div>
     <div class="form-group">
-      <label>作业类型</label>
-      <select id="homeworkType" onchange="toggleHomeworkTypeOptions()">
-        <option value="practice">刷题作业</option>
-        <option value="exercise">错题练习</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label>题目数量 *</label>
-      <input type="number" id="homeworkQuestionCount" value="50" min="1" max="500">
-    </div>
-    <div class="form-group">
-      <label>分配方式</label>
-      <select id="homeworkTargetType" onchange="toggleHomeworkTargetOptions()">
-        <option value="level">按级别</option>
-        <option value="cohort">按班级</option>
-        <option value="student">指定学生</option>
-      </select>
-    </div>
-    <div class="form-group" id="homeworkLevelGroup">
-      <label>选择级别</label>
-      <div class="checkbox-grid">${levelOpts}</div>
-    </div>
-    <div class="form-group" id="homeworkCohortGroup" style="display:none;">
-      <label>选择班级</label>
-      <div class="checkbox-grid">${cohortOpts}</div>
-    </div>
-    <div class="form-group" id="homeworkStudentGroup" style="display:none;">
-      <label>选择学生</label>
-      <div id="homeworkStudentList" style="max-height:200px;overflow-y:auto;">
-        ${allStudents.map(s => `
-          <label class="checkbox-item">
-            <input type="checkbox" value="${s.id}" name="homeworkStudent"> ${escHtml(s.nickname || s.username)} (${s.level})
-          </label>
-        `).join('')}
+      <label>题目范围（题库共 ${_totalQuestionCount} 题）</label>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <span>第</span>
+        <input type="number" id="homeworkQStart" value="${start}" min="1" max="${_totalQuestionCount}" style="width:80px;">
+        <span>题 到 第</span>
+        <input type="number" id="homeworkQEnd" value="${end}" min="1" max="${_totalQuestionCount}" style="width:80px;">
+        <span>题</span>
+      </div>
+      <div style="margin-top:8px;color:#666;font-size:12px;">
+        共 <span id="homeworkQCount">${end - start + 1}</span> 题
+        <label style="margin-left:15px;">默认题数：<input type="number" id="homeworkDefaultCount" value="${defaultCount}" min="1" max="100" style="width:60px;"></label>
       </div>
     </div>
     <div class="form-group">
-      <label>截止时间（可选）</label>
-      <input type="datetime-local" id="homeworkEndTime" value="${defaultEndTime}">
+      <label>分配班级</label>
+      <div style="display:flex;gap:10px;">
+        <select id="homeworkCohortSelect" style="flex:1;" onchange="addHomeworkCohort()">
+          <option value="">-- 选择班级 --</option>
+          ${cohortList.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('')}
+        </select>
+      </div>
+      <div id="selectedCohortsBox" style="margin-top:10px;min-height:36px;padding:8px;border:1px dashed #ddd;border-radius:6px;background:#fafafa;">
+        <span style="color:#999;">已选班级：</span>
+        <span id="selectedCohortsList">${_selectedHomeworkCohorts.map(c => `<span class="cohort-tag" onclick="removeHomeworkCohort('${escHtml(c)}')">${escHtml(c)} ×</span>`).join(' ')}</span>
+      </div>
     </div>
-  `, { footer: '<button class="btn secondary" onclick="closeModal()">取消</button><button class="btn primary" onclick="createHomework()">布置</button>' });
+    <div class="form-group">
+      <label>截止时间</label>
+      <input type="datetime-local" id="homeworkEndTime" value="${defaultEndTime}">
+      <div style="margin-top:5px;">
+        <button type="button" class="btn small" onclick="setHomeworkDeadline(24)">24小时</button>
+        <button type="button" class="btn small" onclick="setHomeworkDeadline(48)">48小时</button>
+        <button type="button" class="btn small" onclick="setHomeworkDeadline(72)">3天</button>
+        <button type="button" class="btn small" onclick="setHomeworkDeadline(168)">7天</button>
+      </div>
+    </div>
+    <div class="form-group">
+      <label style="display:flex;align-items:center;gap:8px;">
+        <input type="checkbox" id="homeworkAutoCreate">
+        <span>开启自动布置（每天自动创建同样作业）</span>
+      </label>
+    </div>
+  `, { footer: '<button class="btn secondary" onclick="closeModal()">取消</button><button class="btn primary" onclick="createHomework()">布置作业</button>' });
+  
+  // 绑定题目范围变化事件
+  document.getElementById('homeworkQStart').oninput = updateHomeworkQCount;
+  document.getElementById('homeworkQEnd').oninput = updateHomeworkQCount;
 }
 
-function toggleHomeworkTypeOptions() {
-  // 预留：不同类型作业的特殊选项
+function updateHomeworkQCount() {
+  const start = parseInt(document.getElementById('homeworkQStart').value) || 1;
+  const end = parseInt(document.getElementById('homeworkQEnd').value) || 1;
+  document.getElementById('homeworkQCount').textContent = Math.max(0, end - start + 1);
 }
 
-function toggleHomeworkTargetOptions() {
-  const type = document.getElementById('homeworkTargetType').value;
-  document.getElementById('homeworkLevelGroup').style.display = type === 'level' ? 'block' : 'none';
-  document.getElementById('homeworkCohortGroup').style.display = type === 'cohort' ? 'block' : 'none';
-  document.getElementById('homeworkStudentGroup').style.display = type === 'student' ? 'block' : 'none';
+function setHomeworkDeadline(hours) {
+  const now = new Date();
+  const endTime = new Date(now.getTime() + hours * 60 * 60 * 1000);
+  document.getElementById('homeworkEndTime').value = endTime.toISOString().slice(0, 16);
+}
+
+function addHomeworkCohort() {
+  const select = document.getElementById('homeworkCohortSelect');
+  const value = select.value;
+  if (value && !_selectedHomeworkCohorts.includes(value)) {
+    _selectedHomeworkCohorts.push(value);
+    updateSelectedCohortsDisplay();
+  }
+  select.value = '';
+}
+
+function removeHomeworkCohort(cohort) {
+  _selectedHomeworkCohorts = _selectedHomeworkCohorts.filter(c => c !== cohort);
+  updateSelectedCohortsDisplay();
+}
+
+function updateSelectedCohortsDisplay() {
+  const list = document.getElementById('selectedCohortsList');
+  if (_selectedHomeworkCohorts.length === 0) {
+    list.innerHTML = '<span style="color:#999;">未选择</span>';
+  } else {
+    list.innerHTML = _selectedHomeworkCohorts.map(c => 
+      `<span class="cohort-tag" onclick="removeHomeworkCohort('${escHtml(c)}')">${escHtml(c)} ×</span>`
+    ).join(' ');
+  }
 }
 
 async function createHomework() {
-  const title = document.getElementById('homeworkTitle').value.trim();
-  const type = document.getElementById('homeworkType').value;
-  const questionCount = parseInt(document.getElementById('homeworkQuestionCount').value);
-  const targetType = document.getElementById('homeworkTargetType').value;
+  const title = document.getElementById('homeworkTitle').value.trim() || '今日作业';
+  const qStart = parseInt(document.getElementById('homeworkQStart').value);
+  const qEnd = parseInt(document.getElementById('homeworkQEnd').value);
+  const defaultCount = parseInt(document.getElementById('homeworkDefaultCount').value) || 20;
   const endTime = document.getElementById('homeworkEndTime').value;
+  const autoCreate = document.getElementById('homeworkAutoCreate').checked;
   
-  if (!title) {
-    showToast('请输入作业标题', 'error');
-    return;
-  }
-  if (!questionCount || questionCount < 1) {
-    showToast('请输入有效的题目数量', 'error');
+  if (!qStart || !qEnd || qStart > qEnd) {
+    showToast('请设置有效的题目范围', 'error');
     return;
   }
   
-  let level = null, cohort = null, targetIds = null;
-  
-  if (targetType === 'level') {
-    const selectedLevels = [...document.querySelectorAll('input[name="homeworkLevel"]:checked')].map(c => c.value);
-    if (selectedLevels.length === 0) {
-      showToast('请选择至少一个级别', 'error');
-      return;
-    }
-    level = selectedLevels[0]; // 暂时只支持单级别
-  } else if (targetType === 'cohort') {
-    const selectedCohorts = [...document.querySelectorAll('input[name="homeworkCohort"]:checked')].map(c => c.value);
-    if (selectedCohorts.length === 0) {
-      showToast('请选择至少一个班级', 'error');
-      return;
-    }
-    cohort = selectedCohorts[0]; // 暂时只支持单班级
-  } else {
-    const selectedStudents = [...document.querySelectorAll('input[name="homeworkStudent"]:checked')].map(c => c.value);
-    if (selectedStudents.length === 0) {
-      showToast('请选择至少一个学生', 'error');
-      return;
-    }
-    targetIds = selectedStudents;
+  if (_selectedHomeworkCohorts.length === 0) {
+    showToast('请选择至少一个班级', 'error');
+    return;
   }
   
   try {
@@ -4126,12 +4175,25 @@ async function createHomework() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        title, type, level, cohort, target_type: targetType, target_ids: targetIds,
-        question_count: questionCount, end_time: endTime ? new Date(endTime).toISOString() : null
+        title,
+        target_type: 'cohort',
+        cohorts: _selectedHomeworkCohorts,
+        question_count: qEnd - qStart + 1,
+        question_start: qStart,
+        question_end: qEnd,
+        end_time: endTime ? new Date(endTime).toISOString() : null,
+        auto_create: autoCreate
       })
     }).then(r => r.json());
     
     if (res.error) throw new Error(res.error);
+    
+    // 更新配置（记忆下次延续）
+    await fetch('/api/homework/config/set', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value: { question_end: qEnd, default_count: defaultCount } })
+    });
     
     closeModal();
     showToast('作业布置成功', 'success');
