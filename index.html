@@ -81,6 +81,30 @@ html.dark .wrong-item{border-color:var(--border)}
 html.dark .mock-type-item{border-color:var(--border)}
 html.dark .mock-source-item{border-color:var(--border)}
 html.dark .practice-bar{border-color:var(--border)}
+html.dark .homework-quiz-container{background:var(--bg)}
+html.dark .homework-progress-wrap{background:var(--card);border-color:var(--border)}
+html.dark .homework-progress-bar{background:var(--border)}
+html.dark .homework-progress-fill{background:linear-gradient(90deg,#3b82f6,#8b5cf6)}
+html.dark .homework-question-card{background:var(--card);border-color:var(--border)}
+html.dark .homework-q-header{border-color:var(--border)}
+html.dark .homework-q-content{color:var(--text)}
+html.dark .homework-option{background:var(--bg);border-color:var(--border);color:var(--text)}
+html.dark .homework-option:hover{border-color:var(--primary)}
+html.dark .homework-option.selected{background:var(--primary-light);border-color:var(--primary)}
+html.dark .homework-option.correct{background:#064e3b33;border-color:var(--success);color:#6ee7b7}
+html.dark .homework-option.wrong{background:#7f1d1d33;border-color:var(--error);color:#fca5a5}
+html.dark .homework-nav-wrap{background:var(--card);border-color:var(--border)}
+html.dark .homework-nav-header{border-color:var(--border)}
+html.dark .homework-nav-item{background:var(--bg);border-color:var(--border);color:var(--text)}
+html.dark .homework-nav-item.answered{background:var(--primary-light);border-color:var(--primary)}
+html.dark .homework-nav-item.current{border-color:var(--primary);box-shadow:0 0 0 2px rgba(59,130,246,0.3)}
+html.dark .homework-bottom-bar{background:var(--card);border-color:var(--border)}
+html.dark .homework-complete-card{background:var(--card);border-color:var(--border)}
+html.dark .homework-result-title{color:var(--text)}
+html.dark .homework-result-stats{background:var(--bg)}
+html.dark .homework-stat-item{border-color:var(--border)}
+html.dark .homework-stat-value{color:var(--text)}
+html.dark .homework-stat-label{color:var(--text2)}
 
 /* Large Text Mode */
 html.large-text{font-size:20px}
@@ -526,6 +550,38 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .homework-complete .stat-item{display:flex;flex-direction:column;align-items:center;padding:16px 24px;background:var(--card);border-radius:16px;box-shadow:0 4px 15px rgba(0,0,0,.05);min-width:90px}
 .homework-complete .stat-label{font-size:.78rem;color:var(--text2);margin-bottom:6px}
 .homework-complete .stat-value{font-size:1.5rem;font-weight:700;background:linear-gradient(135deg,#667eea,#764ba2);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+/* 作业进度条 */
+.homework-progress-bar{height:24px;background:linear-gradient(90deg,#e8ecf3,#f0f2f5);margin:0 20px;border-radius:12px;position:relative;overflow:hidden;margin-top:12px}
+.homework-progress-bar .progress-fill{height:100%;background:linear-gradient(90deg,#667eea,#764ba2);transition:width .3s ease;border-radius:12px}
+.homework-progress-bar .progress-text{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:.75rem;font-weight:600;color:#333}
+/* 答题卡收起按钮 */
+.homework-nav-toggle{text-align:center;padding:8px 20px}
+.homework-nav-toggle .btn{font-size:.8rem}
+/* 警告弹窗 */
+.homework-warning-modal{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:10000}
+.homework-warning-modal .warn-content{background:linear-gradient(145deg,#fff,#f8f9ff);border-radius:20px;padding:30px 40px;text-align:center;max-width:320px;box-shadow:0 10px 40px rgba(0,0,0,.2)}
+.homework-warning-modal .warn-icon{font-size:4rem;margin-bottom:16px}
+.homework-warning-modal .warn-title{font-size:1.2rem;font-weight:700;color:#333;margin-bottom:12px}
+.homework-warning-modal .warn-text{font-size:.9rem;color:#666;line-height:1.6;margin-bottom:20px}
+/* 暗模式样式 */
+.homework-quiz-card.dark-mode{background:linear-gradient(145deg,#1a1a2e,#16213e);border-color:rgba(102,126,234,.2)}
+.homework-quiz-card.dark-mode .homework-quiz-header{background:linear-gradient(135deg,#667eea,#764ba2)}
+.homework-quiz-card.dark-mode .homework-progress-nav{background:#1a1a2e;border-color:#2a2a4e}
+.homework-quiz-card.dark-mode .progress-dot{background:#2a2a4e;border-color:#3a3a5e;color:#aaa}
+.homework-quiz-card.dark-mode .progress-dot.current{border-color:#667eea;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff}
+.homework-quiz-card.dark-mode .homework-question-content{color:#e0e0e0}
+.homework-quiz-card.dark-mode .homework-option{background:linear-gradient(145deg,#1a1a2e,#2a2a4e);border-color:#3a3a5e;color:#e0e0e0}
+.homework-quiz-card.dark-mode .homework-option:hover{border-color:#667eea;background:linear-gradient(145deg,#2a2a4e,#3a3a5e)}
+.homework-quiz-card.dark-mode .homework-option.selected{border-color:#667eea;background:linear-gradient(145deg,#2a2a5e,#3a3a6e)}
+.homework-quiz-card.dark-mode .homework-option.correct{border-color:#4caf50;background:linear-gradient(145deg,#1b3a1b,#2a4a2a)}
+.homework-quiz-card.dark-mode .homework-option.wrong{border-color:#f44336;background:linear-gradient(145deg,#3a1a1a,#4a2a2a)}
+.homework-quiz-card.dark-mode .homework-option-text{color:#e0e0e0}
+.homework-quiz-card.dark-mode .homework-quiz-footer{background:#1a1a2e;border-color:#2a2a4e}
+.homework-quiz-card.dark-mode .homework-submit-area{background:linear-gradient(135deg,#1a1a2e,#16213e);border-color:#2a2a4e}
+.homework-quiz-card.dark-mode .homework-analysis{background:linear-gradient(145deg,#1b3a1b,#2a4a2a)}
+.homework-quiz-card.dark-mode .homework-progress-bar{background:#2a2a4e}
+.homework-quiz-card.dark-mode .homework-progress-bar .progress-text{color:#e0e0e0}
+
 .homework-info-bar{display:flex;flex-wrap:wrap;gap:12px;padding:14px 18px;background:#f8f9ff;border-bottom:1px solid var(--border);font-size:.85rem;color:var(--text2)}
 .homework-records{padding:16px}
 .data-table{width:100%;border-collapse:collapse;font-size:.85rem}
@@ -5285,9 +5341,104 @@ async function startHomework(homeworkId) {
     }
     
     closeModal();
+    enterHomeworkMode(); // 进入作业模式（全屏+防退出）
     renderHomeworkUI();
   } catch (e) {
     showToast('加载作业失败：' + e.message, 'error');
+  }
+}
+
+// 作业模式相关变量
+let _homeworkExitCount = 0;
+let _homeworkModeActive = false;
+
+// 进入作业模式
+function enterHomeworkMode() {
+  _homeworkModeActive = true;
+  _homeworkExitCount = 0;
+  
+  // 禁用右键和选择
+  document.addEventListener('contextmenu', preventContextMenu);
+  document.body.style.userSelect = 'none';
+  document.body.style.webkitUserSelect = 'none';
+  
+  // 添加页面切换监听
+  document.addEventListener('visibilitychange', handleHomeworkVisibility);
+  
+  // 添加beforeunload警告
+  window.addEventListener('beforeunload', handleHomeworkBeforeUnload);
+}
+
+// 退出作业模式
+function exitHomeworkMode() {
+  _homeworkModeActive = false;
+  _homeworkExitCount = 0;
+  
+  document.removeEventListener('contextmenu', preventContextMenu);
+  document.removeEventListener('visibilitychange', handleHomeworkVisibility);
+  window.removeEventListener('beforeunload', handleHomeworkBeforeUnload);
+  document.body.style.userSelect = '';
+  document.body.style.webkitUserSelect = '';
+}
+
+// 作业模式页面切换处理
+function handleHomeworkVisibility() {
+  if (document.hidden && _homeworkModeActive && _currentStudentHomework) {
+    _homeworkExitCount++;
+    
+    // 保存进度
+    saveHomeworkProgress(_currentStudentHomework.id);
+    
+    // 显示警告
+    const warn = document.getElementById('homework-warning');
+    if (warn) {
+      warn.innerHTML = `<div class="warn-icon">⚠️</div><h2>请勿离开页面！</h2><p>作业进度已保存，请继续完成作业。多次离开可能影响作业成绩。</p><button class="btn btn-primary" onclick="dismissHomeworkWarning()" style="margin-top:12px">继续答题</button>`;
+      warn.style.display = 'flex';
+    }
+  }
+}
+
+// 作业页面离开警告
+function handleHomeworkBeforeUnload(e) {
+  if (_homeworkModeActive && _currentStudentHomework) {
+    // 保存进度
+    saveHomeworkProgressSync(_currentStudentHomework.id);
+    e.preventDefault();
+    e.returnValue = '作业进度已保存，确定要离开吗？';
+    return e.returnValue;
+  }
+}
+
+// 同步保存进度（用于beforeunload）
+function saveHomeworkProgressSync(homeworkId) {
+  const progress = {
+    homeworkId,
+    questions: _homeworkQuestions.map(q => q.id),
+    index: _homeworkIndex,
+    answered: _homeworkAnswered,
+    timestamp: Date.now()
+  };
+  localStorage.setItem('homework_progress', JSON.stringify(progress));
+}
+
+// 关闭警告
+function dismissHomeworkWarning() {
+  const warn = document.getElementById('homework-warning');
+  if (warn) warn.style.display = 'none';
+}
+
+// 切换答题卡展开/收起
+function toggleHomeworkNav() {
+  const nav = document.getElementById('homework-nav-container');
+  const btn = document.getElementById('toggle-nav-btn');
+  if (nav) {
+    if (nav.style.display === 'none') {
+      nav.style.display = 'flex';
+      btn.textContent = '收起答题卡 ▲';
+    } else {
+      nav.style.display = 'none';
+      btn.textContent = '展开答题卡 ▼';
+    }
   }
 }
 
@@ -5295,6 +5446,7 @@ function renderHomeworkUI() {
   const h = _currentStudentHomework;
   const total = h.question_count;
   const progress = _homeworkQuestions.length;
+  const isDark = localStorage.getItem('darkMode') === 'true';
   
   // 生成进度导航点
   const dotsHtml = _homeworkQuestions.slice(0, total).map((q, i) => {
@@ -5308,7 +5460,12 @@ function renderHomeworkUI() {
   }).join('');
   
   document.getElementById('studentContent').innerHTML = `
-    <div class="homework-quiz-card">
+    <div class="homework-quiz-card ${isDark ? 'dark-mode' : ''}">
+      <!-- 警告弹窗 -->
+      <div id="homework-warning" class="homework-warning-modal" style="display:none">
+        <div class="warn-content"></div>
+      </div>
+      
       <div class="homework-quiz-header">
         <button class="btn btn-outline btn-sm" onclick="confirmExitHomework()">← 退出</button>
         <div class="homework-info">
@@ -5320,9 +5477,21 @@ function renderHomeworkUI() {
           <span id="homeworkTimeDisplay">00:00</span>
         </div>
       </div>
-      <div class="homework-progress-nav">
+      
+      <div class="homework-progress-bar">
+        <div class="progress-fill" id="homeworkProgressFill" style="width:0%"></div>
+        <span class="progress-text" id="homeworkProgressText">0/${total}</span>
+      </div>
+      
+      <!-- 答题卡收起按钮 -->
+      <div class="homework-nav-toggle">
+        <button id="toggle-nav-btn" class="btn btn-sm btn-outline" onclick="toggleHomeworkNav()">收起答题卡 ▲</button>
+      </div>
+      
+      <div class="homework-progress-nav" id="homework-nav-container">
         ${dotsHtml}
       </div>
+      
       <div id="homeworkCardArea"></div>
       <div class="homework-submit-area" id="homeworkSubmitArea" style="display:none">
         <button class="btn btn-primary btn-lg" onclick="submitHomeworkFinal()">📤 提交作业</button>
@@ -5332,6 +5501,7 @@ function renderHomeworkUI() {
   
   // 开始计时
   startHomeworkTimer();
+  updateHomeworkProgress();
   renderHomeworkCard();
 }
 
@@ -5427,6 +5597,29 @@ function renderHomeworkCard() {
       ${actionHtml}
     </div>
   `;
+}
+
+function toggleHomeworkNav() {
+  const nav = document.getElementById('homeworkNavContent');
+  const toggle = document.getElementById('homeworkNavToggle');
+  if (nav && toggle) {
+    const isHidden = nav.style.display === 'none';
+    nav.style.display = isHidden ? 'flex' : 'none';
+    toggle.textContent = isHidden ? '▲ 收起' : '▼ 展开';
+  }
+}
+
+function updateHomeworkProgress() {
+  const total = _homeworkQuestions.length;
+  const answered = Object.keys(_homeworkAnswered).length;
+  const progressBar = document.getElementById('homeworkProgressBar');
+  const progressText = document.getElementById('homeworkProgressText');
+  if (progressBar) {
+    progressBar.style.width = `${(answered / total) * 100}%`;
+  }
+  if (progressText) {
+    progressText.textContent = `${answered}/${total}`;
+  }
 }
 
 function goToHomeworkQuestion(index) {
