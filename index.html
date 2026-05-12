@@ -2083,7 +2083,7 @@ function switchAdminTab(tab) {
 
 // ===== Admin Tab1: Students =====
 async function renderAdminStudents() {
-  allStudents = await dbSelect('students', { order: ['created_at', false] });
+  allStudents = await dbSelect('students', { order: ['created_at', false], cacheBypass: true });
   const cohorts = [...new Set(allStudents.map(s => s.cohort))];
   const cohortOpts = cohorts.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('');
 
@@ -3861,7 +3861,7 @@ async function importEnrollments() {
     });
     const result = await response.json();
     if (result.error) { showToast(result.error, 'error'); return; }
-    showToast(`成功导入 ${result.imported} 人，跳过 ${result.skipped} 人`, 'success');
+    showToast(`成功导入 ${result.imported} 人，更新 ${result.updated} 人`, 'success');
     if (result.errors?.length) {
       console.error('导入错误：', result.errors);
     }

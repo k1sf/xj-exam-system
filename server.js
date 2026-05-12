@@ -914,7 +914,7 @@ async function handleEnrollApi(req, res, url, params) {
       const enrollments = await pool.query(sql, values);
       
       let imported = 0;
-      let skipped = 0;
+      let updated = 0;
       const errors = [];
       const hashedPwd = hashPassword('123456');
       
@@ -935,12 +935,12 @@ async function handleEnrollApi(req, res, url, params) {
             }
             const mergedCohort = cohorts.join(', ');
             
-            // 更新学生的期次和级别（如果需要）
+            // 更新学生的期次和级别
             await pool.query(
               'UPDATE students SET cohort = $1, level = $2 WHERE username = $3',
               [mergedCohort, e.level, e.phone]
             );
-            skipped++;
+            updated++;
           } else {
             // 创建学生账号
             await pool.query(
@@ -961,7 +961,7 @@ async function handleEnrollApi(req, res, url, params) {
         }
       }
       
-      sendJson(res, { success: true, imported, skipped, errors });
+      sendJson(res, { success: true, imported, updated, errors });
       break;
     }
     default:
