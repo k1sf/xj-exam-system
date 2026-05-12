@@ -3989,12 +3989,15 @@ function renderHomeworkList() {
                        `指定学生：${h.target_ids?.length || 0}人`;
     const endTime = h.end_time ? `截止：${fmtLocalShort(h.end_time)}` : '无截止时间';
     const progress = `${h.completed_students || 0}/${h.total_students || 0}人完成`;
+    const questionRange = h.question_min && h.question_max && h.question_min !== h.question_max 
+      ? `${h.question_min}~${h.question_max}题` 
+      : `${h.question_count || h.question_max || 50}题`;
     
     return `
       <div class="card" onclick="openHomeworkDetail(${h.id})">
         <div class="card-title">📝 ${escHtml(h.title)}</div>
         <div class="card-info">
-          <span>${typeText} | ${h.question_count}题</span>
+          <span>${typeText} | ${questionRange}</span>
           <span>${targetText}</span>
           <span>${endTime}</span>
           <span>${progress}</span>
@@ -4007,18 +4010,21 @@ function renderHomeworkList() {
 function showCreateHomeworkModal() {
   const levelOpts = LEVELS.map(l => `
     <label class="checkbox-item">
-      <input type="checkbox" value="${l}" name="homeworkLevel"> ${l}
+      <input type="checkbox" value="${l}" name="homeworkLevel" onchange="updateHomeworkQuestionHint()"> ${l}
     </label>
   `).join('');
   
   const cohortOpts = [...new Set(allStudents.map(s => s.cohort).filter(Boolean))].map(c => `
     <label class="checkbox-item">
-      <input type="checkbox" value="${escHtml(c)}" name="homeworkCohort"> ${escHtml(c)}
+      <input type="checkbox" value="${escHtml(c)}" name="homeworkCohort" onchange="updateHomeworkQuestionHint()"> ${escHtml(c)}
     </label>
   `).join('');
   
   const now = new Date();
   const defaultEndTime = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16);
+  
+  // 计算总题库数量
+  const totalQuestions = allQuestions ? allQuestions.length : 0;
   
   openModal('📝 布置作业', `
     <div class="form-group">
@@ -4031,10 +4037,6 @@ function showCreateHomeworkModal() {
         <option value="practice">刷题作业</option>
         <option value="exercise">错题练习</option>
       </select>
-    </div>
-    <div class="form-group">
-      <label>题目数量 *</label>
-      <input type="number" id="homeworkQuestionCount" value="50" min="1" max="500">
     </div>
     <div class="form-group">
       <label>分配方式</label>
@@ -4063,10 +4065,73 @@ function showCreateHomeworkModal() {
       </div>
     </div>
     <div class="form-group">
+      <label>题库信息</label>
+      <div id="homeworkQuestionHint" style="color:#666;font-size:14px;padding:8px;background:#f5f5f5;border-radius:6px;">
+        总题库：${totalQuestions} 题
+      </div>
+    </div>
+    <div class="form-group">
+      <label>题目数量 *</label>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input type="number" id="homeworkQuestionMin" value="10" min="1" max="500" style="width:100px;" placeholder="最少">
+        <span>~</span>
+        <input type="number" id="homeworkQuestionMax" value="50" min="1" max="500" style="width:100px;" placeholder="最多">
+        <span style="color:#888;font-size:12px;">题</span>
+      </div>
+      <small style="color:#888;">系统将在此范围内随机抽取题目</small>
+    </div>
+    <div class="form-group">
       <label>截止时间（可选）</label>
       <input type="datetime-local" id="homeworkEndTime" value="${defaultEndTime}">
     </div>
   `, { footer: '<button class="btn secondary" onclick="closeModal()">取消</button><button class="btn primary" onclick="createHomework()">布置</button>' });
+  
+  // 初始化题库提示
+  updateHomeworkQuestionHint();
+}
+
+function updateHomeworkQuestionHint() {
+  const targetType = document.getElementById('homeworkTargetType')?.value || 'level';
+  let filteredQuestions = allQuestions || [];
+  let levelText = '';
+  
+  if (targetType === 'level') {
+    const selectedLevels = [...document.querySelectorAll('input[name="homeworkLevel"]:checked')].map(c => c.value);
+    if (selectedLevels.length > 0) {
+      filteredQuestions = filteredQuestions.filter(q => selectedLevels.includes(q.level));
+      levelText = `级别：${selectedLevels.join('、')}`;
+    }
+  } else if (targetType === 'cohort') {
+    const selectedCohorts = [...document.querySelectorAll('input[name="homeworkCohort"]:checked')].map(c => c.value);
+    if (selectedCohorts.length > 0) {
+      // 根据班级找到对应学生的级别，再筛选题目
+      const studentLevels = [...new Set(allStudents.filter(s => selectedCohorts.some(c => s.cohort && s.cohort.split(',').map(x=>x.trim()).includes(c))).map(s => s.level))];
+      filteredQuestions = filteredQuestions.filter(q => studentLevels.includes(q.level));
+      levelText = `班级对应级别：${studentLevels.join('、') || '无'}`;
+    }
+  }
+  
+  const count = filteredQuestions.length;
+  const hintEl = document.getElementById('homeworkQuestionHint');
+  if (hintEl) {
+    let html = `总题库：${allQuestions ? allQuestions.length : 0} 题`;
+    if (levelText) {
+      html += `<br><span style="color:#1890ff;">${levelText}：${count} 题</span>`;
+    }
+    if (count > 0) {
+      html += `<br><small>建议题目数量：1 ~ ${Math.min(count, 100)} 题</small>`;
+    }
+    hintEl.innerHTML = html;
+    
+    // 更新输入框的最大值
+    const minInput = document.getElementById('homeworkQuestionMin');
+    const maxInput = document.getElementById('homeworkQuestionMax');
+    if (minInput && maxInput) {
+      minInput.max = count;
+      maxInput.max = count;
+      maxInput.value = Math.min(50, count);
+    }
+  }
 }
 
 function toggleHomeworkTypeOptions() {
@@ -4078,12 +4143,14 @@ function toggleHomeworkTargetOptions() {
   document.getElementById('homeworkLevelGroup').style.display = type === 'level' ? 'block' : 'none';
   document.getElementById('homeworkCohortGroup').style.display = type === 'cohort' ? 'block' : 'none';
   document.getElementById('homeworkStudentGroup').style.display = type === 'student' ? 'block' : 'none';
+  updateHomeworkQuestionHint();
 }
 
 async function createHomework() {
   const title = document.getElementById('homeworkTitle').value.trim();
   const type = document.getElementById('homeworkType').value;
-  const questionCount = parseInt(document.getElementById('homeworkQuestionCount').value);
+  const questionMin = parseInt(document.getElementById('homeworkQuestionMin').value);
+  const questionMax = parseInt(document.getElementById('homeworkQuestionMax').value);
   const targetType = document.getElementById('homeworkTargetType').value;
   const endTime = document.getElementById('homeworkEndTime').value;
   
@@ -4091,8 +4158,12 @@ async function createHomework() {
     showToast('请输入作业标题', 'error');
     return;
   }
-  if (!questionCount || questionCount < 1) {
-    showToast('请输入有效的题目数量', 'error');
+  if (!questionMin || questionMin < 1) {
+    showToast('请输入有效的最小题目数量', 'error');
+    return;
+  }
+  if (!questionMax || questionMax < questionMin) {
+    showToast('最大题目数量必须大于等于最小题目数量', 'error');
     return;
   }
   
@@ -4127,7 +4198,10 @@ async function createHomework() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         title, type, level, cohort, target_type: targetType, target_ids: targetIds,
-        question_count: questionCount, end_time: endTime ? new Date(endTime).toISOString() : null
+        question_count: questionMax, // 兼容后端字段
+        question_min: questionMin,
+        question_max: questionMax,
+        end_time: endTime ? new Date(endTime).toISOString() : null
       })
     }).then(r => r.json());
     
