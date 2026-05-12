@@ -491,34 +491,196 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .sync-indicator:hover{opacity:1}
 
 /* Homework Styles */
-.homework-banner{display:flex;align-items:center;gap:8px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:10px 16px;margin:8px 0;border-radius:10px;cursor:pointer;transition:transform .15s,box-shadow .15s}
-.homework-banner:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(102,126,234,.3)}
-.homework-banner-icon{font-size:1.2rem}
-.homework-banner-text{flex:1;font-weight:500}
-.homework-banner-arrow{font-size:1.2rem;opacity:.6}
-.cohort-tag{display:inline-block;background:#e3f2fd;color:#1976d2;padding:4px 10px;border-radius:16px;margin:2px;font-size:13px;cursor:pointer;transition:all .2s}
-.cohort-tag:hover{background:#bbdefb}
-.homework-list{max-height:60vh;overflow-y:auto}
-.homework-item{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;cursor:pointer;transition:background .15s}
-.homework-item:hover{background:var(--hover)}
-.homework-item-title{font-weight:600;margin-bottom:6px}
-.homework-item-info{font-size:.82rem;color:var(--text2);display:flex;flex-wrap:wrap;gap:8px}
-.homework-header{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--card);border-bottom:1px solid var(--border)}
-.homework-title{flex:1;font-weight:600;text-align:center}
-.homework-progress{font-size:.82rem;color:var(--text2)}
-.homework-complete{text-align:center;padding:40px 20px}
-.homework-complete .complete-icon{font-size:4rem;margin-bottom:16px}
-.homework-complete h3{margin-bottom:20px}
-.homework-complete .complete-stats{display:flex;justify-content:center;gap:24px;margin-bottom:24px}
-.homework-complete .stat-item{display:flex;flex-direction:column;align-items:center}
-.homework-complete .stat-label{font-size:.78rem;color:var(--text2);margin-bottom:4px}
-.homework-complete .stat-value{font-size:1.2rem;font-weight:600}
-.homework-info-bar{display:flex;flex-wrap:wrap;gap:12px;padding:12px 16px;background:var(--card);border-bottom:1px solid var(--border);font-size:.85rem;color:var(--text2)}
+.homework-banner{display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,#667eea 0%,#764ba2 50%,#f093fb 100%);background-size:200% 200%;animation:gradientShift 3s ease infinite;color:#fff;padding:14px 18px;margin:10px 0;border-radius:14px;cursor:pointer;transition:all .2s;box-shadow:0 4px 15px rgba(102,126,234,.25)}
+@keyframes gradientShift{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+.homework-banner:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(102,126,234,.35)}
+.homework-banner-icon{font-size:1.4rem;animation:bounce 2s infinite}
+@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+.homework-banner-text{flex:1;font-weight:600;font-size:.95rem}
+.homework-banner-arrow{font-size:1.2rem;opacity:.7;transition:transform .2s}
+.homework-banner:hover .homework-banner-arrow{transform:translateX(4px)}
+.cohort-tag{display:inline-flex;align-items:center;gap:4px;background:linear-gradient(135deg,#e3f2fd,#bbdefb);color:#1565c0;padding:5px 12px;border-radius:20px;margin:3px;font-size:13px;cursor:pointer;transition:all .2s;border:1px solid #90caf9;font-weight:500}
+.cohort-tag:hover{background:linear-gradient(135deg,#bbdefb,#90caf9);transform:scale(1.02)}
+.cohort-tag.selected{background:linear-gradient(135deg,#1976d2,#1565c0);color:#fff;border-color:#1976d2}
+.cohort-tag .remove-btn{opacity:.6;transition:opacity .2s}
+.cohort-tag:hover .remove-btn{opacity:1}
+.homework-list{max-height:60vh;overflow-y:auto;padding:4px}
+.homework-item{background:linear-gradient(145deg,var(--card),#f8f9ff);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:12px;cursor:pointer;transition:all .2s;position:relative;overflow:hidden}
+.homework-item::before{content:'';position:absolute;top:0;left:0;width:4px;height:100%;background:linear-gradient(180deg,#667eea,#764ba2)}
+.homework-item:hover{transform:translateY(-2px);box-shadow:0 8px 25px rgba(102,126,234,.15);border-color:#667eea}
+.homework-item-title{font-weight:700;margin-bottom:8px;font-size:1rem;color:#333;display:flex;align-items:center;gap:8px}
+.homework-item-title .auto-badge{font-size:11px;padding:2px 8px;border-radius:10px;background:linear-gradient(135deg,#4caf50,#8bc34a);color:#fff;font-weight:500}
+.homework-item-info{font-size:.82rem;color:var(--text2);display:flex;flex-wrap:wrap;gap:10px}
+.homework-item-info span{display:inline-flex;align-items:center;gap:4px}
+.homework-header{display:flex;align-items:center;gap:12px;padding:16px 18px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;position:sticky;top:0;z-index:10}
+.homework-header .back-btn{background:rgba(255,255,255,.2);border:none;color:#fff;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s}
+.homework-header .back-btn:hover{background:rgba(255,255,255,.3);transform:scale(1.1)}
+.homework-title{flex:1;font-weight:700;text-align:center;font-size:1.1rem}
+.homework-progress{font-size:.85rem;opacity:.9;background:rgba(255,255,255,.2);padding:4px 12px;border-radius:20px}
+.homework-complete{text-align:center;padding:50px 20px;background:linear-gradient(180deg,#f8f9ff 0%,#fff 100%)}
+.homework-complete .complete-icon{font-size:5rem;margin-bottom:20px;animation:successPop .5s ease}
+@keyframes successPop{0%{transform:scale(0)}50%{transform:scale(1.2)}100%{transform:scale(1)}}
+.homework-complete h3{margin-bottom:8px;color:#333;font-size:1.3rem}
+.homework-complete .complete-subtitle{color:var(--text2);margin-bottom:24px}
+.homework-complete .complete-stats{display:flex;justify-content:center;gap:32px;margin-bottom:28px}
+.homework-complete .stat-item{display:flex;flex-direction:column;align-items:center;padding:16px 24px;background:var(--card);border-radius:16px;box-shadow:0 4px 15px rgba(0,0,0,.05);min-width:90px}
+.homework-complete .stat-label{font-size:.78rem;color:var(--text2);margin-bottom:6px}
+.homework-complete .stat-value{font-size:1.5rem;font-weight:700;background:linear-gradient(135deg,#667eea,#764ba2);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.homework-info-bar{display:flex;flex-wrap:wrap;gap:12px;padding:14px 18px;background:#f8f9ff;border-bottom:1px solid var(--border);font-size:.85rem;color:var(--text2)}
 .homework-records{padding:16px}
 .data-table{width:100%;border-collapse:collapse;font-size:.85rem}
-.data-table th,.data-table td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--border)}
-.data-table th{background:var(--hover);font-weight:600}
-.data-table tr:hover{background:var(--hover)}
+.data-table th,.data-table td{padding:12px 14px;text-align:left;border-bottom:1px solid var(--border)}
+.data-table th{background:linear-gradient(135deg,#f5f7fa,#e8ecf3);font-weight:600;color:#333}
+.data-table tr:hover{background:#f8f9ff}
+.data-table tr:last-child td{border-bottom:none}
+.homework-empty{text-align:center;padding:40px 20px;color:var(--text2)}
+.homework-empty .empty-icon{font-size:3rem;margin-bottom:12px;opacity:.5}
+.homework-modal .form-section{margin-bottom:20px}
+.homework-modal .section-title{font-weight:600;margin-bottom:10px;color:#333;display:flex;align-items:center;gap:6px}
+.homework-modal .section-title::before{content:'';width:3px;height:16px;background:linear-gradient(180deg,#667eea,#764ba2);border-radius:2px}
+.homework-modal .input-group{display:flex;gap:10px;align-items:center}
+.homework-modal .input-group input{flex:1}
+.homework-modal .input-group .input-suffix{color:var(--text2);font-size:.85rem;white-space:nowrap}
+.homework-modal .quick-btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.homework-card{background:linear-gradient(145deg,#fff,#f8f9ff);border:1px solid #e8ecf3;border-radius:16px;padding:0;margin-bottom:16px;cursor:pointer;transition:all .25s cubic-bezier(.4,0,.2,1);overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+.homework-card:hover{transform:translateY(-3px);box-shadow:0 12px 30px rgba(102,126,234,.12);border-color:#667eea}
+.homework-card-header{display:flex;justify-content:space-between;align-items:center;padding:16px 18px;background:linear-gradient(135deg,#f8f9ff 0%,#fff 100%);border-bottom:1px solid #f0f2f5}
+.homework-card-header .homework-title{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
+.homework-card-header .homework-name{font-weight:700;font-size:1rem;color:#333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.homework-card-header .homework-type{display:inline-flex;align-items:center;gap:4px;color:#fff;padding:4px 12px;border-radius:20px;font-size:.75rem;font-weight:600}
+.homework-card-header .homework-auto{font-size:.75rem;padding:4px 10px;border-radius:12px;font-weight:500}
+.homework-card-header .homework-auto.auto{background:linear-gradient(135deg,#e8f5e9,#c8e6c9);color:#2e7d32}
+.homework-card-header .homework-auto.manual{background:linear-gradient(135deg,#fff3e0,#ffe0b2);color:#e65100}
+.homework-card-body{padding:16px 18px}
+.homework-card-body .homework-info-row{display:flex;flex-wrap:wrap;gap:16px;margin-bottom:12px}
+.homework-card-body .homework-info-row:last-child{margin-bottom:0}
+.homework-card-body .homework-info-item{display:flex;align-items:center;gap:8px;flex:1;min-width:150px}
+.homework-card-body .info-label{font-size:.8rem;color:#999;white-space:nowrap}
+.homework-card-body .info-value{font-size:.85rem;color:#333;font-weight:500}
+.homework-card-body .info-badges{display:flex;flex-wrap:wrap;gap:6px}
+.homework-card-footer{display:flex;align-items:center;gap:12px;padding:14px 18px;background:#f8f9ff;border-top:1px solid #f0f2f5}
+.homework-card-footer .progress-bar{flex:1;height:8px;background:#e8ecf3;border-radius:4px;overflow:hidden}
+.homework-card-footer .progress-fill{height:100%;background:linear-gradient(90deg,#667eea,#764ba2);border-radius:4px;transition:width .3s ease}
+.homework-card-footer .progress-text{font-size:.8rem;color:#666;white-space:nowrap}
+.info-badge{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:12px;font-size:.75rem;font-weight:500}
+.info-badge.level{background:linear-gradient(135deg,#e3f2fd,#bbdefb);color:#1565c0}
+.info-badge.cohort{background:linear-gradient(135deg,#f3e5f5,#e1bee7);color:#7b1fa2}
+.info-badge.student{background:linear-gradient(135deg,#e8f5e9,#c8e6c9);color:#2e7d32}
+.empty-state{text-align:center;padding:60px 20px;background:linear-gradient(180deg,#f8f9ff 0%,#fff 100%);border-radius:16px}
+.empty-state .empty-icon{font-size:4rem;margin-bottom:16px;opacity:.6;animation:float 3s ease-in-out infinite}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+.empty-state .empty-text{font-size:1.1rem;color:#333;margin-bottom:8px;font-weight:600}
+.empty-state .empty-hint{font-size:.85rem;color:#999}
+.cohort-select-box{background:linear-gradient(145deg,#fff,#f8f9ff);border:1px solid #e0e6f0;border-radius:14px;padding:14px 16px;max-height:180px;overflow-y:auto;transition:all .2s}
+.cohort-select-box::-webkit-scrollbar{width:6px}
+.homework-detail-card{background:linear-gradient(145deg,#fff,#f8f9ff);border-radius:16px;padding:20px;margin-bottom:20px;box-shadow:0 4px 20px rgba(102,126,234,.08)}
+.homework-detail-type{display:inline-flex;align-items:center;gap:6px;color:#fff;padding:8px 16px;border-radius:20px;font-size:.85rem;font-weight:600;margin-bottom:16px}
+.homework-detail-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px}
+.homework-detail-stats .stat-item{text-align:center;padding:12px;background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+.homework-detail-stats .stat-value{font-size:1.1rem;font-weight:700;color:#333;margin-bottom:4px}
+.homework-detail-stats .stat-label{font-size:.75rem;color:#999}
+.homework-progress-bar{background:#fff;border-radius:12px;padding:16px}
+.homework-progress-bar .progress-info{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.homework-progress-bar .progress-label{font-weight:600;color:#333}
+.homework-progress-bar .progress-text{font-size:.85rem;color:#667eea;font-weight:500}
+.progress-track{height:10px;background:#e8ecf3;border-radius:5px;overflow:hidden}
+.progress-fill{height:100%;background:linear-gradient(90deg,#667eea,#764ba2);border-radius:5px;transition:width .5s ease}
+.records-header{margin:20px 0 16px}
+.records-header h4{font-size:1rem;color:#333;font-weight:600}
+.records-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
+.record-card{background:#fff;border-radius:14px;padding:16px;box-shadow:0 2px 12px rgba(0,0,0,.04);transition:all .2s;border:1px solid transparent}
+.record-card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.08);border-color:#667eea}
+.record-card.completed{border-left:4px solid #4caf50}
+.record-card.in-progress{border-left:4px solid #ff9800}
+.record-card.pending{border-left:4px solid #999}
+.record-header{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.record-avatar{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:1rem}
+.record-info{flex:1}
+.record-name{font-weight:600;color:#333;font-size:.95rem}
+.record-meta{font-size:.75rem;color:#999;margin-top:2px}
+.record-status{font-size:.8rem;font-weight:500}
+.record-progress{margin-top:8px}
+.record-prog-bar{height:6px;background:#e8ecf3;border-radius:3px;overflow:hidden;margin-bottom:6px}
+.record-prog-fill{height:100%;border-radius:3px;transition:width .3s ease}
+.record-prog-text{display:flex;justify-content:space-between;font-size:.75rem;color:#666}
+.cohort-select-box::-webkit-scrollbar-track{background:transparent}
+.cohort-select-box::-webkit-scrollbar-thumb{background:#c5cae9;border-radius:3px}
+.cohort-option{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;cursor:pointer;transition:all .15s;margin-bottom:4px}
+.cohort-option:hover{background:linear-gradient(135deg,#e8eaf6,#c5cae9)}
+.cohort-option.selected{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff}
+.cohort-option input{width:18px;height:18px;accent-color:#667eea}
+.selected-cohorts{display:flex;flex-wrap:wrap;gap:8px;padding:12px;background:#f8f9ff;border-radius:12px;min-height:44px;border:1px dashed #c5cae9}
+.homework-item{background:linear-gradient(145deg,#fff,#f8f9ff);border:1px solid #e8ecf3;border-radius:16px;padding:0;margin-bottom:14px;cursor:pointer;transition:all .25s cubic-bezier(.4,0,.2,1);overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+.homework-item:hover{transform:translateY(-3px);box-shadow:0 12px 30px rgba(102,126,234,.12);border-color:#667eea}
+.homework-item-header{display:flex;align-items:center;gap:10px;padding:14px 16px;background:linear-gradient(135deg,#f8f9ff 0%,#fff 100%);border-bottom:1px solid #f0f2f5}
+.homework-item-type{display:inline-flex;align-items:center;gap:4px;color:#fff;padding:4px 12px;border-radius:20px;font-size:.75rem;font-weight:600}
+.homework-item-name{font-weight:700;font-size:.95rem;color:#333;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.homework-item-body{display:flex;flex-wrap:wrap;gap:12px;padding:14px 16px}
+.homework-item-detail{display:flex;align-items:center;gap:6px;min-width:100px}
+.homework-item-detail .detail-label{font-size:.78rem;color:#999}
+.homework-item-detail .detail-value{font-size:.85rem;color:#333;font-weight:500}
+.homework-item-footer{display:flex;align-items:center;gap:10px;padding:12px 16px;background:#f8f9ff;border-top:1px solid #f0f2f5}
+.progress-mini{flex:1;height:6px;background:#e8ecf3;border-radius:3px;overflow:hidden}
+.progress-mini-fill{height:100%;background:linear-gradient(90deg,#667eea,#764ba2);border-radius:3px;transition:width .3s ease}
+.progress-mini-text{font-size:.78rem;color:#666;min-width:40px;text-align:right}
+.homework-detail-card{background:linear-gradient(145deg,#fff,#f8f9ff);border-radius:20px;padding:20px;margin-bottom:20px;box-shadow:0 4px 20px rgba(102,126,234,.08)}
+.homework-detail-type{display:inline-block;padding:8px 20px;border-radius:25px;color:#fff;font-weight:600;font-size:.9rem;margin-bottom:16px}
+.homework-detail-stats{display:flex;flex-wrap:wrap;gap:16px;margin-bottom:16px}
+.stat-item{flex:1;min-width:80px;text-align:center;padding:12px;background:#f8f9ff;border-radius:12px}
+.stat-value{font-size:1.1rem;font-weight:700;color:#333;margin-bottom:4px}
+.stat-label{font-size:.75rem;color:#999}
+.homework-progress-bar{background:#fff;border-radius:12px;padding:12px}
+.progress-info{display:flex;justify-content:space-between;margin-bottom:8px}
+.progress-label{font-size:.85rem;font-weight:600;color:#333}
+.progress-text{font-size:.85rem;color:#667eea;font-weight:600}
+.progress-track{height:10px;background:#e8ecf3;border-radius:5px;overflow:hidden}
+.progress-fill{height:100%;background:linear-gradient(90deg,#667eea,#764ba2);border-radius:5px;transition:width .3s}
+.records-header{margin:20px 0 12px}
+.records-header h4{font-size:1rem;color:#333}
+.records-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.record-card{background:#fff;border:1px solid #e8ecf3;border-radius:14px;padding:14px;transition:all .2s}
+.record-card:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.06)}
+.record-card.completed{border-left:4px solid #4caf50}
+.record-card.progress{border-left:4px solid #ff9800}
+.record-card.pending{border-left:4px solid #999}
+.record-header{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.record-avatar{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:1rem}
+.record-info{flex:1}
+.record-name{font-weight:600;font-size:.9rem;color:#333}
+.record-meta{font-size:.75rem;color:#999}
+.record-progress{margin-bottom:6px}
+.record-prog-text{display:flex;justify-content:space-between;margin-bottom:6px}
+.record-score{font-size:.8rem;color:#666}
+.record-prog-bar{height:5px;background:#e8ecf3;border-radius:3px;overflow:hidden}
+.record-prog-fill{height:100%;border-radius:3px;transition:width .3s}
+.record-time{font-size:.75rem;color:#999;text-align:right}
+.homework-modal .quick-btn{padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--card);cursor:pointer;transition:all .2s;font-size:.85rem}
+.homework-modal .quick-btn:hover{border-color:#667eea;color:#667eea}
+.homework-modal .quick-btn.active{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border-color:transparent}
+.homework-modal .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-top:1px solid var(--border);margin-top:16px}
+.homework-modal .toggle-label{display:flex;flex-direction:column}
+.homework-modal .toggle-label .main{font-weight:500}
+.homework-modal .toggle-label .hint{font-size:.78rem;color:var(--text2)}
+.toggle-switch{position:relative;width:52px;height:28px}
+.toggle-switch input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#ccc;transition:.3s;border-radius:28px}
+.toggle-slider:before{position:absolute;content:"";height:22px;width:22px;left:3px;bottom:3px;background:#fff;transition:.3s;border-radius:50%;box-shadow:0 2px 5px rgba(0,0,0,.2)}
+.toggle-switch input:checked+.toggle-slider{background:linear-gradient(135deg,#667eea,#764ba2)}
+.toggle-switch input:checked+.toggle-slider:before{transform:translateX(24px)}
+.homework-admin-card{background:var(--card);border:1px solid var(--border);border-radius:14px;margin-bottom:12px;overflow:hidden;transition:all .2s}
+.homework-admin-card:hover{box-shadow:0 6px 20px rgba(0,0,0,.08)}
+.homework-admin-card .card-header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:linear-gradient(135deg,#f8f9ff,#fff);border-bottom:1px solid var(--border)}
+.homework-admin-card .card-title{font-weight:700;font-size:.95rem;display:flex;align-items:center;gap:8px}
+.homework-admin-card .card-title .auto-indicator{font-size:10px;padding:2px 8px;border-radius:10px;background:#4caf50;color:#fff}
+.homework-admin-card .card-body{padding:12px 16px}
+.homework-admin-card .card-stats{display:flex;gap:20px;font-size:.82rem;color:var(--text2)}
+.homework-admin-card .card-stats span{display:flex;align-items:center;gap:4px}
+.homework-admin-card .card-stats .done{color:#4caf50}
+.homework-admin-card .card-footer{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--border);background:#fafafa}
+.homework-admin-card .card-btn{flex:1;padding:8px;border-radius:8px;border:1px solid var(--border);background:#fff;cursor:pointer;transition:all .2s;font-size:.85rem}
+.homework-admin-card .card-btn:hover{border-color:#667eea;color:#667eea}
+.homework-admin-card .card-btn.primary{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border:none}
+.homework-admin-card .card-btn.primary:hover{opacity:.9}
 </style>
 </head>
 <body>
@@ -3980,38 +4142,71 @@ async function loadHomeworkList() {
 function renderHomeworkList() {
   const container = document.getElementById('homeworkListContainer');
   if (_homeworkList.length === 0) {
-    container.innerHTML = '<p class="empty-hint">暂无作业，点击"布置作业"创建</p>';
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">📝</div>
+        <div class="empty-text">暂无作业</div>
+        <div class="empty-hint">点击"布置作业"创建第一个作业</div>
+      </div>
+    `;
     return;
   }
   
   container.innerHTML = _homeworkList.map(h => {
-    const typeText = h.type === 'practice' ? '刷题' : h.type === 'exercise' ? '错题练习' : '模拟考试';
+    const typeText = h.type === 'practice' ? '📚 刷题作业' : h.type === 'exercise' ? '❌ 错题练习' : '📝 模拟考试';
+    const typeColor = h.type === 'practice' ? '#2196f3' : h.type === 'exercise' ? '#ff9800' : '#9c27b0';
     // 支持多个班级显示
     let targetText = '';
     if (h.target_type === 'level') {
-      targetText = `级别：${h.level}`;
+      targetText = `<span class="info-badge level">${escHtml(h.level)}</span>`;
     } else if (h.target_type === 'cohort') {
       const cohorts = h.cohorts || (h.cohort ? [h.cohort] : []);
-      targetText = `班级：${cohorts.join('、') || '未指定'}`;
+      targetText = cohorts.map(c => `<span class="info-badge cohort">${escHtml(c)}</span>`).join('');
     } else {
-      targetText = `指定学生：${h.target_ids?.length || 0}人`;
+      targetText = `<span class="info-badge student">👤 ${h.target_ids?.length || 0}人</span>`;
     }
     // 显示题目范围
     const questionRange = h.question_start && h.question_end ? 
-      `题目：第${h.question_start}题 - 第${h.question_end}题` : 
-      `${h.question_count}题`;
-    const endTime = h.end_time ? `截止：${fmtLocalShort(h.end_time)}` : '无截止时间';
-    const progress = `${h.completed_students || 0}/${h.total_students || 0}人完成`;
-    const autoText = h.auto_create ? '🔄 自动' : '📍 手动';
+      `第 ${h.question_start} - ${h.question_end} 题` : 
+      `${h.question_count} 题`;
+    const endTime = h.end_time ? fmtLocalShort(h.end_time) : '无截止';
+    const progress = `${h.completed_students || 0}/${h.total_students || 0}`;
+    const progressPercent = h.total_students ? Math.round((h.completed_students || 0) / h.total_students * 100) : 0;
+    const autoIcon = h.auto_create ? '🔄' : '📍';
+    const autoClass = h.auto_create ? 'auto' : 'manual';
     
     return `
-      <div class="card" onclick="openHomeworkDetail(${h.id})">
-        <div class="card-title">📝 ${escHtml(h.title)} <span style="font-size:12px;color:${h.auto_create ? '#4caf50' : '#666'}">${autoText}</span></div>
-        <div class="card-info">
-          <span>${typeText} | ${questionRange}</span>
-          <span>${targetText}</span>
-          <span>${endTime}</span>
-          <span>${progress}</span>
+      <div class="homework-card" onclick="openHomeworkDetail(${h.id})">
+        <div class="homework-card-header">
+          <div class="homework-title">
+            <span class="homework-type" style="background:${typeColor}">${typeText}</span>
+            <span class="homework-name">${escHtml(h.title)}</span>
+          </div>
+          <span class="homework-auto ${autoClass}">${autoIcon} ${h.auto_create ? '自动' : '手动'}</span>
+        </div>
+        <div class="homework-card-body">
+          <div class="homework-info-row">
+            <div class="homework-info-item">
+              <span class="info-label">📋 题目</span>
+              <span class="info-value">${questionRange}</span>
+            </div>
+            <div class="homework-info-item">
+              <span class="info-label">⏰ 截止</span>
+              <span class="info-value">${endTime}</span>
+            </div>
+          </div>
+          <div class="homework-info-row">
+            <div class="homework-info-item">
+              <span class="info-label">👥 分配</span>
+              <div class="info-badges">${targetText}</div>
+            </div>
+          </div>
+        </div>
+        <div class="homework-card-footer">
+          <div class="progress-bar">
+            <div class="progress-fill" style="width:${progressPercent}%"></div>
+          </div>
+          <span class="progress-text">${progress} 人完成 (${progressPercent}%)</span>
         </div>
       </div>
     `;
@@ -4055,59 +4250,73 @@ async function showCreateHomeworkModal() {
   
   // 默认班级：最近一期
   _selectedHomeworkCohorts = cohortList.length > 0 ? [cohortList[0]] : [];
-  
-  // 今天的日期字符串
-  const today = now.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' });
-  
+
   openModal('📝 布置作业', `
-    <div class="form-group">
-      <label>作业标题</label>
-      <input type="text" id="homeworkTitle" value="今日作业" placeholder="如：今日作业">
-    </div>
-    <div class="form-group">
-      <label>题目范围（题库共 ${_totalQuestionCount} 题）</label>
-      <div style="display:flex;gap:10px;align-items:center;">
-        <span>第</span>
-        <input type="number" id="homeworkQStart" value="${start}" min="1" max="${_totalQuestionCount}" style="width:80px;">
-        <span>题 到 第</span>
-        <input type="number" id="homeworkQEnd" value="${end}" min="1" max="${_totalQuestionCount}" style="width:80px;">
-        <span>题</span>
+    <div class="homework-modal">
+      <div class="form-section">
+        <div class="section-title">作业标题</div>
+        <input type="text" id="homeworkTitle" value="今日作业" placeholder="如：今日作业" style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border);">
       </div>
-      <div style="margin-top:8px;color:#666;font-size:12px;">
-        共 <span id="homeworkQCount">${end - start + 1}</span> 题
-        <label style="margin-left:15px;">默认题数：<input type="number" id="homeworkDefaultCount" value="${defaultCount}" min="1" max="100" style="width:60px;"></label>
+      
+      <div class="form-section">
+        <div class="section-title">题目范围</div>
+        <div style="background:#f8f9ff;padding:12px;border-radius:10px;margin-bottom:10px;">
+          <div style="display:flex;gap:10px;align-items:center;justify-content:center;font-size:.95rem;">
+            <span>第</span>
+            <input type="number" id="homeworkQStart" value="${start}" min="1" max="${_totalQuestionCount}" style="width:70px;text-align:center;padding:8px;border-radius:8px;border:1px solid var(--border);font-size:1rem;font-weight:600;">
+            <span>题 → 第</span>
+            <input type="number" id="homeworkQEnd" value="${end}" min="1" max="${_totalQuestionCount}" style="width:70px;text-align:center;padding:8px;border-radius:8px;border:1px solid var(--border);font-size:1rem;font-weight:600;">
+            <span>题</span>
+          </div>
+          <div style="text-align:center;margin-top:10px;color:#666;font-size:.85rem;">
+            共 <strong id="homeworkQCount" style="color:#667eea;font-size:1.1rem;">${end - start + 1}</strong> 题
+            <span style="margin:0 15px;color:#ddd;">|</span>
+            题库共 <strong style="color:#764ba2;">${_totalQuestionCount}</strong> 题
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;font-size:.85rem;color:#666;">
+          <span>默认题数：</span>
+          <input type="number" id="homeworkDefaultCount" value="${defaultCount}" min="1" max="100" style="width:60px;text-align:center;padding:6px;border-radius:6px;border:1px solid var(--border);">
+          <span>题</span>
+        </div>
       </div>
-    </div>
-    <div class="form-group">
-      <label>分配班级</label>
-      <div style="display:flex;gap:10px;">
-        <select id="homeworkCohortSelect" style="flex:1;" onchange="addHomeworkCohort()">
-          <option value="">-- 选择班级 --</option>
+      
+      <div class="form-section">
+        <div class="section-title">分配班级</div>
+        <select id="homeworkCohortSelect" style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border);background:#fff;cursor:pointer;" onchange="addHomeworkCohort()">
+          <option value="">点击选择班级...</option>
           ${cohortList.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('')}
         </select>
+        <div id="selectedCohortsBox" style="margin-top:12px;min-height:50px;padding:12px;border:1px dashed #c5cae9;border-radius:12px;background:linear-gradient(135deg,#f5f7ff,#fff);">
+          <div id="selectedCohortsList" style="display:flex;flex-wrap:wrap;gap:6px;">
+            ${_selectedHomeworkCohorts.length === 0 ? '<span style="color:#999;padding:4px;">请选择班级</span>' : _selectedHomeworkCohorts.map(c => `<span class="cohort-tag selected" onclick="removeHomeworkCohort('${escHtml(c)}')">${escHtml(c)}<span class="remove-btn">×</span></span>`).join('')}
+          </div>
+        </div>
       </div>
-      <div id="selectedCohortsBox" style="margin-top:10px;min-height:36px;padding:8px;border:1px dashed #ddd;border-radius:6px;background:#fafafa;">
-        <span style="color:#999;">已选班级：</span>
-        <span id="selectedCohortsList">${_selectedHomeworkCohorts.map(c => `<span class="cohort-tag" onclick="removeHomeworkCohort('${escHtml(c)}')">${escHtml(c)} ×</span>`).join(' ')}</span>
+      
+      <div class="form-section">
+        <div class="section-title">截止时间</div>
+        <input type="datetime-local" id="homeworkEndTime" value="${defaultEndTime}" style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border);">
+        <div class="quick-btns">
+          <button type="button" class="quick-btn active" onclick="setHomeworkDeadline(24);this.parentElement.querySelectorAll('.quick-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">24小时</button>
+          <button type="button" class="quick-btn" onclick="setHomeworkDeadline(48);this.parentElement.querySelectorAll('.quick-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">48小时</button>
+          <button type="button" class="quick-btn" onclick="setHomeworkDeadline(72);this.parentElement.querySelectorAll('.quick-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">3天</button>
+          <button type="button" class="quick-btn" onclick="setHomeworkDeadline(168);this.parentElement.querySelectorAll('.quick-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">7天</button>
+        </div>
+      </div>
+      
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <span class="main">自动布置</span>
+          <span class="hint">开启后每天自动创建同样作业</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="homeworkAutoCreate">
+          <span class="toggle-slider"></span>
+        </label>
       </div>
     </div>
-    <div class="form-group">
-      <label>截止时间</label>
-      <input type="datetime-local" id="homeworkEndTime" value="${defaultEndTime}">
-      <div style="margin-top:5px;">
-        <button type="button" class="btn small" onclick="setHomeworkDeadline(24)">24小时</button>
-        <button type="button" class="btn small" onclick="setHomeworkDeadline(48)">48小时</button>
-        <button type="button" class="btn small" onclick="setHomeworkDeadline(72)">3天</button>
-        <button type="button" class="btn small" onclick="setHomeworkDeadline(168)">7天</button>
-      </div>
-    </div>
-    <div class="form-group">
-      <label style="display:flex;align-items:center;gap:8px;">
-        <input type="checkbox" id="homeworkAutoCreate">
-        <span>开启自动布置（每天自动创建同样作业）</span>
-      </label>
-    </div>
-  `, { footer: '<button class="btn secondary" onclick="closeModal()">取消</button><button class="btn primary" onclick="createHomework()">布置作业</button>' });
+  `, { footer: '<button class="btn secondary" onclick="closeModal()">取消</button><button class="btn primary" onclick="createHomework()" style="background:linear-gradient(135deg,#667eea,#764ba2);border:none;padding:12px 28px;">📋 布置作业</button>' });
   
   // 绑定题目范围变化事件
   document.getElementById('homeworkQStart').oninput = updateHomeworkQCount;
@@ -4144,11 +4353,11 @@ function removeHomeworkCohort(cohort) {
 function updateSelectedCohortsDisplay() {
   const list = document.getElementById('selectedCohortsList');
   if (_selectedHomeworkCohorts.length === 0) {
-    list.innerHTML = '<span style="color:#999;">未选择</span>';
+    list.innerHTML = '<span style="color:#999;padding:4px;">请选择班级</span>';
   } else {
     list.innerHTML = _selectedHomeworkCohorts.map(c => 
-      `<span class="cohort-tag" onclick="removeHomeworkCohort('${escHtml(c)}')">${escHtml(c)} ×</span>`
-    ).join(' ');
+      `<span class="cohort-tag selected" onclick="removeHomeworkCohort('${escHtml(c)}')">${escHtml(c)}<span class="remove-btn">×</span></span>`
+    ).join('');
   }
 }
 
@@ -4218,6 +4427,8 @@ async function openHomeworkDetail(id) {
     
     const completedCount = records.filter(r => r.is_completed).length;
     const totalCount = records.length;
+    const progressPercent = totalCount > 0 ? Math.round(completedCount / totalCount * 100) : 0;
+    const typeColor = homework.type === 'practice' ? '#667eea' : homework.type === 'exercise' ? '#ff9800' : '#e91e63';
     
     document.getElementById('adminContent').innerHTML = `
       <div class="page-header">
@@ -4227,37 +4438,72 @@ async function openHomeworkDetail(id) {
           <button class="btn danger" onclick="deleteHomework(${id})">删除作业</button>
         </div>
       </div>
-      <div class="homework-info-bar">
-        <span>${typeText} | ${homework.question_count}题</span>
-        <span>${targetText}</span>
-        <span>截止：${homework.end_time ? fmtLocalShort(homework.end_time) : '无'}</span>
-        <span>完成：${completedCount}/${totalCount}人</span>
+      
+      <div class="homework-detail-card">
+        <div class="homework-detail-type" style="background:${typeColor}">
+          ${typeText}
+        </div>
+        <div class="homework-detail-stats">
+          <div class="stat-item">
+            <div class="stat-value">${homework.question_start && homework.question_end ? homework.question_start + '-' + homework.question_end : homework.question_count + '题'}</div>
+            <div class="stat-label">题目范围</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">${homework.cohorts ? homework.cohorts.join(',').substring(0,10) + (homework.cohorts.join(',').length > 10 ? '...' : '') : (homework.cohort || targetText.substring(0,10))}</div>
+            <div class="stat-label">分配对象</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">${homework.end_time ? fmtLocalShort(homework.end_time).split(' ')[0] : '无'}</div>
+            <div class="stat-label">截止日期</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">${homework.auto_create ? '🤖 自动' : '👆 手动'}</div>
+            <div class="stat-label">布置方式</div>
+          </div>
+        </div>
+        <div class="homework-progress-bar">
+          <div class="progress-info">
+            <span class="progress-label">完成进度</span>
+            <span class="progress-text">${completedCount}/${totalCount}人 (${progressPercent}%)</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" style="width:${progressPercent}%"></div>
+          </div>
+        </div>
       </div>
-      <div class="homework-records">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>学生</th>
-              <th>级别</th>
-              <th>班级</th>
-              <th>进度</th>
-              <th>状态</th>
-              <th>完成时间</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${records.map(r => `
-              <tr>
-                <td>${escHtml(r.nickname || r.username || '未知')}</td>
-                <td>${r.level || '-'}</td>
-                <td>${escHtml(r.cohort || '-')}</td>
-                <td>${r.total_count}/${homework.question_count} (${r.correct_count}对)</td>
-                <td>${r.is_completed ? '✅ 已完成' : r.total_count > 0 ? '🔄 进行中' : '⏳ 未开始'}</td>
-                <td>${r.completed_at ? fmtLocalShort(r.completed_at) : '-'}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
+      
+      <div class="records-header">
+        <h4>📋 学生完成情况</h4>
+      </div>
+      <div class="records-grid">
+        ${records.map(r => {
+          const prog = Math.round(r.total_count / homework.question_count * 100);
+          const statusClass = r.is_completed ? 'completed' : r.total_count > 0 ? 'in-progress' : 'pending';
+          const statusText = r.is_completed ? '✅ 已完成' : r.total_count > 0 ? '🔄 进行中' : '⏳ 未开始';
+          const statusColor = r.is_completed ? '#4caf50' : r.total_count > 0 ? '#ff9800' : '#999';
+          const avatarColors = ['#667eea','#764ba2','#f093fb','#f5576c','#4facfe','#43e97b','#fa709a'];
+          const avatarColor = avatarColors[Math.abs((r.nickname||r.username||'?').charCodeAt(0)) % avatarColors.length];
+          return '<div class="record-card ' + statusClass + '">' +
+            '<div class="record-header">' +
+              '<div class="record-avatar" style="background:' + avatarColor + '">' + (r.nickname||r.username||'?')[0] + '</div>' +
+              '<div class="record-info">' +
+                '<div class="record-name">' + escHtml(r.nickname || r.username || '未知') + '</div>' +
+                '<div class="record-meta">' + (r.level || '-') + ' · ' + escHtml(r.cohort || '-') + '</div>' +
+              '</div>' +
+              '<div class="record-status" style="color:' + statusColor + '">' + statusText + '</div>' +
+            '</div>' +
+            '<div class="record-progress">' +
+              '<div class="record-prog-bar">' +
+                '<div class="record-prog-fill" style="width:' + prog + '%;background:' + statusColor + '"></div>' +
+              '</div>' +
+              '<div class="record-prog-text">' +
+                '<span>' + r.total_count + '/' + homework.question_count + ' 题</span>' +
+                '<span>✓ ' + r.correct_count + '</span>' +
+              '</div>' +
+            '</div>' +
+            (r.completed_at ? '<div class="record-time">完成于 ' + fmtLocalShort(r.completed_at) + '</div>' : '') +
+          '</div>';
+        }).join('')}
       </div>
     `;
   } catch (e) {
@@ -4881,18 +5127,52 @@ function showHomeworkList() {
   
   openModal('📝 待完成作业', `
     <div class="homework-list">
-      ${pending.length === 0 ? '<p class="empty-hint">暂无待完成作业</p>' : 
-        pending.map(h => `
-          <div class="homework-item" onclick="startHomework(${h.id})">
-            <div class="homework-item-title">${escHtml(h.title)}</div>
-            <div class="homework-item-info">
-              <span>${h.type === 'practice' ? '刷题' : '错题练习'} | ${h.question_count}题</span>
-              <span>进度：${h.my_total_count}/${h.question_count}</span>
-              ${h.end_time ? `<span>截止：${fmtLocalShort(h.end_time)}</span>` : ''}
+      ${pending.length === 0 ? `
+        <div class="empty-state">
+          <div class="empty-icon">🎉</div>
+          <div class="empty-text">太棒了！</div>
+          <div class="empty-hint">暂无待完成作业</div>
+        </div>
+      ` : 
+        pending.map(h => {
+          const typeIcon = h.type === 'practice' ? '📚' : '❌';
+          const typeText = h.type === 'practice' ? '刷题作业' : '错题练习';
+          const typeColor = h.type === 'practice' ? '#2196f3' : '#ff9800';
+          const progress = h.question_count > 0 ? Math.round((h.my_total_count || 0) / h.question_count * 100) : 0;
+          const questionRange = h.question_start && h.question_end ? `第 ${h.question_start}-${h.question_end} 题` : `${h.question_count} 题`;
+          
+          return `
+            <div class="homework-item" onclick="startHomework(${h.id})">
+              <div class="homework-item-header">
+                <span class="homework-item-type" style="background:${typeColor}">${typeIcon} ${typeText}</span>
+                <span class="homework-item-name">${escHtml(h.title)}</span>
+              </div>
+              <div class="homework-item-body">
+                <div class="homework-item-detail">
+                  <span class="detail-label">📋 题目</span>
+                  <span class="detail-value">${questionRange}</span>
+                </div>
+                <div class="homework-item-detail">
+                  <span class="detail-label">📊 进度</span>
+                  <span class="detail-value">${h.my_total_count || 0}/${h.question_count}</span>
+                </div>
+                ${h.end_time ? `
+                  <div class="homework-item-detail">
+                    <span class="detail-label">⏰ 截止</span>
+                    <span class="detail-value">${fmtLocalShort(h.end_time)}</span>
+                  </div>
+                ` : ''}
+              </div>
+              <div class="homework-item-footer">
+                <div class="progress-mini">
+                  <div class="progress-mini-fill" style="width:${progress}%"></div>
+                </div>
+                <span class="progress-mini-text">${progress}%</span>
+                <button class="btn primary btn-sm">${h.my_total_count > 0 ? '继续答题' : '开始答题'}</button>
+              </div>
             </div>
-            <button class="btn primary btn-sm">${h.my_total_count > 0 ? '继续' : '开始'}</button>
-          </div>
-        `).join('')
+          `;
+        }).join('')
       }
     </div>
   `, { footer: '<button class="btn secondary" onclick="closeModal()">关闭</button>' });
