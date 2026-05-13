@@ -1369,7 +1369,7 @@ setInterval(updateSyncStatus, 1000);
 
 // ===== Admin Mode: Immediate Sync =====
 function isAdminMode() {
-  return currentView && currentView.startsWith('admin');
+  return userRole === 'admin';
 }
 
 // Override admin operations to sync immediately
