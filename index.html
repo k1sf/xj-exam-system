@@ -2444,6 +2444,15 @@ async function renderAdminStudents() {
 
 function switchStudentSubTab(tab) {
   _studentSubTab = tab;
+  
+  // 更新按钮样式
+  const btns = document.querySelectorAll('#adminContent .btn[onclick^="switchStudentSubTab"]');
+  btns.forEach(btn => {
+    const isActive = btn.getAttribute('onclick').includes(`'${tab}'`);
+    btn.classList.toggle('btn-primary', isActive);
+    btn.classList.toggle('btn-outline', !isActive);
+  });
+  
   const container = document.getElementById('studentSubContent');
   if (!container) return;
   if (tab === 'list') renderStudentListSub();
@@ -7944,7 +7953,11 @@ function renderWrongBookPageTo(containerId) {
 }
 
 function renderWrongBookPage() {
-  renderWrongBookPageTo('wrongBookContainer');
+  // 检测当前使用哪个容器（学生端错题本用 practiceSubContent，其他用 wrongBookContainer）
+  const container = document.getElementById('practiceSubContent') || document.getElementById('wrongBookContainer');
+  if (container) {
+    renderWrongBookPageTo(container.id);
+  }
 }
 
 async function practiceWrongQuestion(qId) {
