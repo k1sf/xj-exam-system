@@ -1422,9 +1422,9 @@ async function handleDailyTaskApi(req, res, url, params) {
           SELECT * FROM daily_tasks WHERE student_id = $1 AND task_date = $2
         `, [student_id, today]);
         
-        // 给予登录奖励XP
+        // 给予登录奖励XP - student_id 是手机号，用 username 匹配
         await pool.query(`
-          UPDATE students SET xp = COALESCE(xp, 0) + 20 WHERE id = $1
+          UPDATE students SET xp = COALESCE(xp, 0) + 20 WHERE username = $1
         `, [student_id]);
       }
       

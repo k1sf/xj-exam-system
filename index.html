@@ -7966,7 +7966,7 @@ async function renderProfile() {
   if (!currentUser) return;
   
   try {
-  // 加载统计数据
+  // 加载统计数据 - student_id 存储的是手机号(username)
   const records = await dbSelect('records', { eq: { student_id: currentUser.username }, cacheBypass: true });
   
   // 计算每道题目的最新记录（用于收藏状态）
@@ -8080,7 +8080,8 @@ async function loadTaskProgressInProfile() {
   if (!currentUser) return;
   
   try {
-    const res = await fetch(`/api/daily-task/status?student_id=${currentUser.id}`);
+    // student_id 存储的是手机号(username)
+    const res = await fetch(`/api/daily-task/status?student_id=${currentUser.username}`);
     const task = await res.json();
     
     const container = document.getElementById('taskProgressContent');
