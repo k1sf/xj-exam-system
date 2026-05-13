@@ -384,7 +384,7 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .progress-text{font-size:0.78rem;color:var(--text2);margin-bottom:12px}
 .q-type-tag{margin-bottom:10px}
 .q-content{font-size:1.1rem;line-height:1.8;color:var(--text);margin-bottom:16px;word-break:break-word}
-.opt-btn{width:100%;padding:12px 16px;border:2px solid var(--border);border-radius:14px;background:var(--card);text-align:left;cursor:pointer;margin-bottom:10px;font-size:0.95rem;transition:all 0.15s;display:flex;align-items:center;gap:10px;min-height:44px;-webkit-user-select:none;user-select:none;color:var(--text)}
+.opt-btn{width:100%;padding:14px 18px;border:2px solid var(--border);border-radius:14px;background:var(--card);text-align:left;cursor:pointer;margin-bottom:14px;font-size:1rem;transition:all 0.15s;display:flex;align-items:center;gap:12px;min-height:52px;-webkit-user-select:none;user-select:none;color:var(--text);line-height:1.5}
 .opt-btn:active{transform:scale(0.97)}
 .opt-btn.selected{border-color:var(--primary);background:var(--primary-light)}
 .opt-btn.correct{border-color:var(--success);background:#ecfdf5;color:#065f46}
@@ -399,7 +399,7 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .fav-btn{font-size:1.3rem;transition:transform 0.3s}
 .fav-btn.active{transform:rotate(360deg) scale(1.2);color:#f59e0b}
 .confirm-submit-bar{display:flex;justify-content:center;margin-top:8px}
-.multi-confirm-btn{background:linear-gradient(135deg,var(--success),#34d399);color:#fff;border:none;padding:12px 32px;border-radius:25px;font-size:1rem;font-weight:600;cursor:pointer;min-height:44px;box-shadow:0 3px 10px rgba(16,185,129,0.25);transition:all 0.2s}
+.multi-confirm-btn{background:linear-gradient(135deg,var(--success),#34d399);color:#fff;border:none;padding:14px 40px;border-radius:25px;font-size:1.05rem;font-weight:600;cursor:pointer;min-height:48px;box-shadow:0 4px 12px rgba(16,185,129,0.3);transition:all 0.2s}
 .multi-confirm-btn:active{transform:scale(0.95)}
 
 /* ===== Student: Exam ===== */
@@ -2470,18 +2470,21 @@ async function renderStudentListSub() {
     </div>
     <div class="card" style="animation-delay:0.1s">
       <div class="card-title">📋 学生列表 <span id="studentCount" style="font-size:0.78rem;color:var(--text2);font-weight:400"></span></div>
-      <div style="display:flex;gap:8px;margin-bottom:12px">
-        <input class="input" id="studentSearch" placeholder="🔍 搜索昵称或手机号" style="flex:1" oninput="filterStudents()">
-        <select class="input" id="studentCohortFilter" onchange="filterStudents()" style="width:120px;flex:none">
+      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+        <input class="input" id="studentSearch" placeholder="搜索昵称/手机号" style="flex:1" oninput="filterStudents()">
+        <select class="input" id="studentCohortFilter" onchange="filterStudents()" style="width:100px;flex:none">
           <option value="">全部班级</option>${cohortOpts}
         </select>
-      </div>
-      <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
-        <button class="btn btn-sm btn-ghost" onclick="batchRenewStudents()">📅 批量续期</button>
-        <button class="btn btn-sm btn-ghost" onclick="batchToggleStudents(true)">🚫 批量禁用</button>
-        <button class="btn btn-sm btn-ghost" onclick="batchToggleStudents(false)">✅ 批量启用</button>
-        <button class="btn btn-sm btn-ghost" onclick="batchLockLevel(true)">🔒 批量锁定等级</button>
-        <button class="btn btn-sm btn-ghost" onclick="batchLockLevel(false)">🔓 批量解锁等级</button>
+        <div class="dropdown" style="position:relative">
+          <button class="btn btn-sm btn-outline" onclick="toggleDropdown('batchMenu')">批量操作</button>
+          <div id="batchMenu" class="dropdown-menu" style="display:none;position:absolute;right:0;top:100%;z-index:100;min-width:120px;background:var(--card);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15)">
+            <a href="javascript:void(0)" onclick="batchRenewStudents();toggleDropdown('batchMenu')" style="display:block;padding:10px 16px;color:var(--text);text-decoration:none;border-bottom:1px solid var(--border)">续期</a>
+            <a href="javascript:void(0)" onclick="batchToggleStudents(true);toggleDropdown('batchMenu')" style="display:block;padding:10px 16px;color:var(--text);text-decoration:none;border-bottom:1px solid var(--border)">禁用</a>
+            <a href="javascript:void(0)" onclick="batchToggleStudents(false);toggleDropdown('batchMenu')" style="display:block;padding:10px 16px;color:var(--text);text-decoration:none;border-bottom:1px solid var(--border)">启用</a>
+            <a href="javascript:void(0)" onclick="batchLockLevel(true);toggleDropdown('batchMenu')" style="display:block;padding:10px 16px;color:var(--text);text-decoration:none;border-bottom:1px solid var(--border)">锁定等级</a>
+            <a href="javascript:void(0)" onclick="batchLockLevel(false);toggleDropdown('batchMenu')" style="display:block;padding:10px 16px;color:var(--text);text-decoration:none">解锁等级</a>
+          </div>
+        </div>
       </div>
       <div id="studentListContainer"></div>
       <div id="studentListPagination"></div>
@@ -2605,6 +2608,13 @@ function copyAllAccounts() {
   const text = createdAccounts.map(a => `${a.nickname}\t${a.username}\t${a.password}`).join('\n');
   copyText(text);
   showToast('默认密码123456', 'info');
+}
+
+// 下拉筛选器切换
+function toggleDropdown(id) {
+  const dropdown = document.getElementById(id);
+  if (!dropdown) return;
+  dropdown.classList.toggle('hidden');
 }
 
 let _filteredStudents = [];
@@ -3400,22 +3410,39 @@ function openCreateExam() {
   const cohorts = [...new Set(allCohorts)];
   const cohortOpts = cohorts.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('');
   const levelOpts = LEVELS.map(l => `<option value="${l}">${LEVEL_ICONS[l]} ${l}</option>`).join('');
+  const now = new Date();
+  const defaultStart = now.toISOString().slice(0,16);
+  const defaultEnd = new Date(now.getTime() + 7*24*60*60*1000).toISOString().slice(0,16);
   openModal('创建考试', `
-    <div style="display:flex;flex-direction:column;gap:12px">
-      <input class="input" id="examTitle" placeholder="考试标题">
-      <select class="input" id="examLevel">${levelOpts}</select>
-      <select class="input" id="examCohort"><option value="">全部班级</option>${cohortOpts}</select>
-      <input class="input" id="examDuration" type="number" placeholder="考试时长（分钟）" min="1">
-      <label style="font-size:0.85rem;color:var(--text2)">开始时间</label>
-      <input class="input" id="examStart" type="datetime-local">
-      <label style="font-size:0.85rem;color:var(--text2)">结束时间</label>
-      <input class="input" id="examEnd" type="datetime-local">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <input class="input" id="examTitle" placeholder="考试标题" style="font-size:1rem">
       <div style="display:flex;gap:8px">
-        <button class="btn btn-sm ${true?'btn-primary':'btn-outline'}" id="pickManual" onclick="switchPickMode('manual')">手动选择</button>
-        <button class="btn btn-sm btn-outline" id="pickSmart" onclick="switchPickMode('smart')">智能抽题</button>
+        <select class="input" id="examLevel" style="flex:1">${levelOpts}</select>
+        <select class="input" id="examCohort" style="flex:1"><option value="">全部班级</option>${cohortOpts}</select>
       </div>
-      <div id="examPickArea"></div>
-      <button class="btn btn-primary btn-full" id="createExamBtn" onclick="createExam()">创建考试</button>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input class="input" id="examDuration" type="number" placeholder="时长(分钟)" min="1" style="width:90px;flex:none">
+        <span style="color:var(--text2);font-size:0.85rem">分钟</span>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div style="flex:1;min-width:140px">
+          <label style="font-size:0.8rem;color:var(--text2);display:block;margin-bottom:4px">开始时间</label>
+          <input class="input" id="examStart" type="datetime-local" value="${defaultStart}">
+        </div>
+        <div style="flex:1;min-width:140px">
+          <label style="font-size:0.8rem;color:var(--text2);display:block;margin-bottom:4px">结束时间</label>
+          <input class="input" id="examEnd" type="datetime-local" value="${defaultEnd}">
+        </div>
+      </div>
+      <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+        <div style="font-size:0.85rem;color:var(--text2);margin-bottom:8px">题目选择</div>
+        <div style="display:flex;gap:8px;margin-bottom:10px">
+          <button class="btn btn-sm btn-primary" id="pickManual" onclick="switchPickMode('manual')">手动选择</button>
+          <button class="btn btn-sm btn-outline" id="pickSmart" onclick="switchPickMode('smart')">智能抽题</button>
+        </div>
+        <div id="examPickArea"></div>
+      </div>
+      <button class="btn btn-primary btn-full" id="createExamBtn" onclick="createExam()" style="margin-top:8px">创建考试</button>
     </div>
   `);
   switchPickMode('manual');
@@ -4565,25 +4592,23 @@ async function showCreateHomeworkModal() {
       </div>
       
       <div class="form-section">
-        <div class="section-title">题目范围</div>
-        <div style="background:#f8f9ff;padding:12px;border-radius:10px;margin-bottom:10px;">
-          <div style="display:flex;gap:10px;align-items:center;justify-content:center;font-size:.95rem;">
-            <span>第</span>
-            <input type="number" id="homeworkQStart" value="${start}" min="1" max="${_totalQuestionCount}" style="width:70px;text-align:center;padding:8px;border-radius:8px;border:1px solid var(--border);font-size:1rem;font-weight:600;">
-            <span>题 → 第</span>
-            <input type="number" id="homeworkQEnd" value="${end}" min="1" max="${_totalQuestionCount}" style="width:70px;text-align:center;padding:8px;border-radius:8px;border:1px solid var(--border);font-size:1rem;font-weight:600;">
-            <span>题</span>
+        <div class="section-title">题目范围 <span style="font-weight:400;color:var(--text2);font-size:.8rem;">(共${_totalQuestionCount}题)</span></div>
+        <div style="background:linear-gradient(135deg,#f0f4ff,#f8f9ff);padding:16px;border-radius:12px;border:1px solid #e8ecf4;">
+          <div style="display:flex;gap:8px;align-items:center;justify-content:center;font-size:.95rem;">
+            <span style="color:#666;">第</span>
+            <input type="number" id="homeworkQStart" value="${start}" min="1" max="${_totalQuestionCount}" style="width:65px;text-align:center;padding:10px;border-radius:10px;border:2px solid #e0e6f0;font-size:1.1rem;font-weight:700;color:#667eea;background:#fff;transition:border-color .2s;" onfocus="this.style.borderColor='#667eea'" onblur="this.style.borderColor='#e0e6f0'">
+            <span style="color:#999;padding:0 4px;">—</span>
+            <input type="number" id="homeworkQEnd" value="${end}" min="1" max="${_totalQuestionCount}" style="width:65px;text-align:center;padding:10px;border-radius:10px;border:2px solid #e0e6f0;font-size:1.1rem;font-weight:700;color:#764ba2;background:#fff;transition:border-color .2s;" onfocus="this.style.borderColor='#764ba2'" onblur="this.style.borderColor='#e0e6f0'">
+            <span style="color:#666;">题</span>
           </div>
-          <div style="text-align:center;margin-top:10px;color:#666;font-size:.85rem;">
-            共 <strong id="homeworkQCount" style="color:#667eea;font-size:1.1rem;">${end - start + 1}</strong> 题
-            <span style="margin:0 15px;color:#ddd;">|</span>
-            题库共 <strong style="color:#764ba2;">${_totalQuestionCount}</strong> 题
+          <div style="text-align:center;margin-top:14px;padding-top:14px;border-top:1px solid #e0e6f0;">
+            <span style="background:linear-gradient(135deg,#667eea,#764ba2);-webkit-background-clip:text;-webkit-text-fill-color:transparent;font-size:1.3rem;font-weight:700;" id="homeworkQCount">${end - start + 1}</span>
+            <span style="color:#888;font-size:.9rem;"> 题</span>
           </div>
         </div>
-        <div style="display:flex;align-items:center;gap:10px;font-size:.85rem;color:#666;">
-          <span>默认题数：</span>
-          <input type="number" id="homeworkDefaultCount" value="${defaultCount}" min="1" max="100" style="width:60px;text-align:center;padding:6px;border-radius:6px;border:1px solid var(--border);">
-          <span>题</span>
+        <div style="margin-top:12px;padding:10px;background:#fff8e1;border-radius:8px;border:1px solid #ffe082;display:flex;align-items:center;gap:8px;">
+          <span style="font-size:1rem;">💡</span>
+          <span style="font-size:.85rem;color:#856404;">下次默认从第 <strong style="color:#f57c00;">${end + 1}</strong> 题开始</span>
         </div>
       </div>
       
@@ -6439,6 +6464,12 @@ async function renderPractice() {
 
 function switchPracticeSubTab(sub) {
   _practiceSubTab = sub;
+  // 确保容器存在
+  if (!document.getElementById('studentContent')) {
+    renderStudent();
+    setTimeout(() => renderPractice(), 60);
+    return;
+  }
   renderPractice();
 }
 
@@ -6992,6 +7023,12 @@ async function renderExamTab() {
 
 function switchExamSubTab(sub) {
   _studentExamSubTab = sub;
+  // 确保容器存在
+  if (!document.getElementById('studentContent')) {
+    renderStudent();
+    setTimeout(() => renderExamTab(), 60);
+    return;
+  }
   renderExamTab();
 }
 
