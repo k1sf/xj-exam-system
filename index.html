@@ -2558,11 +2558,11 @@ async function createStudents() {
       if (failed.length) msg += `，${failed.length}个失败：${failed.join('；')}`;
       showToast(msg, 'success');
       // 刷新学生列表（不重新渲染整个页面，避免覆盖创建结果）
-      await refreshStudentList();
+      try { await refreshStudentList(); } catch(e) { console.error('refreshStudentList error:', e); }
     } else {
       showToast('创建失败：服务器未返回数据', 'error');
     }
-  } catch(e) { showToast('创建失败', 'error'); }
+  } catch(e) { console.error('createStudents error:', e); showToast('创建失败: ' + e.message, 'error'); }
   finally { btn.disabled = false; btn.textContent = '批量创建账号'; }
 }
 
@@ -2631,7 +2631,8 @@ function toggleDropdown(id) {
 
 let _filteredStudents = [];
 function filterStudents() {
-  const cohort = document.getElementById('studentCohortFilter').value;
+  const cohortEl = document.getElementById('studentCohortFilter');
+  const cohort = cohortEl ? cohortEl.value : '';
   const searchEl = document.getElementById('studentSearch');
   const search = searchEl ? searchEl.value.trim().toLowerCase() : '';
   let filtered = allStudents;
