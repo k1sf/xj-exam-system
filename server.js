@@ -218,7 +218,8 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       // Handle operation log API separately
-      if (url.pathname.startsWith('/api/log')) {
+      // Note: Must check /api/log/ or exact /api/log to avoid matching /api/login
+      if (url.pathname === '/api/log' || url.pathname.startsWith('/api/log/')) {
         await handleLogApi(req, res, url, params);
         return;
       }
