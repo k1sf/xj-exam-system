@@ -6853,7 +6853,7 @@ function calculateWrongLevel(qId, isCorrect) {
   if (isCorrect) {
     // 答对：降级
     if (currentLevel === 0) {
-      newLevel = 0; // 已经在复习本，保持
+      newLevel = -1; // 复习本题答对，标记为删除（彻底掌握）
     } else if (currentLevel === 1) {
       newLevel = 0; // 一级→复习本
     } else if (currentLevel === 2) {
@@ -6949,12 +6949,23 @@ function confirmMultiAnswer(qId) {
   delete practiceMultiSelected[actualQId];
   // 计算错题级别变化
   const newWrongLevel = calculateWrongLevel(actualQId, isCorrect);
-  bufferRecord({ student_id: currentUser.username, question_id: actualQId, is_correct: isCorrect, user_answer: answer, is_fav: false, wrong_level: newWrongLevel });
-  addXp(isCorrect ? XP_REWARDS.correct : XP_REWARDS.wrong, isCorrect ? '答对' : '答题');
-  // 显示级别变化提示
-  if (isCorrect && newWrongLevel === 0) {
-    showToast('🎉 答对！题目已移入复习本', 'success');
+  
+  // 复习本题答对（newWrongLevel === -1）时，删除记录
+  if (newWrongLevel === -1) {
+    // 从答题记录中移除，不再保存
+    delete practiceAnswered[qId];
+    // 删除数据库中的记录
+    dbDelete('records', { student_id: currentUser.username, question_id: actualQId });
+    showToast('🎉 答对！题目已从复习本移除', 'success');
+  } else {
+    bufferRecord({ student_id: currentUser.username, question_id: actualQId, is_correct: isCorrect, user_answer: answer, is_fav: false, wrong_level: newWrongLevel });
+    // 显示级别变化提示
+    if (isCorrect && newWrongLevel === 0) {
+      showToast('🎉 答对！题目已移入复习本', 'success');
+    }
   }
+  
+  addXp(isCorrect ? XP_REWARDS.correct : XP_REWARDS.wrong, isCorrect ? '答对' : '答题');
   renderPracticeCard();
   savePracticeProgress();
 }
