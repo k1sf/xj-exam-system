@@ -3589,13 +3589,9 @@ async function viewExamScores(examId) {
 function exportExamCSV(examId) {
   const exam = allExams.find(e => e.id == examId);
   if (!exam) return;
-  const records = dbSelect('records', { eq: { exam_id: examId } });
-  // Synchronous CSV from cached data
-  const rows = [['学生','用户名','正确数','总题数','正确率']];
-  // We already have the data in the modal, so use a simpler approach
   showToast('正在生成...', 'info');
-  // Use setTimeout to allow the toast to show
   setTimeout(async () => {
+    const rows = [['学生','用户名','正确数','总题数','正确率']];
     const recs = await dbSelect('records', { eq: { exam_id: Number(examId) } });
     const students = await dbSelect('students');
     const scoreMap = {};
