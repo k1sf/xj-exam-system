@@ -8266,6 +8266,19 @@ async function practiceWrongQuestion(qId) {
   renderPracticeCard();
 }
 
+async function renderProfile() {
+  if (!currentUser) return;
+  const sLv = currentUser ? Math.min(currentUser.study_level || 1, 30) : 1;
+  const sIcon = studyLevelIcon(sLv);
+  const sTitle = studyLevelTitle(sLv);
+  const xp = currentUser?.xp || 0;
+  const xpInLevel = xp - xpForLevel(sLv);
+  const xpNeeded = xpForLevel(sLv + 1) - xpForLevel(sLv);
+  const xpProgress = xpNeeded > 0 ? Math.min(100, Math.round(xpInLevel / xpNeeded * 100)) : 100;
+  const currentLevel = currentUser?.level || '初级';
+  const expireDate = currentUser?.expires_at ? fmtLocalShort(currentUser.expires_at) : '未设置';
+  const isExpired = currentUser?.expires_at ? new Date(currentUser.expires_at) < new Date() : false;
+  
   document.getElementById('studentContent').innerHTML = `
     <div class="profile-header">
       <div class="profile-avatar" style="background:${hashColor(currentUser.nickname)};font-size:1.5rem;display:flex;align-items:center;justify-content:center;position:relative">
