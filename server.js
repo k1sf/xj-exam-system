@@ -1609,6 +1609,90 @@ async function handleDailyTaskApi(req, res, url, params) {
       break;
     }
     
+    case 'wrong-level': {
+      // 错题分级统计
+      const { student_id, level } = allParams;
+      if (!student_id) {
+        sendJson(res, { error: '缺少student_id' }, 400);
+        return;
+      }
+      
+      // 统计每道题的错误次数
+      // 一级错题：做错1次
+      // 二级错题：做错2次
+      // 三级错题：连续做错3次及以上（最近几次答题都是错的）
+      
+      // 先获取所有错题的基本统计
+      const wrongStats = await pool.query(`
+        SELECT 
+          r.question_id,
+          q.type,
+          q.content,
+          q.options,
+          q.answer,
+          q.level as q_level,
+          COUNT(*) FILTER (WHERE NOT r.is_correct) as wrong_count,
+          COUNT(*) as total_count
+        FROM records r
+        JOIN questions q ON q.id = r.question_id
+        WHERE r.student_id = $1
+        ${level ? `AND q.level = $2` : ''}
+        GROUP BY r.question_id, q.type, q.content, q.options, q.answer, q.level
+        HAVING COUNT(*) FILTER (WHERE NOT r.is_correct) > 0
+        ORDER BY wrong_count DESC
+      `, level ? [student_id, level] : [student_id]);
+      
+      // 对每道题，检查最近答题记录判断是否连续错误
+      const processedRows = [];
+      for (const row of wrongStats.rows) {
+        // 获取该题最近的答题记录（最多10条）
+        const recentResult = await pool.query(`
+          SELECT is_correct
+          FROM records
+          WHERE student_id = $1 AND question_id = $2
+          ORDER BY created_at DESC
+          LIMIT 10
+        `, [student_id, row.question_id]);
+        
+        // 计算连续错误次数（从最近一次开始往前数）
+        let streak = 0;
+        for (const r of recentResult.rows) {
+          if (!r.is_correct) streak++;
+          else break;
+        }
+        
+        // 判断错题级别
+        let wrongLevel = 1;
+        if (row.wrong_count >= 3 && streak >= 3) wrongLevel = 3;
+        else if (row.wrong_count >= 2) wrongLevel = 2;
+        
+        processedRows.push({
+          ...row,
+          wrong_level: wrongLevel,
+          recent_wrong_streak: streak
+        });
+      }
+      
+      // 按级别分组统计
+      const level1 = processedRows.filter(r => r.wrong_level === 1);
+      const level2 = processedRows.filter(r => r.wrong_level === 2);
+      const level3 = processedRows.filter(r => r.wrong_level === 3);
+      
+      sendJson(res, {
+        all: processedRows,
+        level1: level1,
+        level2: level2,
+        level3: level3,
+        counts: {
+          level1: level1.length,
+          level2: level2.length,
+          level3: level3.length,
+          total: processedRows.length
+        }
+      });
+      break;
+    }
+    
     case 'ranking': {
       // 学习排名：今日/本周/本月
       const { period, level, limit, my_student_id } = allParams;

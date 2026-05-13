@@ -7319,37 +7319,119 @@ async function viewExamResult(examId) {
 // ===== Student Tab3: Wrong Book =====
 let _filteredWrongQs = [];
 async function renderWrongBook() {
-  // 获取最新错题记录（依赖bufferRecord更新的缓存，无需每次查数据库）
-  let records = await dbSelect('records', { eq: { student_id: currentUser.username } });
-  if (!records) records = [];
-  const wrongRecords = records.filter(r => !r.is_correct); // 所有错题
-  const wrongQIds = [...new Set(wrongRecords.map(r => r.question_id))];
-  let allQ = await dbSelect('questions', { order: ['id', false], cacheBypass: true });
-  if (!allQ) allQ = [];
-  // Filter by current level
-  const levelQIds = new Set(allQ.filter(q => q.level === currentLevel).map(q => q.id));
-  _filteredWrongQs = wrongQIds.filter(id => levelQIds.has(id)).map(id => {
-    const q = allQ.find(x => x.id === id);
-    const count = wrongRecords.filter(r => r.question_id === id).length;
-    return q ? { ...q, wrongCount: count } : null;
-  }).filter(Boolean);
+  // 使用错题分级API获取数据
+  try {
+    const res = await fetch(`${location.origin}/api/daily-task/wrong-level?student_id=${currentUser.username}&level=${currentLevel}`);
+    const data = await res.json();
+    
+    _wrongLevelData = data;
+    _wrongBookFilter = 'all'; // 当前筛选：all, level1, level2, level3
+    _pg.wrongBook = 1;
+    _pageRenderers.wrongBook = renderWrongBookPage;
+    renderWrongBookPage();
+  } catch (e) {
+    console.error('获取错题分级失败:', e);
+    // 降级处理：使用旧逻辑
+    let records = await dbSelect('records', { eq: { student_id: currentUser.username } });
+    if (!records) records = [];
+    const wrongRecords = records.filter(r => !r.is_correct);
+    const wrongQIds = [...new Set(wrongRecords.map(r => r.question_id))];
+    let allQ = await dbSelect('questions', { order: ['id', false], cacheBypass: true });
+    if (!allQ) allQ = [];
+    const levelQIds = new Set(allQ.filter(q => q.level === currentLevel).map(q => q.id));
+    _wrongLevelData = {
+      all: wrongQIds.filter(id => levelQIds.has(id)).map(id => {
+        const q = allQ.find(x => x.id === id);
+        const count = wrongRecords.filter(r => r.question_id === id).length;
+        return q ? { ...q, wrong_count: count, wrong_level: count >= 3 ? 3 : count } : null;
+      }).filter(Boolean),
+      counts: { total: wrongQIds.length }
+    };
+    _wrongBookFilter = 'all';
+    _pg.wrongBook = 1;
+    _pageRenderers.wrongBook = renderWrongBookPage;
+    renderWrongBookPage();
+  }
+}
 
+function filterWrongBook(level) {
+  _wrongBookFilter = level;
   _pg.wrongBook = 1;
-  _pageRenderers.wrongBook = renderWrongBookPage;
   renderWrongBookPage();
 }
+
 function renderWrongBookPage() {
-  const wrongQs = _filteredWrongQs;
+  const data = _wrongLevelData || { all: [], counts: { level1: 0, level2: 0, level3: 0, total: 0 } };
+  const filter = _wrongBookFilter || 'all';
+  
+  // 根据筛选获取题目列表
+  let wrongQs = [];
+  if (filter === 'level1') wrongQs = data.level1 || [];
+  else if (filter === 'level2') wrongQs = data.level2 || [];
+  else if (filter === 'level3') wrongQs = data.level3 || [];
+  else wrongQs = data.all || [];
+  
   const page = _pg.wrongBook;
   const pageItems = pageSlice(wrongQs, page);
-  const list = pageItems.length ? pageItems.map(q => `
-    <div class="wrong-item" onclick="practiceWrongQuestion(${q.id})">
-      <span class="wrong-content">${escHtml((q.content||'').substring(0,50))}</span>
-      <span class="wrong-count">${q.wrongCount}次</span>
-    </div>
-  `).join('') : '<div class="empty-state"><div class="empty-icon">🎉</div><p>错题本为空，继续保持！</p></div>';
+  
+  // 错题级别颜色和标签
+  const levelStyles = {
+    1: { bg: '#fef3c7', color: '#92400e', label: '一级', icon: '⚠️' },
+    2: { bg: '#fed7aa', color: '#9a3412', label: '二级', icon: '🔶' },
+    3: { bg: '#fecaca', color: '#7f1d1d', label: '三级', icon: '🔴' }
+  };
+  
+  const list = pageItems.length ? pageItems.map(q => {
+    const lv = q.wrong_level || 1;
+    const style = levelStyles[lv] || levelStyles[1];
+    return `
+      <div class="wrong-item" onclick="practiceWrongQuestion(${q.question_id || q.id})">
+        <span class="wrong-level-badge" style="background:${style.bg};color:${style.color}">${style.icon}${style.label}</span>
+        <span class="wrong-content">${escHtml((q.content||'').substring(0,50))}</span>
+        <span class="wrong-count">${q.wrong_count || 1}次</span>
+      </div>
+    `;
+  }).join('') : '<div class="empty-state"><div class="empty-icon">🎉</div><p>当前分类下没有错题，继续保持！</p></div>';
 
+  const counts = data.counts || { level1: 0, level2: 0, level3: 0, total: 0 };
+  
   document.getElementById('studentContent').innerHTML = `
+    <style>
+      .wrong-level-tabs { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
+      .wrong-level-tab { padding:6px 12px; border-radius:16px; font-size:.85rem; cursor:pointer; border:2px solid transparent; transition:all .2s; }
+      .wrong-level-tab.active { border-color:#3b82f6; font-weight:600; }
+      .wrong-level-tab.lv1 { background:#fef3c7; color:#92400e; }
+      .wrong-level-tab.lv2 { background:#fed7aa; color:#9a3412; }
+      .wrong-level-tab.lv3 { background:#fecaca; color:#7f1d1d; }
+      .wrong-level-tab.all { background:#e5e7eb; color:#374151; }
+      .wrong-level-badge { padding:2px 8px; border-radius:10px; font-size:.7rem; font-weight:600; margin-right:8px; white-space:nowrap; }
+      .wrong-item { display:flex; align-items:center; padding:12px; background:#fff; border-radius:8px; margin-bottom:8px; cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,.1); transition:transform .1s; }
+      .wrong-item:active { transform:scale(.98); }
+      .wrong-content { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .wrong-count { color:#6b7280; font-size:.8rem; margin-left:8px; }
+      .dark .wrong-item { background:#2d3748; }
+      .dark .wrong-level-tab.all { background:#4a5568; color:#e2e8f0; }
+    </style>
+    
+    <div class="wrong-level-tabs">
+      <div class="wrong-level-tab all ${filter==='all'?'active':''}" onclick="filterWrongBook('all')">
+        全部 (${counts.total})
+      </div>
+      <div class="wrong-level-tab lv1 ${filter==='level1'?'active':''}" onclick="filterWrongBook('level1')">
+        ⚠️ 一级 (${counts.level1})
+      </div>
+      <div class="wrong-level-tab lv2 ${filter==='level2'?'active':''}" onclick="filterWrongBook('level2')">
+        🔶 二级 (${counts.level2})
+      </div>
+      <div class="wrong-level-tab lv3 ${filter==='level3'?'active':''}" onclick="filterWrongBook('level3')">
+        🔴 三级 (${counts.level3})
+      </div>
+    </div>
+    
+    <div style="font-size:.75rem;color:#6b7280;margin-bottom:12px;padding:8px;background:#f3f4f6;border-radius:6px;">
+      💡 <b>错题分级说明：</b>一级=错1次，二级=错2次，三级=连续错3次及以上
+    </div>
+    
     ${wrongQs.length > 0 ? `<button class="btn btn-danger btn-full" style="margin-bottom:16px" onclick="clearWrongBook()">🗑️ 清空错题本</button>` : ''}
     ${list}
     ${paginateHtml('wrongBook', wrongQs.length, page)}
