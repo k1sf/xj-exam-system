@@ -500,7 +500,7 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
 
 /* ===== Sync Indicator ===== */
-.sync-indicator{position:fixed;bottom:70px;left:8px;z-index:400;display:flex;align-items:center;gap:5px;padding:4px 8px;border-radius:12px;font-size:.65rem;font-weight:600;backdrop-filter:blur(8px);transition:all .3s;cursor:pointer;user-select:none;box-shadow:0 1px 4px rgba(0,0,0,.08);opacity:.7}
+.sync-indicator{position:fixed;bottom:70px;left:8px;z-index:400;display:none;align-items:center;gap:5px;padding:4px 8px;border-radius:12px;font-size:.65rem;font-weight:600;backdrop-filter:blur(8px);transition:all .3s;cursor:pointer;user-select:none;box-shadow:0 1px 4px rgba(0,0,0,.08);opacity:.7}
 .sync-indicator.online{background:rgba(16,185,129,.15);color:#10b981}
 .sync-indicator.offline{background:rgba(239,68,68,.15);color:#ef4444}
 .sync-indicator.syncing{background:rgba(79,108,255,.15);color:#4a6cf7}
@@ -807,6 +807,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <div id="app"></div>
 
 <!-- Sync Indicator -->
+<div class="sync-indicator online" id="syncIndicator" onclick="manualSync()" style="display:none">
   <span class="sync-dot"></span>
   <span id="syncText">已连接</span>
   <span class="sync-badge" id="syncBadge" style="display:none">0</span>
@@ -1534,16 +1535,19 @@ function updateSyncUI() {
 
   if (isSyncing) {
     indicator.className = 'sync-indicator syncing';
+    indicator.style.display = 'flex';
     text.textContent = '同步中...';
   } else if (!isOnline) {
     indicator.className = 'sync-indicator offline';
+    indicator.style.display = 'flex';
     text.textContent = '离线';
   } else if (queueLen > 0) {
     indicator.className = 'sync-indicator offline';
+    indicator.style.display = 'flex';
     text.textContent = '待同步';
   } else {
-    indicator.className = 'sync-indicator online';
-    text.textContent = '已连接';
+    // 正常在线状态隐藏指示器，避免占用屏幕空间
+    indicator.style.display = 'none';
   }
 
   if (queueLen > 0) {
@@ -3284,7 +3288,7 @@ async function renderAdminExamsTab() {
   renderAdminExamsSub();
 }
 
-function switchExamSubTab(tab) {
+function switchAdminExamSubTab(tab) {
   _adminExamSubTab = tab;
   renderAdminExamsSub();
 }
@@ -3295,8 +3299,8 @@ function renderAdminExamsSub() {
   
   const content = `
     <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
-      <button class="btn ${_adminExamSubTab === 'normal' ? 'btn-primary' : 'btn-outline'}" onclick="switchExamSubTab('normal')">📅 正式考试 (${normalCount})</button>
-      <button class="btn ${_adminExamSubTab === 'quick' ? 'btn-primary' : 'btn-outline'}" onclick="switchExamSubTab('quick')">⚡ 快捷考试 (${quickCount})</button>
+      <button class="btn ${_adminExamSubTab === 'normal' ? 'btn-primary' : 'btn-outline'}" onclick="switchAdminExamSubTab('normal')">📅 正式考试 (${normalCount})</button>
+      <button class="btn ${_adminExamSubTab === 'quick' ? 'btn-primary' : 'btn-outline'}" onclick="switchAdminExamSubTab('quick')">⚡ 快捷考试 (${quickCount})</button>
     </div>
     <div id="examSubContent">${_adminExamSubTab === 'normal' ? renderNormalExamsContent() : renderQuickExamsContent()}</div>
   `;
@@ -7017,7 +7021,7 @@ async function renderExamTab() {
   if (_studentExamSubTab === 'mock') {
     document.getElementById('examSubContent').innerHTML = renderMockSettingsUI();
   } else {
-    await renderFormalExamSub();
+    await renderStudentExamSub();
   }
 }
 
@@ -7032,7 +7036,8 @@ function switchExamSubTab(sub) {
   renderExamTab();
 }
 
-async function renderFormalExamSub() {
+// 学生端考试子页面渲染
+async function renderStudentExamSub() {
   const container = document.getElementById('examSubContent');
   if (!container) return;
   
