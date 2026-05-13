@@ -998,16 +998,26 @@ function fmtLocal(v) {
   return `${y}-${m}-${dd} ${h}:${mi}:${s}`;
 }
 function fmtLocalShort(v) { const r = fmtLocal(v); return r ? r.slice(0,16) : ''; }
-// XP rewards
-const XP_REWARDS = { correct: 10, wrong: 3, fav: 2, mock_exam: 50, real_exam: 100, daily_login: 20 };
+// XP rewards - 答错不给XP，防止刷分
+const XP_REWARDS = { correct: 10, wrong: 0, fav: 2, mock_exam: 50, real_exam: 100, daily_login: 20 };
+const XP_DAILY_LIMIT = 500; // 每日XP上限
+let _dailyXpEarned = 0; // 今日已获得XP
+let _dailyXpDate = ''; // 日期追踪
 // Pending XP to flush to DB
 let _pendingXp = 0;
 let _pendingXpTimer = null;
 function addXp(amount, reason) {
   if (!currentUser || userRole !== 'student') return;
-  _pendingXp += amount;
+  // 检查每日XP上限
+  const today = new Date().toISOString().split('T')[0];
+  if (_dailyXpDate !== today) { _dailyXpDate = today; _dailyXpEarned = 0; }
+  if (_dailyXpEarned >= XP_DAILY_LIMIT) return; // 已达上限
+  const actualAmount = Math.min(amount, XP_DAILY_LIMIT - _dailyXpEarned);
+  if (actualAmount <= 0) return;
+  _dailyXpEarned += actualAmount;
+  _pendingXp += actualAmount;
   // Show floating XP indicator on practice card
-  showXpFloat(amount, reason);
+  showXpFloat(actualAmount, reason);
   // Flush XP to DB after 5 seconds of inactivity
   if (_pendingXpTimer) clearTimeout(_pendingXpTimer);
   _pendingXpTimer = setTimeout(flushXp, 5000);
@@ -5288,7 +5298,7 @@ async function loadDailyTasks() {
 
 function renderDailyTaskPanel() {
   const panel = document.getElementById('dailyTaskPanel');
-  if (!panel || !_dailyTasks) return;
+  if (!_dailyTasks) return;
   
   const tasks = _dailyTasks;
   const completedCount = [
@@ -5296,6 +5306,19 @@ function renderDailyTaskPanel() {
     tasks.practice_count >= tasks.practice_target,
     tasks.homework_done,
     tasks.wrong_practice_count >= tasks.wrong_practice_target
+  ].filter(Boolean).length;
+  
+  // 更新顶部栏任务进度
+  const topProgress = document.getElementById('topTaskProgress');
+  if (topProgress) {
+    topProgress.textContent = `${completedCount}/4`;
+    const badge = document.getElementById('topTaskBadge');
+    if (badge) {
+      badge.style.background = completedCount === 4 ? 'rgba(34,197,94,0.3)' : 'rgba(255,255,255,0.2)';
+    }
+  }
+  
+  if (!panel) return;
   ].filter(Boolean).length;
   
   const weekDays = _weeklyStats?.days || [];
@@ -6051,7 +6074,7 @@ function renderStudent() {
   document.getElementById('app').innerHTML = `
     <div class="student-page">
       <div style="background:linear-gradient(135deg,var(--primary),#7c3aed);color:#fff;padding:8px 16px;font-size:0.82rem;display:flex;align-items:center;justify-content:space-between">
-        <div style="display:flex;align-items:center;gap:4px">${levelSwitchHtml()}</div>
+        <div style="display:flex;align-items:center;gap:8px">${levelSwitchHtml()}<span id="topTaskBadge" onclick="switchStudentTab('practice')" style="background:rgba(255,255,255,0.2);border-radius:10px;padding:2px 8px;font-size:0.72rem;cursor:pointer" title="今日任务进度">📋 <span id="topTaskProgress">0/4</span></span></div>
         <div style="display:flex;align-items:center;gap:4px">
           <button onclick="showNotificationCenter()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#fff;padding:3px 8px;font-size:0.78rem;cursor:pointer;position:relative" title="通知中心">🔔<span id="notificationBadge" style="display:none;position:absolute;top:-4px;right:-4px;background:#ef4444;color:#fff;font-size:0.6rem;min-width:14px;height:14px;border-radius:7px;text-align:center;line-height:14px"></span></button>
           <button onclick="showSettingsModal()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#fff;padding:3px 8px;font-size:0.78rem;cursor:pointer">⚙️</button>
@@ -6165,13 +6188,43 @@ function renderPracticeUI() {
   const modeBtns = modes.map(m => `<button class="mode-btn ${practiceMode===m.key?'active':''}" onclick="switchPracticeMode('${m.key}')">${m.icon} ${m.label}</button>`).join('');
   document.getElementById('studentContent').innerHTML = `
     <div id="dailyTaskPanel"></div>
+    <div id="rankingBanner"></div>
     <div id="homeworkBanner"></div>
     <div class="practice-modes">${modeBtns}</div>
     <div id="practiceCardArea"></div>
   `;
   loadDailyTasks();
+  loadRankingBanner();
   loadStudentHomework();
   renderPracticeCard();
+}
+
+async function loadRankingBanner() {
+  const container = document.getElementById('rankingBanner');
+  if (!container || !currentUser) return;
+  
+  try {
+    // 获取我的排名
+    const res = await fetch(`/api/daily-task/ranking?period=week&my_student_id=${currentUser.id}`);
+    const data = await res.json();
+    
+    if (data.myRank && data.myRank > 0) {
+      container.innerHTML = `
+        <div onclick="switchStudentTab('profile')" style="background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#fff;padding:10px 14px;border-radius:10px;margin:8px 0;display:flex;justify-content:space-between;align-items:center;cursor:pointer">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:1.2rem">🏆</span>
+            <div>
+              <div style="font-size:.85rem;font-weight:600">本周排名 #${data.myRank}</div>
+              <div style="font-size:.75rem;opacity:.9">${data.myStats?.total_questions || 0}题 · ${data.myStats?.accuracy || 0}%正确率</div>
+            </div>
+          </div>
+          <span style="font-size:.8rem">查看完整排名 →</span>
+        </div>
+      `;
+    }
+  } catch (e) {
+    // 静默失败
+  }
 }
 
 async function switchPracticeMode(mode) {
@@ -6598,6 +6651,14 @@ async function startMockExam() {
   }
 
   showConfirm(`模拟考试：${selected.length}题 · ${mockSettings.duration}分钟\n开始后请勿切换页面，确认开始？`, async () => {
+    // 保存模拟考试配置
+    _mockExamConfig = {
+      questionType: mockSettings.types.length < 3 ? mockSettings.types.join(',') : 'all',
+      questionSource: mockSettings.source,
+      count: mockSettings.count,
+      duration: mockSettings.duration,
+      passRate: mockSettings.passRate
+    };
     // Set up exam state using mock exam data
     examData = {
       id: null,
@@ -7142,6 +7203,10 @@ async function submitExamAnswers() {
   }
   // 记录考试日志
   recordLog('exam_submit', { exam_id: currentExamId, correct, total: practiceQuestions.length, is_mock: currentExamIsMock });
+  // 保存模拟考试历史
+  if (currentExamIsMock && currentUser) {
+    saveMockExamHistory(correct, practiceQuestions.length);
+  }
   // 交卷后立即同步并退出考试模式
   setExamMode(false);
   syncAll();
@@ -7432,7 +7497,7 @@ function renderWrongBookPage() {
       💡 <b>错题分级说明：</b>一级=错1次，二级=错2次，三级=连续错3次及以上
     </div>
     
-    ${wrongQs.length > 0 ? `<button class="btn btn-danger btn-full" style="margin-bottom:16px" onclick="clearWrongBook()">🗑️ 清空错题本</button>` : ''}
+    ${wrongQs.length > 0 ? `<button class="btn btn-danger btn-full" style="margin-bottom:16px" onclick="showClearWrongOptions()">🗑️ 清空错题本</button>` : ''}
     ${list}
     ${paginateHtml('wrongBook', wrongQs.length, page)}
   `;
@@ -7450,21 +7515,95 @@ async function practiceWrongQuestion(qId) {
   renderPracticeUI();
 }
 
-async function clearWrongBook() {
-  showConfirm('确定清空错题本？考试中的错题记录将保留，仅清除练习中的错题。', async () => {
-    // Only delete wrong records that are NOT from exams
-    const records = await dbSelect('records', { eq: { student_id: currentUser.username, is_correct: false }, cacheBypass: true });
-    const practiceWrongIds = records.filter(r => !r.exam_id).map(r => r.id);
-    if (practiceWrongIds.length === 0) {
-      showToast('错题本已为空', 'info');
-      return;
-    }
-    // Delete all practice wrong records in one batch
-    await dbDelete('records', { id: practiceWrongIds });
-    cacheClearTable('records');    showToast(`已清除${practiceWrongIds.length}条练习错题`, 'success');
-    showConfetti();
-    renderWrongBook();
+function showClearWrongOptions() {
+  // 获取各级别错题数量
+  const level1Count = document.querySelectorAll('#wrongList .wrong-level-1').length;
+  const level2Count = document.querySelectorAll('#wrongList .wrong-level-2').length;
+  const level3Count = document.querySelectorAll('#wrongList .wrong-level-3').length;
+  const totalCount = level1Count + level2Count + level3Count;
+  
+  if (totalCount === 0) {
+    showToast('错题本已为空', 'info');
+    return;
+  }
+  
+  const html = `
+    <div style="padding:16px">
+      <div style="font-size:1rem;font-weight:600;margin-bottom:12px">选择要清空的错题级别</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <label style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--bg2);border-radius:8px;cursor:pointer">
+          <input type="checkbox" id="clearLevel1" ${level1Count > 0 ? 'checked' : 'disabled'}>
+          <span style="flex:1">⚠️ 一级错题（错1次）</span>
+          <span style="color:var(--text2)">${level1Count}题</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--bg2);border-radius:8px;cursor:pointer">
+          <input type="checkbox" id="clearLevel2" ${level2Count > 0 ? 'checked' : 'disabled'}>
+          <span style="flex:1">🔶 二级错题（错2次）</span>
+          <span style="color:var(--text2)">${level2Count}题</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--bg2);border-radius:8px;cursor:pointer">
+          <input type="checkbox" id="clearLevel3" ${level3Count > 0 ? 'checked' : 'disabled'}>
+          <span style="flex:1">🔴 三级错题（连续错3次+）</span>
+          <span style="color:var(--text2)">${level3Count}题</span>
+        </label>
+      </div>
+      <div style="margin-top:12px;padding:10px;background:#fef3c7;border-radius:8px;font-size:.8rem;color:#92400e">
+        ⚠️ 仅清除练习中的错题，考试错题记录将保留
+      </div>
+      <button class="btn btn-danger btn-full" style="margin-top:16px" onclick="doClearWrongByLevel()">确认清空</button>
+    </div>
+  `;
+  openModal(html);
+}
+
+async function doClearWrongByLevel() {
+  const clearLevel1 = document.getElementById('clearLevel1')?.checked;
+  const clearLevel2 = document.getElementById('clearLevel2')?.checked;
+  const clearLevel3 = document.getElementById('clearLevel3')?.checked;
+  
+  if (!clearLevel1 && !clearLevel2 && !clearLevel3) {
+    showToast('请至少选择一个级别', 'error');
+    return;
+  }
+  
+  // 获取所有练习错题
+  const records = await dbSelect('records', { eq: { student_id: currentUser.username, is_correct: false }, cacheBypass: true });
+  const practiceWrong = records.filter(r => !r.exam_id);
+  
+  // 统计每道题的错误次数
+  const questionWrongCount = {};
+  practiceWrong.forEach(r => {
+    const qid = r.question_id;
+    questionWrongCount[qid] = (questionWrongCount[qid] || 0) + 1;
   });
+  
+  // 按级别筛选要删除的记录
+  const idsToDelete = [];
+  practiceWrong.forEach(r => {
+    const count = questionWrongCount[r.question_id] || 1;
+    const level = count >= 3 ? 3 : count;
+    if ((level === 1 && clearLevel1) || (level === 2 && clearLevel2) || (level === 3 && clearLevel3)) {
+      idsToDelete.push(r.id);
+    }
+  });
+  
+  if (idsToDelete.length === 0) {
+    showToast('没有符合条件的错题', 'info');
+    closeModal();
+    return;
+  }
+  
+  // 批量删除
+  await dbDelete('records', { id: idsToDelete });
+  cacheClearTable('records');
+  closeModal();
+  showToast(`已清除${idsToDelete.length}条错题记录`, 'success');
+  renderWrongBook();
+}
+
+async function clearWrongBook() {
+  // 使用新的分级清空选项
+  showClearWrongOptions();
 }
 
 // ===== Student Tab4: Profile =====
@@ -7545,6 +7684,12 @@ async function renderProfile() {
         <div style="text-align:center;padding:20px;color:var(--text3)"><span class="spinner"></span> 加载排名...</div>
       </div>
     </div>
+    <div class="card" style="animation-delay:0.5s;margin-top:12px" id="mockHistoryCard">
+      <div class="card-title">🎯 模拟考试记录</div>
+      <div id="mockHistoryContent" style="min-height:80px">
+        <div style="text-align:center;padding:20px;color:var(--text3)"><span class="spinner"></span> 加载中...</div>
+      </div>
+    </div>
 
   `;
 
@@ -7556,6 +7701,25 @@ async function renderProfile() {
   loadWrongAnalysis();
   // 加载排名
   loadRanking('today');
+  // 加载模拟考试历史
+  loadMockHistoryInProfile();
+}
+
+async function loadMockHistoryInProfile() {
+  if (!currentUser) return;
+  
+  try {
+    const res = await fetch(`/api/daily-task/mock-history?student_id=${currentUser.id}&limit=10`);
+    const data = await res.json();
+    
+    const container = document.getElementById('mockHistoryContent');
+    if (!container) return;
+    
+    container.innerHTML = renderMockHistoryInProfile(data);
+  } catch (e) {
+    const container = document.getElementById('mockHistoryContent');
+    if (container) container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3)">加载失败</div>';
+  }
 }
 
 async function loadWrongAnalysis() {
@@ -8016,7 +8180,8 @@ async function loadOperationLogs(page = 1) {
     
     const actionIcons = {
       login: '🔐', logout: '🚪', answer: '✏️', exam_start: '📝', exam_submit: '✅',
-      homework_start: '📚', homework_submit: '✔️', send_notification: '📢', push_report: '📊'
+      homework_start: '📚', homework_submit: '✔️', send_notification: '📢', push_report: '📊',
+      mock_exam: '🎯'
     };
     
     list.innerHTML = data.logs.map(log => `
@@ -10231,6 +10396,87 @@ async function doDatabaseImport() {
   } finally {
     progress.style.display = 'none';
   }
+}
+
+// ===== 模拟考试历史功能 =====
+async function saveMockExamHistory(correct, total) {
+  if (!currentUser) return;
+  
+  try {
+    await fetch(`/api/daily-task/mock-history`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        student_id: currentUser.id,
+        level: currentLevel,
+        question_type: _mockExamConfig?.questionType || 'all',
+        question_source: _mockExamConfig?.questionSource || 'all',
+        question_count: total,
+        duration: _mockExamConfig?.duration || 60,
+        pass_rate: _mockExamConfig?.passRate || 60,
+        correct_count: correct,
+        total_xp: correct * XP_REWARDS.correct + XP_REWARDS.mock_exam
+      })
+    });
+  } catch (e) {
+    console.error('保存模拟考试历史失败:', e);
+  }
+}
+
+let _mockExamConfig = null;
+let _mockHistoryData = null;
+
+async function loadMockHistory() {
+  if (!currentUser) return;
+  
+  try {
+    const res = await fetch(`/api/daily-task/mock-history?student_id=${currentUser.id}&limit=10`);
+    _mockHistoryData = await res.json();
+  } catch (e) {
+    console.error('加载模拟考试历史失败:', e);
+    _mockHistoryData = { list: [], stats: {} };
+  }
+}
+
+function renderMockHistoryInProfile(data) {
+  if (!data || !data.list || data.list.length === 0) {
+    return `<div style="text-align:center;padding:20px;color:var(--text3)">暂无模拟考试记录</div>`;
+  }
+  
+  const { list, stats } = data;
+  
+  const statsHtml = stats ? `
+    <div style="display:flex;justify-content:space-around;margin-bottom:12px;padding:10px;background:var(--bg2);border-radius:8px">
+      <div style="text-align:center"><div style="font-size:1.1rem;font-weight:600">${stats.total_exams || 0}</div><div style="font-size:.75rem;color:var(--text2)">考试次数</div></div>
+      <div style="text-align:center"><div style="font-size:1.1rem;font-weight:600">${stats.avg_accuracy ? parseFloat(stats.avg_accuracy).toFixed(1) : 0}%</div><div style="font-size:.75rem;color:var(--text2)">平均正确率</div></div>
+      <div style="text-align:center"><div style="font-size:1.1rem;font-weight:600;color:var(--success)">${stats.best_accuracy ? parseFloat(stats.best_accuracy).toFixed(1) : 0}%</div><div style="font-size:.75rem;color:var(--text2)">最佳成绩</div></div>
+    </div>
+  ` : '';
+  
+  const listHtml = list.map(h => {
+    const pct = h.question_count > 0 ? Math.round(h.correct_count / h.question_count * 100) : 0;
+    const isPassed = pct >= h.pass_rate;
+    const typeLabels = { single: '单选', multiple: '多选', judge: '判断', all: '全部' };
+    const sourceLabels = { all: '全部', wrong: '错题', fav: '收藏' };
+    
+    return `<div style="padding:10px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:1.2rem">${isPassed ? '✅' : '❌'}</span>
+          <div>
+            <div style="font-size:.85rem;font-weight:500">${typeLabels[h.question_type] || h.question_type} · ${h.question_count}题 · ${h.duration}分钟</div>
+            <div style="font-size:.75rem;color:var(--text2)">${fmtLocalShort(h.created_at)}</div>
+          </div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:1rem;font-weight:600;color:${isPassed ? 'var(--success)' : 'var(--error)'}">${pct}%</div>
+          <div style="font-size:.75rem;color:var(--text2)">${h.correct_count}/${h.question_count}</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  
+  return statsHtml + listHtml;
 }
 
 

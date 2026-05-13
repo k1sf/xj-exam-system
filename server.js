@@ -1835,6 +1835,54 @@ async function handleDailyTaskApi(req, res, url, params) {
       break;
     }
     
+    // ===== Mock Exam History API =====
+    case 'mock-history': {
+      if (req.method === 'POST') {
+        // 保存模拟考试历史
+        const { student_id, level, question_type, question_source, question_count, duration, pass_rate, correct_count, total_xp } = allParams;
+        
+        const result = await pool.query(`
+          INSERT INTO mock_exam_history (student_id, level, question_type, question_source, question_count, duration, pass_rate, correct_count, total_xp)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+          RETURNING *
+        `, [student_id, level, question_type, question_source, question_count, duration, pass_rate, correct_count, total_xp]);
+        
+        sendJson(res, { success: true, id: result.rows[0].id });
+      } else {
+        // 获取历史列表
+        const student_id = url.searchParams.get('student_id') || allParams.student_id;
+        const limit = parseInt(url.searchParams.get('limit')) || 20;
+        
+        if (!student_id) {
+          sendJson(res, { error: '缺少student_id' }, 400);
+          return;
+        }
+        
+        const result = await pool.query(`
+          SELECT * FROM mock_exam_history 
+          WHERE student_id = $1 
+          ORDER BY created_at DESC 
+          LIMIT $2
+        `, [student_id, limit]);
+        
+        // 统计信息
+        const statsResult = await pool.query(`
+          SELECT 
+            COUNT(*) as total_exams,
+            AVG(correct_count * 100.0 / question_count) as avg_accuracy,
+            MAX(correct_count * 100.0 / question_count) as best_accuracy
+          FROM mock_exam_history 
+          WHERE student_id = $1
+        `, [student_id]);
+        
+        sendJson(res, { 
+          list: result.rows,
+          stats: statsResult.rows[0]
+        });
+      }
+      break;
+    }
+    
     default:
       sendJson(res, { error: 'Unknown route: ' + route }, 404);
   }
