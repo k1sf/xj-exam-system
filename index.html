@@ -2541,11 +2541,10 @@ async function createStudents() {
     const result = await dbInsert('students', rows);
     if (result.length > 0) {
       createdAccounts = result;
-      allStudents = [...allStudents, ...result];
       cacheClearTable('students');
       const tableRows = result.map(r => `<tr>
         <td>${escHtml(r.nickname)}</td><td>${escHtml(r.username)}</td>
-        <td class="pwd-cell"><span class="pwd-mask" data-pwd="${escHtml(r.password)}">••••••</span>
+        <td class="pwd-cell"><span class="pwd-mask" data-pwd="123456">••••••</span>
         <button class="pwd-toggle" onclick="togglePwd(this)">👁️</button></td>
       </tr>`).join('');
       document.getElementById('createStudentResult').innerHTML = `
@@ -2558,10 +2557,19 @@ async function createStudents() {
       let msg = `成功创建${result.length}个账号，默认密码123456`;
       if (failed.length) msg += `，${failed.length}个失败：${failed.join('；')}`;
       showToast(msg, 'success');
-      renderAdminStudents();
+      // 刷新学生列表（不重新渲染整个页面，避免覆盖创建结果）
+      await refreshStudentList();
+    } else {
+      showToast('创建失败：服务器未返回数据', 'error');
     }
   } catch(e) { showToast('创建失败', 'error'); }
   finally { btn.disabled = false; btn.textContent = '批量创建账号'; }
+}
+
+// 刷新学生列表（仅更新列表区域，不覆盖创建结果）
+async function refreshStudentList() {
+  allStudents = await dbSelect('students', { order: ['created_at', false], cacheBypass: true });
+  filterStudents();
 }
 
 function togglePwd(btn) {
