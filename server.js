@@ -207,6 +207,21 @@ const server = http.createServer(async (req, res) => {
         await handleDailyTaskApi(req, res, url, params);
         return;
       }
+      // Handle notification API separately
+      if (url.pathname.startsWith('/api/notification')) {
+        await handleNotificationApi(req, res, url, params);
+        return;
+      }
+      // Handle report API separately
+      if (url.pathname.startsWith('/api/report')) {
+        await handleReportApi(req, res, url, params);
+        return;
+      }
+      // Handle operation log API separately
+      if (url.pathname.startsWith('/api/log')) {
+        await handleLogApi(req, res, url, params);
+        return;
+      }
       await handleApi(req, res, url, params);
     } catch(e) {
       console.error('API Error:', e.message);
@@ -1732,6 +1747,489 @@ async function handleDailyTaskApi(req, res, url, params) {
           : 0,
         total_xp: parseInt(statsResult.rows[0].total_xp) || 0,
         streak_days: parseInt(streakResult.rows[0].streak) || 0
+      });
+      break;
+    }
+    
+    default:
+      sendJson(res, { error: 'Unknown route: ' + route }, 404);
+  }
+}
+
+// ===== Notification API Handler =====
+async function handleNotificationApi(req, res, url, params) {
+  const route = url.pathname.replace('/api/notification/', '').replace('/api/notification', '');
+  
+  // 解析GET请求参数
+  const queryParams = {};
+  url.searchParams.forEach((value, key) => { queryParams[key] = value; });
+  const allParams = { ...params, ...queryParams };
+
+  switch (route) {
+    case 'list': {
+      // 获取通知列表（学生端）
+      const { student_id, level, limit, offset } = allParams;
+      const lim = parseInt(limit) || 20;
+      const off = parseInt(offset) || 0;
+      
+      // 获取该学生可见的通知
+      const result = await pool.query(`
+        SELECT n.id, n.title, n.content, n.type, n.created_at,
+               nr.read_at IS NOT NULL as is_read
+        FROM notifications n
+        LEFT JOIN notification_reads nr ON nr.notification_id = n.id AND nr.student_id = $1
+        WHERE n.target_type = 'all'
+           OR n.target_type = 'level' AND n.target_value = $2
+           OR n.target_type = 'student' AND n.target_value = $1
+        ORDER BY n.created_at DESC
+        LIMIT $3 OFFSET $4
+      `, [student_id, level, lim, off]);
+      
+      // 获取未读数量
+      const unreadResult = await pool.query(`
+        SELECT COUNT(*) as count
+        FROM notifications n
+        LEFT JOIN notification_reads nr ON nr.notification_id = n.id AND nr.student_id = $1
+        WHERE (n.target_type = 'all'
+           OR n.target_type = 'level' AND n.target_value = $2
+           OR n.target_type = 'student' AND n.target_value = $1)
+        AND nr.read_at IS NULL
+      `, [student_id, level]);
+      
+      sendJson(res, {
+        notifications: result.rows,
+        unread_count: parseInt(unreadResult.rows[0].count) || 0
+      });
+      break;
+    }
+    
+    case 'read': {
+      // 标记通知为已读
+      const { notification_id, student_id } = allParams;
+      if (!notification_id || !student_id) {
+        sendJson(res, { error: '缺少参数' }, 400);
+        return;
+      }
+      
+      await pool.query(`
+        INSERT INTO notification_reads (notification_id, student_id)
+        VALUES ($1, $2)
+        ON CONFLICT (notification_id, student_id) DO NOTHING
+      `, [notification_id, student_id]);
+      
+      sendJson(res, { success: true });
+      break;
+    }
+    
+    case 'read-all': {
+      // 标记所有通知为已读
+      const { student_id, level } = allParams;
+      if (!student_id) {
+        sendJson(res, { error: '缺少student_id' }, 400);
+        return;
+      }
+      
+      await pool.query(`
+        INSERT INTO notification_reads (notification_id, student_id)
+        SELECT n.id, $1
+        FROM notifications n
+        LEFT JOIN notification_reads nr ON nr.notification_id = n.id AND nr.student_id = $1
+        WHERE (n.target_type = 'all'
+           OR n.target_type = 'level' AND n.target_value = $2
+           OR n.target_type = 'student' AND n.target_value = $1)
+        AND nr.read_at IS NULL
+        ON CONFLICT (notification_id, student_id) DO NOTHING
+      `, [student_id, level]);
+      
+      sendJson(res, { success: true });
+      break;
+    }
+    
+    case 'admin-list': {
+      // 管理员获取所有通知
+      const { limit, offset } = allParams;
+      const lim = parseInt(limit) || 50;
+      const off = parseInt(offset) || 0;
+      
+      const result = await pool.query(`
+        SELECT n.id, n.title, n.content, n.type, n.target_type, n.target_value,
+               n.created_by, n.created_at, n.is_system,
+               (SELECT COUNT(*) FROM notification_reads WHERE notification_id = n.id) as read_count
+        FROM notifications n
+        ORDER BY n.created_at DESC
+        LIMIT $1 OFFSET $2
+      `, [lim, off]);
+      
+      sendJson(res, result.rows);
+      break;
+    }
+    
+    case 'create':
+    case 'send': {
+      // 创建通知（管理员）
+      const { title, content, type, target_type, target_value, created_by } = allParams;
+      if (!title) {
+        sendJson(res, { error: '标题不能为空' }, 400);
+        return;
+      }
+      
+      // 计算发送人数
+      let sentCount = 0;
+      if (target_type === 'all' || !target_type) {
+        const countResult = await pool.query('SELECT COUNT(*) as count FROM students WHERE status = $1', ['active']);
+        sentCount = parseInt(countResult.rows[0].count) || 0;
+      } else if (target_type === 'level') {
+        const countResult = await pool.query('SELECT COUNT(*) as count FROM students WHERE level = $1 AND status = $2', [target_value, 'active']);
+        sentCount = parseInt(countResult.rows[0].count) || 0;
+      } else if (target_type === 'student') {
+        sentCount = 1;
+      }
+      
+      const result = await pool.query(`
+        INSERT INTO notifications (title, content, type, target_type, target_value, created_by)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING *
+      `, [title, content || '', type || 'info', target_type || 'all', target_value || null, created_by || null]);
+      
+      sendJson(res, { ...result.rows[0], sent_count: sentCount });
+      break;
+    }
+    
+    case 'delete': {
+      // 删除通知（管理员）
+      const { id } = allParams;
+      if (!id) {
+        sendJson(res, { error: '缺少通知ID' }, 400);
+        return;
+      }
+      
+      await pool.query('DELETE FROM notifications WHERE id = $1', [id]);
+      sendJson(res, { success: true });
+      break;
+    }
+    
+    case 'send-report': {
+      // 发送学习报告给学生
+      const { student_id, report_type } = allParams;  // report_type: weekly, monthly
+      if (!student_id) {
+        sendJson(res, { error: '缺少student_id' }, 400);
+        return;
+      }
+      
+      // 获取学生学习数据
+      const studentResult = await pool.query('SELECT * FROM students WHERE id = $1 OR username = $1', [student_id]);
+      if (studentResult.rows.length === 0) {
+        sendJson(res, { error: '学生不存在' }, 400);
+        return;
+      }
+      const student = studentResult.rows[0];
+      
+      // 计算时间范围
+      let days = report_type === 'monthly' ? 30 : 7;
+      
+      const statsResult = await pool.query(`
+        SELECT 
+          COUNT(*) as total_questions,
+          SUM(CASE WHEN is_correct THEN 1 ELSE 0 END) as correct_count,
+          COUNT(DISTINCT DATE(created_at)) as study_days
+        FROM records
+        WHERE student_id = $1
+        AND created_at >= CURRENT_DATE - INTERVAL '${days} days'
+      `, [student.username]);
+      
+      const stats = statsResult.rows[0];
+      const accuracy = stats.total_questions > 0 
+        ? Math.round((stats.correct_count / stats.total_questions) * 100)
+        : 0;
+      
+      // 生成报告内容
+      const period = report_type === 'monthly' ? '本月' : '本周';
+      const title = `${period}学习报告`;
+      const content = `
+📊 ${period}学习总结
+
+👤 学生：${student.nickname}
+🎯 级别：${student.level}
+📝 答题总数：${stats.total_questions || 0} 道
+✅ 正确率：${accuracy}%
+📅 学习天数：${stats.study_days || 0} 天
+⭐ 累计XP：${student.xp || 0}
+📈 学习等级：Lv.${student.study_level || 1}
+
+${stats.total_questions > 0 ? '💪 继续加油，保持学习热情！' : '📚 这段时间学习较少，要加油哦！'}
+      `.trim();
+      
+      // 创建通知
+      const result = await pool.query(`
+        INSERT INTO notifications (title, content, type, target_type, target_value, is_system)
+        VALUES ($1, $2, 'report', 'student', $3, true)
+        RETURNING *
+      `, [title, content, student.id]);
+      
+      sendJson(res, result.rows[0]);
+      break;
+    }
+    
+    default:
+      sendJson(res, { error: 'Unknown route: ' + route }, 404);
+  }
+}
+
+// ===== Report API Handler =====
+async function handleReportApi(req, res, url, params) {
+  const route = url.pathname.replace('/api/report/', '').replace('/api/report', '');
+  
+  // 解析GET请求参数
+  const queryParams = {};
+  url.searchParams.forEach((value, key) => { queryParams[key] = value; });
+  const allParams = { ...params, ...queryParams };
+
+  switch (route) {
+    case 'generate': {
+      // 生成学习报告预览
+      const weekOffset = parseInt(allParams.week_offset) || 0;
+      const level = allParams.level || '';
+      
+      // 计算时间范围
+      const endDate = new Date();
+      endDate.setDate(endDate.getDate() - weekOffset * 7);
+      const startDate = new Date(endDate);
+      startDate.setDate(startDate.getDate() - 6);
+      
+      const formatDate = (d) => d.toISOString().split('T')[0];
+      const startStr = formatDate(startDate);
+      const endStr = formatDate(endDate);
+      
+      // 统计数据
+      let levelFilter = level && level !== '全部学员' ? `AND s.level = '${level}'` : '';
+      
+      const statsResult = await pool.query(`
+        SELECT 
+          COUNT(DISTINCT r.student_id) as active_students,
+          COUNT(*) as total_questions,
+          SUM(CASE WHEN r.is_correct THEN 1 ELSE 0 END) as correct_count
+        FROM records r
+        JOIN students s ON s.username = r.student_id
+        WHERE DATE(r.created_at) >= $1 AND DATE(r.created_at) <= $2
+        ${levelFilter}
+      `, [startStr, endStr]);
+      
+      const stats = statsResult.rows[0];
+      const totalQ = parseInt(stats.total_questions) || 0;
+      const correctQ = parseInt(stats.correct_count) || 0;
+      const avgAccuracy = totalQ > 0 ? Math.round(correctQ / totalQ * 100) : 0;
+      
+      // 获取学习之星
+      const topResult = await pool.query(`
+        SELECT s.nickname, s.level, COUNT(*) as total_questions,
+               SUM(CASE WHEN r.is_correct THEN 1 ELSE 0 END) as correct,
+               ROUND(100.0 * SUM(CASE WHEN r.is_correct THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 1) as accuracy
+        FROM records r
+        JOIN students s ON s.username = r.student_id
+        WHERE DATE(r.created_at) >= $1 AND DATE(r.created_at) <= $2
+        ${levelFilter}
+        GROUP BY s.id
+        ORDER BY total_questions DESC, accuracy DESC
+        LIMIT 10
+      `, [startStr, endStr]);
+      
+      sendJson(res, {
+        period: { start: startStr, end: endStr },
+        stats: {
+          active_students: parseInt(stats.active_students) || 0,
+          total_questions: totalQ,
+          avg_accuracy: avgAccuracy
+        },
+        top_students: topResult.rows
+      });
+      break;
+    }
+    
+    case 'push': {
+      // 推送学习报告给学生
+      const { week_offset, level, created_by } = allParams;
+      const weekOffset = parseInt(week_offset) || 0;
+      const targetLevel = level && level !== '全部学员' ? level : null;
+      
+      // 计算时间范围
+      const endDate = new Date();
+      endDate.setDate(endDate.getDate() - weekOffset * 7);
+      const startDate = new Date(endDate);
+      startDate.setDate(startDate.getDate() - 6);
+      
+      const formatDate = (d) => d.toISOString().split('T')[0];
+      const startStr = formatDate(startDate);
+      const endStr = formatDate(endDate);
+      
+      // 获取目标学生
+      let studentQuery = 'SELECT id, username, nickname, level FROM students WHERE status = $1';
+      let studentValues = ['active'];
+      if (targetLevel) {
+        studentQuery += ' AND level = $2';
+        studentValues.push(targetLevel);
+      }
+      
+      const studentsResult = await pool.query(studentQuery, studentValues);
+      const students = studentsResult.rows;
+      
+      // 为每个学生生成报告通知
+      let pushedCount = 0;
+      for (const student of students) {
+        // 获取学生学习数据
+        const statsResult = await pool.query(`
+          SELECT 
+            COUNT(*) as total_questions,
+            SUM(CASE WHEN is_correct THEN 1 ELSE 0 END) as correct_count,
+            COUNT(DISTINCT DATE(created_at)) as study_days
+          FROM records
+          WHERE student_id = $1
+          AND DATE(created_at) >= $2 AND DATE(created_at) <= $3
+        `, [student.username, startStr, endStr]);
+        
+        const stats = statsResult.rows[0];
+        const totalQ = parseInt(stats.total_questions) || 0;
+        const correctQ = parseInt(stats.correct_count) || 0;
+        const accuracy = totalQ > 0 ? Math.round(correctQ / totalQ * 100) : 0;
+        const studyDays = parseInt(stats.study_days) || 0;
+        
+        // 创建通知
+        const title = `📊 本周学习报告 (${startStr} ~ ${endStr})`;
+        const content = `答题${totalQ}道，正确率${accuracy}%，学习${studyDays}天。继续加油！`;
+        
+        await pool.query(`
+          INSERT INTO notifications (title, content, type, target_type, target_value, is_system)
+          VALUES ($1, $2, 'report', 'student', $3, true)
+        `, [title, content, student.id]);
+        
+        pushedCount++;
+      }
+      
+      // 记录日志
+      if (created_by) {
+        await pool.query(`
+          INSERT INTO operation_logs (user_type, user_id, action, details)
+          VALUES ('admin', $1, 'push_report', $2)
+        `, [created_by, JSON.stringify({ week_offset: weekOffset, level: targetLevel, pushed_count: pushedCount })]);
+      }
+      
+      sendJson(res, { success: true, pushed_count: pushedCount });
+      break;
+    }
+    
+    default:
+      sendJson(res, { error: 'Unknown route: ' + route }, 404);
+  }
+}
+
+// ===== Operation Log API Handler =====
+async function handleLogApi(req, res, url, params) {
+  const route = url.pathname.replace('/api/log/', '').replace('/api/log', '');
+  
+  // 解析GET请求参数
+  const queryParams = {};
+  url.searchParams.forEach((value, key) => { queryParams[key] = value; });
+  const allParams = { ...params, ...queryParams };
+
+  switch (route) {
+    case 'record': {
+      // 记录操作日志
+      const { user_type, user_id, username, action, details, ip_address, user_agent } = allParams;
+      if (!user_type || !user_id || !action) {
+        sendJson(res, { error: '缺少必要参数' }, 400);
+        return;
+      }
+      
+      await pool.query(`
+        INSERT INTO operation_logs (user_type, user_id, username, action, details, ip_address, user_agent)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `, [user_type, user_id, username || null, action, details || null, ip_address || null, user_agent || null]);
+      
+      sendJson(res, { success: true });
+      break;
+    }
+    
+    case 'list': {
+      // 查询操作日志（管理员）
+      const { user_type, user_id, action, start_date, end_date, limit, offset } = allParams;
+      const lim = parseInt(limit) || 100;
+      const off = parseInt(offset) || 0;
+      
+      let conds = [];
+      let values = [lim, off];
+      let idx = 3;
+      
+      if (user_type) {
+        conds.push(`user_type = $${idx++}`);
+        values.push(user_type);
+      }
+      if (user_id) {
+        conds.push(`user_id = $${idx++}`);
+        values.push(user_id);
+      }
+      if (action) {
+        conds.push(`action = $${idx++}`);
+        values.push(action);
+      }
+      if (start_date) {
+        conds.push(`created_at >= $${idx++}`);
+        values.push(start_date);
+      }
+      if (end_date) {
+        conds.push(`created_at <= $${idx++}`);
+        values.push(end_date);
+      }
+      
+      const whereClause = conds.length > 0 ? 'WHERE ' + conds.join(' AND ') : '';
+      
+      const result = await pool.query(`
+        SELECT * FROM operation_logs
+        ${whereClause}
+        ORDER BY created_at DESC
+        LIMIT $1 OFFSET $2
+      `, values);
+      
+      // 获取总数
+      const countResult = await pool.query(`
+        SELECT COUNT(*) as total FROM operation_logs ${whereClause}
+      `, values.slice(2));
+      
+      sendJson(res, {
+        logs: result.rows,
+        total: parseInt(countResult.rows[0].total) || 0
+      });
+      break;
+    }
+    
+    case 'stats': {
+      // 日志统计（管理员）
+      const { start_date, end_date } = allParams;
+      const start = start_date || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const end = end_date || new Date().toISOString().split('T')[0];
+      
+      // 按操作类型统计
+      const actionStats = await pool.query(`
+        SELECT action, COUNT(*) as count
+        FROM operation_logs
+        WHERE created_at >= $1 AND created_at <= $2
+        GROUP BY action
+        ORDER BY count DESC
+      `, [start, end]);
+      
+      // 按日期统计活跃度
+      const dailyStats = await pool.query(`
+        SELECT DATE(created_at) as date,
+               COUNT(DISTINCT user_id) as active_users,
+               COUNT(*) as total_actions
+        FROM operation_logs
+        WHERE created_at >= $1 AND created_at <= $2
+        GROUP BY DATE(created_at)
+        ORDER BY date
+      `, [start, end]);
+      
+      sendJson(res, {
+        actionStats: actionStats.rows,
+        dailyStats: dailyStats.rows,
+        period: { start, end }
       });
       break;
     }

@@ -5087,6 +5087,23 @@ async function renderAdminSettings() {
           <div style="font-size:0.75rem;color:var(--text2)">将已过期学生的答题记录移至归档表，释放主表空间，提升查询速度。归档后数据仍可查看。</div>
         </div>
       </div>
+      
+      <div class="card" style="margin-top:12px">
+        <div class="card-title">📢 消息推送</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <button class="btn btn-outline" style="width:100%" onclick="showSendNotification()">✉️ 发送通知</button>
+          <button class="btn btn-outline" style="width:100%" onclick="showWeeklyReport()">📊 生成学习报告</button>
+          <div style="font-size:0.75rem;color:var(--text2)">向学生发送通知或学习报告，支持按级别推送。</div>
+        </div>
+      </div>
+      
+      <div class="card" style="margin-top:12px">
+        <div class="card-title">📋 操作日志</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <button class="btn btn-outline" style="width:100%" onclick="showOperationLogs()">🔍 查看操作日志</button>
+          <div style="font-size:0.75rem;color:var(--text2)">查看学生和管理员的操作记录，包括登录、答题、考试等。</div>
+        </div>
+      </div>
 
       <div class="card" style="margin-top:12px">
         <div class="card-title">🔐 超级管理员</div>
@@ -6036,6 +6053,7 @@ function renderStudent() {
       <div style="background:linear-gradient(135deg,var(--primary),#7c3aed);color:#fff;padding:8px 16px;font-size:0.82rem;display:flex;align-items:center;justify-content:space-between">
         <div style="display:flex;align-items:center;gap:4px">${levelSwitchHtml()}</div>
         <div style="display:flex;align-items:center;gap:4px">
+          <button onclick="showNotificationCenter()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#fff;padding:3px 8px;font-size:0.78rem;cursor:pointer;position:relative" title="通知中心">🔔<span id="notificationBadge" style="display:none;position:absolute;top:-4px;right:-4px;background:#ef4444;color:#fff;font-size:0.6rem;min-width:14px;height:14px;border-radius:7px;text-align:center;line-height:14px"></span></button>
           <button onclick="showSettingsModal()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#fff;padding:3px 8px;font-size:0.78rem;cursor:pointer">⚙️</button>
 	          <button onclick="manualSync()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#fff;padding:3px 8px;font-size:0.78rem;cursor:pointer" title="点击立即同步数据">🔄</button>
           <button onclick="handleLogout()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#fff;padding:3px 10px;font-size:0.78rem;cursor:pointer">退出</button>
@@ -6051,6 +6069,10 @@ function renderStudent() {
       </div>
     </div>
   `;
+  // 加载通知未读数
+  loadNotificationBadge();
+  // 记录登录日志
+  recordLog('login', { level: currentLevel });
   switchStudentTab('practice');
 }
 async function quickSwitchLevel(level) {
@@ -6311,6 +6333,10 @@ function answerPractice(qId, letter) {
   // Buffer record for batch insert
   bufferRecord({ student_id: currentUser.username, question_id: qId, is_correct: isCorrect, user_answer: letter, is_fav: false });
   addXp(isCorrect ? XP_REWARDS.correct : XP_REWARDS.wrong, isCorrect ? '答对' : '答题');
+  // 记录答题日志（节流，每10题记录一次）
+  if (Object.keys(practiceAnswered).length % 10 === 0) {
+    recordLog('answer', { count: Object.keys(practiceAnswered).length });
+  }
   renderPracticeCard();
   savePracticeProgress();
 }
@@ -7114,6 +7140,8 @@ async function submitExamAnswers() {
     const questionXp = correct * XP_REWARDS.correct + (practiceQuestions.length - correct) * XP_REWARDS.wrong;
     addXp(questionXp, '考试答题');
   }
+  // 记录考试日志
+  recordLog('exam_submit', { exam_id: currentExamId, correct, total: practiceQuestions.length, is_mock: currentExamIsMock });
   // 交卷后立即同步并退出考试模式
   setExamMode(false);
   syncAll();
@@ -7606,6 +7634,339 @@ async function loadRanking(period = 'today') {
   } catch (e) {
     console.error('加载排名失败:', e);
     container.innerHTML = '<div style="text-align:center;color:var(--text3);padding:12px">加载失败，请重试</div>';
+  }
+}
+
+// ===== 通知中心功能 =====
+async function loadNotificationBadge() {
+  if (!currentUser) return;
+  try {
+    const res = await fetch(`${API_BASE}/notification/unread?student_id=${currentUser.id}`);
+    const data = await res.json();
+    const badge = document.getElementById('notificationBadge');
+    if (badge) {
+      if (data.count > 0) {
+        badge.textContent = data.count > 99 ? '99+' : data.count;
+        badge.style.display = 'inline-block';
+      } else {
+        badge.style.display = 'none';
+      }
+    }
+  } catch (e) {
+    console.error('加载通知徽章失败:', e);
+  }
+}
+
+async function showNotificationCenter() {
+  let notifications = [];
+  try {
+    const res = await fetch(`${API_BASE}/notification/list?student_id=${currentUser.id}&limit=20`);
+    const data = await res.json();
+    notifications = data.notifications || [];
+  } catch (e) {
+    console.error('加载通知列表失败:', e);
+  }
+  
+  const html = `
+    <div class="modal-overlay" onclick="closeModal()">
+      <div class="modal-content" style="max-width:380px;max-height:80vh;overflow-y:auto" onclick="event.stopPropagation()">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h3 style="margin:0;font-size:1.1rem">📢 消息通知</h3>
+          <button onclick="closeModal()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text3)">&times;</button>
+        </div>
+        <div id="notificationList">
+          ${notifications.length === 0 ? 
+            '<div style="text-align:center;color:var(--text3);padding:30px">暂无通知</div>' :
+            notifications.map(n => `
+              <div class="notification-item ${n.is_read ? '' : 'unread'}" 
+                   style="padding:12px;border-bottom:1px solid var(--border);background:${n.is_read ? 'transparent' : 'var(--card-hover)'};cursor:pointer"
+                   onclick="markNotificationRead(${n.id})">
+                <div style="display:flex;justify-content:space-between;align-items:start">
+                  <div style="font-weight:${n.is_read ? 'normal' : 'bold'};font-size:.9rem;color:var(--text1)">${escHtml(n.title)}</div>
+                  ${!n.is_read ? '<span style="background:var(--primary);color:#fff;font-size:.7rem;padding:2px 6px;border-radius:10px">新</span>' : ''}
+                </div>
+                ${n.content ? `<div style="font-size:.85rem;color:var(--text2);margin-top:6px">${escHtml(n.content)}</div>` : ''}
+                <div style="font-size:.75rem;color:var(--text3);margin-top:6px">${fmtLocal(n.created_at)}</div>
+              </div>
+            `).join('')
+          }
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById('modalContainer').innerHTML = html;
+}
+
+async function markNotificationRead(id) {
+  try {
+    await fetch(`${API_BASE}/notification/read`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notification_id: id, student_id: currentUser.id })
+    });
+    loadNotificationBadge();
+    // 重新加载通知列表
+    showNotificationCenter();
+  } catch (e) {
+    console.error('标记已读失败:', e);
+  }
+}
+
+// ===== 操作日志记录 =====
+async function recordLog(action, details = {}) {
+  try {
+    await fetch(`${API_BASE}/log/record`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_type: userRole === 'admin' ? 'admin' : 'student',
+        user_id: userRole === 'admin' ? currentAdmin?.id : currentUser?.id,
+        username: userRole === 'admin' ? currentAdmin?.username : currentUser?.username,
+        action,
+        details
+      })
+    });
+  } catch (e) {
+    // 静默失败，不影响用户体验
+    console.error('记录日志失败:', e);
+  }
+}
+
+// ===== 消息推送功能 =====
+async function showSendNotification() {
+  const levelOptions = ['全部学员', ...LEVELS].map(l => `<option value="${l}">${l}</option>`).join('');
+  const html = `
+    <div class="modal-overlay" onclick="closeModal()">
+      <div class="modal-content" style="max-width:400px" onclick="event.stopPropagation()">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h3 style="margin:0;font-size:1.1rem">✉️ 发送通知</h3>
+          <button onclick="closeModal()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text3)">&times;</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div>
+            <label style="font-size:.85rem;color:var(--text2);display:block;margin-bottom:4px">接收对象</label>
+            <select id="notifTarget" class="input" style="width:100%">${levelOptions}</select>
+          </div>
+          <div>
+            <label style="font-size:.85rem;color:var(--text2);display:block;margin-bottom:4px">通知标题</label>
+            <input type="text" id="notifTitle" class="input" style="width:100%" placeholder="请输入通知标题" maxlength="100">
+          </div>
+          <div>
+            <label style="font-size:.85rem;color:var(--text2);display:block;margin-bottom:4px">通知内容</label>
+            <textarea id="notifContent" class="input" style="width:100%;min-height:100px;resize:vertical" placeholder="请输入通知内容"></textarea>
+          </div>
+          <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="sendNotification()">📤 发送通知</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById('modalContainer').innerHTML = html;
+}
+
+async function sendNotification() {
+  const target = document.getElementById('notifTarget').value;
+  const title = document.getElementById('notifTitle').value.trim();
+  const content = document.getElementById('notifContent').value.trim();
+  
+  if (!title) { showToast('请输入通知标题', 'error'); return; }
+  
+  try {
+    const res = await fetch(`${API_BASE}/notification/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title,
+        content,
+        target_type: target === '全部学员' ? 'all' : 'level',
+        target_value: target === '全部学员' ? null : target,
+        created_by: currentAdmin?.username
+      })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    showToast(`通知已发送给 ${data.sent_count || 0} 人`, 'success');
+    closeModal();
+    recordLog('send_notification', { title, target });
+  } catch (e) {
+    showToast('发送失败: ' + e.message, 'error');
+  }
+}
+
+// ===== 学习报告功能 =====
+async function showWeeklyReport() {
+  const weekOptions = [];
+  for (let i = 0; i < 4; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() - i * 7);
+    weekOptions.push(`<option value="${i}">${i === 0 ? '本周' : `${i}周前`}</option>`);
+  }
+  const levelOptions = ['全部学员', ...LEVELS].map(l => `<option value="${l}">${l}</option>`).join('');
+  
+  const html = `
+    <div class="modal-overlay" onclick="closeModal()">
+      <div class="modal-content" style="max-width:400px" onclick="event.stopPropagation()">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h3 style="margin:0;font-size:1.1rem">📊 生成学习报告</h3>
+          <button onclick="closeModal()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text3)">&times;</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div>
+            <label style="font-size:.85rem;color:var(--text2);display:block;margin-bottom:4px">统计周期</label>
+            <select id="reportWeek" class="input" style="width:100%">${weekOptions.join('')}</select>
+          </div>
+          <div>
+            <label style="font-size:.85rem;color:var(--text2);display:block;margin-bottom:4px">学员级别</label>
+            <select id="reportLevel" class="input" style="width:100%">${levelOptions}</select>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:8px">
+            <button class="btn btn-outline" style="flex:1" onclick="previewReport()">👁️ 预览</button>
+            <button class="btn btn-primary" style="flex:1" onclick="generateReport()">📤 推送报告</button>
+          </div>
+        </div>
+        <div id="reportPreview" style="margin-top:12px;max-height:300px;overflow-y:auto;display:none"></div>
+      </div>
+    </div>
+  `;
+  document.getElementById('modalContainer').innerHTML = html;
+}
+
+async function previewReport() {
+  const weekOffset = parseInt(document.getElementById('reportWeek').value);
+  const level = document.getElementById('reportLevel').value;
+  const preview = document.getElementById('reportPreview');
+  preview.style.display = 'block';
+  preview.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3)">加载中...</div>';
+  
+  try {
+    const res = await fetch(`${API_BASE}/report/generate?week_offset=${weekOffset}&level=${encodeURIComponent(level)}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    
+    let html = `<div style="font-size:.85rem"><b>统计周期:</b> ${data.period.start} ~ ${data.period.end}</div>`;
+    html += `<div style="font-size:.85rem;margin-top:4px"><b>活跃学员:</b> ${data.stats.active_students} 人</div>`;
+    html += `<div style="font-size:.85rem;margin-top:4px"><b>总答题:</b> ${data.stats.total_questions} 道</div>`;
+    html += `<div style="font-size:.85rem;margin-top:4px"><b>平均正确率:</b> ${data.stats.avg_accuracy}%</div>`;
+    
+    if (data.top_students && data.top_students.length > 0) {
+      html += `<div style="margin-top:12px;font-size:.85rem;font-weight:600">🏆 学习之星</div>`;
+      data.top_students.slice(0, 5).forEach((s, i) => {
+        html += `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:.8rem;border-bottom:1px solid var(--border)">
+          <span>${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '  '} ${escHtml(s.nickname)}</span>
+          <span style="color:var(--text2)">${s.total_questions}题 / ${s.accuracy}%正确</span>
+        </div>`;
+      });
+    }
+    
+    preview.innerHTML = html;
+  } catch (e) {
+    preview.innerHTML = `<div style="text-align:center;padding:20px;color:var(--error)">加载失败: ${e.message}</div>`;
+  }
+}
+
+async function generateReport() {
+  const weekOffset = parseInt(document.getElementById('reportWeek').value);
+  const level = document.getElementById('reportLevel').value;
+  
+  try {
+    const res = await fetch(`${API_BASE}/report/push`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ week_offset: weekOffset, level, created_by: currentAdmin?.username })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    showToast(`学习报告已推送给 ${data.pushed_count || 0} 人`, 'success');
+    closeModal();
+    recordLog('push_report', { week_offset: weekOffset, level });
+  } catch (e) {
+    showToast('推送失败: ' + e.message, 'error');
+  }
+}
+
+// ===== 操作日志功能 =====
+async function showOperationLogs() {
+  const html = `
+    <div class="modal-overlay" onclick="closeModal()">
+      <div class="modal-content" style="max-width:500px;max-height:80vh;overflow-y:auto" onclick="event.stopPropagation()">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h3 style="margin:0;font-size:1.1rem">📋 操作日志</h3>
+          <button onclick="closeModal()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text3)">&times;</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <select id="logType" class="input" style="flex:1" onchange="loadOperationLogs()">
+            <option value="">全部类型</option>
+            <option value="login">登录</option>
+            <option value="logout">退出</option>
+            <option value="answer">答题</option>
+            <option value="exam">考试</option>
+          </select>
+          <select id="logUserType" class="input" style="flex:1" onchange="loadOperationLogs()">
+            <option value="">全部用户</option>
+            <option value="student">学生</option>
+            <option value="admin">管理员</option>
+          </select>
+        </div>
+        <div id="logList" style="min-height:200px"><div style="text-align:center;padding:20px;color:var(--text3)">加载中...</div></div>
+        <div id="logPagination" style="display:flex;justify-content:center;gap:8px;margin-top:12px"></div>
+      </div>
+    </div>
+  `;
+  document.getElementById('modalContainer').innerHTML = html;
+  loadOperationLogs();
+}
+
+let logPage = 1;
+async function loadOperationLogs(page = 1) {
+  logPage = page;
+  const logType = document.getElementById('logType')?.value || '';
+  const logUserType = document.getElementById('logUserType')?.value || '';
+  const list = document.getElementById('logList');
+  
+  try {
+    const res = await fetch(`${API_BASE}/log/list?page=${page}&limit=20&action=${logType}&user_type=${logUserType}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    
+    if (!data.logs || data.logs.length === 0) {
+      list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3)">暂无日志记录</div>';
+      return;
+    }
+    
+    const actionIcons = {
+      login: '🔐', logout: '🚪', answer: '✏️', exam_start: '📝', exam_submit: '✅',
+      homework_start: '📚', homework_submit: '✔️', send_notification: '📢', push_report: '📊'
+    };
+    
+    list.innerHTML = data.logs.map(log => `
+      <div style="padding:10px;border-bottom:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;align-items:start">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:1.1rem">${actionIcons[log.action] || '📌'}</span>
+            <div>
+              <div style="font-size:.85rem;font-weight:500">${escHtml(log.username || log.user_id)}</div>
+              <div style="font-size:.75rem;color:var(--text2)">${log.action} ${log.user_type === 'admin' ? '<span style="color:var(--primary)">管理员</span>' : ''}</div>
+            </div>
+          </div>
+          <div style="font-size:.75rem;color:var(--text3)">${fmtLocalShort(log.created_at)}</div>
+        </div>
+        ${log.details && Object.keys(log.details).length > 0 ? `<div style="font-size:.75rem;color:var(--text3);margin-top:4px;padding-left:24px">${escHtml(JSON.stringify(log.details))}</div>` : ''}
+      </div>
+    `).join('');
+    
+    // 分页
+    const pagination = document.getElementById('logPagination');
+    if (data.total > 20) {
+      const totalPages = Math.ceil(data.total / 20);
+      pagination.innerHTML = `
+        <button class="btn btn-sm btn-ghost" ${page <= 1 ? 'disabled' : ''} onclick="loadOperationLogs(${page - 1})">上一页</button>
+        <span style="font-size:.8rem;color:var(--text2)">${page}/${totalPages}</span>
+        <button class="btn btn-sm btn-ghost" ${page >= totalPages ? 'disabled' : ''} onclick="loadOperationLogs(${page + 1})">下一页</button>
+      `;
+    } else {
+      pagination.innerHTML = '';
+    }
+  } catch (e) {
+    list.innerHTML = `<div style="text-align:center;padding:20px;color:var(--error)">加载失败: ${e.message}</div>`;
   }
 }
 
