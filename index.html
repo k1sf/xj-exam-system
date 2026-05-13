@@ -3636,7 +3636,7 @@ function exportExamCSV(examId) {
     Object.entries(scoreMap).forEach(([sid, s]) => {
       const st = students.find(x => x.username === sid);
       const pct = s.total > 0 ? Math.round(s.correct/s.total*100) : 0;
-      rows.push([st?.nickname||sid, sid, s.correct, s.total, pct+'%']);
+      rows.push([st?.nickname||sid, '\t'+sid, s.correct, s.total, pct+'%']);
     });
     const csv = rows.map(r => r.join(',')).join('\n');
     downloadCSV(csv, `${exam.title}_成绩.csv`);
@@ -3938,7 +3938,7 @@ function exportQuickExamCSV(examId) {
     const passRate = exam.pass_rate || 60;
     sorted.forEach((s, idx) => {
       const pct = s.total > 0 ? Math.round(s.correct / s.total * 100) : 0;
-      rows.push([idx+1, s.guestName||'', s.phone, s.correct, s.total, pct+'%', pct>=passRate?'通过':'未通过']);
+      rows.push([idx+1, s.guestName||'', '\t'+s.phone, s.correct, s.total, pct+'%', pct>=passRate?'通过':'未通过']);
     });
     const csv = rows.map(r => r.join(',')).join('\n');
     downloadCSV(csv, `${exam.title}_成绩.csv`);
@@ -4474,7 +4474,7 @@ function exportEnrollmentCSV() {
   const headers = ['姓名', '手机号', '级别', '班级', '报名时间', '状态'];
   const rows = filtered.map(e => [
     e.name,
-    e.phone,
+    '\t'+e.phone,
     e.level,
     e.cohort || '',
     fmtLocal(e.created_at),
