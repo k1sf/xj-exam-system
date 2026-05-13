@@ -4909,6 +4909,7 @@ function renderAdminManage() {
   const content = `
     <div id="manageTabBtns" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
       <button class="btn ${_manageSubTab === 'learning' ? 'btn-primary' : 'btn-outline'}" onclick="switchManageSubTab('learning')">📊 学情</button>
+      <button class="btn ${_manageSubTab === 'wrong' ? 'btn-primary' : 'btn-outline'}" onclick="switchManageSubTab('wrong')">❌ 错题</button>
       <button class="btn ${_manageSubTab === 'settings' ? 'btn-primary' : 'btn-outline'}" onclick="switchManageSubTab('settings')">⚙️ 设置</button>
       <button class="btn ${_manageSubTab === 'notify' ? 'btn-primary' : 'btn-outline'}" onclick="switchManageSubTab('notify')">📢 消息</button>
       <button class="btn ${_manageSubTab === 'logs' ? 'btn-primary' : 'btn-outline'}" onclick="switchManageSubTab('logs')">📋 日志</button>
@@ -4938,9 +4939,87 @@ function switchManageSubTab(tab) {
   
   switch(tab) {
     case 'learning': renderLearningSub(); break;
+    case 'wrong': renderWrongStatsSub(); break;
     case 'settings': renderSettingsSub(); break;
     case 'notify': renderNotifySub(); break;
     case 'logs': renderLogsSub(); break;
+  }
+}
+
+// ===== 错题统计页面 =====
+async function renderWrongStatsSub() {
+  const container = document.getElementById('manageSubContent');
+  container.innerHTML = `<div class="card"><div class="card-title">❌ 错题统计加载中...</div></div>`;
+  
+  try {
+    // 获取所有学生
+    allStudents = await dbSelect('students', { order: ['created_at', false] });
+    
+    // 调用API获取错题统计
+    const res = await fetch('/api/wrong-stats', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
+      body: JSON.stringify({})
+    });
+    const data = await res.json();
+    
+    if (!data.success) throw new Error(data.error || '获取失败');
+    
+    const stats = data.stats || [];
+    
+    // 构建统计表格
+    let html = `
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-title">❌ 学生错题统计</div>
+        <p style="font-size:12px;color:#666;margin-bottom:12px">
+          说明：三级=连续错3次+，二级=错2次，一级=错1次，复习=已做对移入复习本
+        </p>
+        <div style="overflow-x:auto">
+          <table class="table" style="width:100%;font-size:13px;min-width:500px">
+            <thead>
+              <tr style="background:var(--bg-secondary)">
+                <th style="padding:8px;text-align:left">学生</th>
+                <th style="padding:8px;text-align:center">班级</th>
+                <th style="padding:8px;text-align:center">一级</th>
+                <th style="padding:8px;text-align:center">二级</th>
+                <th style="padding:8px;text-align:center">三级</th>
+                <th style="padding:8px;text-align:center">复习本</th>
+                <th style="padding:8px;text-align:center">总计</th>
+              </tr>
+            </thead>
+            <tbody>
+    `;
+    
+    for (const s of stats) {
+      const student = allStudents.find(st => st.username === s.student_id);
+      const total = (s.level1||0) + (s.level2||0) + (s.level3||0);
+      html += `
+        <tr style="border-bottom:1px solid var(--border-color)">
+          <td style="padding:8px">${escHtml(student?.nickname || s.student_id)}</td>
+          <td style="padding:8px;text-align:center">${escHtml(student?.cohort || '-')}</td>
+          <td style="padding:8px;text-align:center">${s.level1 || 0}</td>
+          <td style="padding:8px;text-align:center;color:var(--warning-color)">${s.level2 || 0}</td>
+          <td style="padding:8px;text-align:center;color:var(--error-color);font-weight:bold">${s.level3 || 0}</td>
+          <td style="padding:8px;text-align:center;color:var(--success-color)">${s.review || 0}</td>
+          <td style="padding:8px;text-align:center;font-weight:bold">${total}</td>
+        </tr>
+      `;
+    }
+    
+    if (stats.length === 0) {
+      html += `<tr><td colspan="7" style="padding:20px;text-align:center;color:#999">暂无错题数据</td></tr>`;
+    }
+    
+    html += `
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+    
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = `<div class="card"><div class="card-title">❌ 加载失败</div><p>${escHtml(e.message)}</p></div>`;
   }
 }
 
@@ -6726,6 +6805,51 @@ function renderPracticeCard() {
   `;
 }
 
+// 错题级别缓存（避免频繁查询数据库）
+let _wrongLevelCache = {};
+
+// 计算错题级别变化
+// 答对：一级→复习本(0)，二级→一级(1)，三级→二级(2)
+// 答错：不错→一级(1)，一级→二级(2)，二级→三级(3)，三级→三级(3)
+function calculateWrongLevel(qId, isCorrect) {
+  // 从缓存或题目中获取当前级别
+  let currentLevel = _wrongLevelCache[qId];
+  if (currentLevel === undefined) {
+    // 从题目对象获取（如果已加载）
+    const q = practiceQuestions.find(x => x.id === qId);
+    currentLevel = q?.wrong_level || 0;
+  }
+  
+  let newLevel;
+  if (isCorrect) {
+    // 答对：降级
+    if (currentLevel === 0) {
+      newLevel = 0; // 已经在复习本，保持
+    } else if (currentLevel === 1) {
+      newLevel = 0; // 一级→复习本
+    } else if (currentLevel === 2) {
+      newLevel = 1; // 二级→一级
+    } else {
+      newLevel = 2; // 三级→二级
+    }
+  } else {
+    // 答错：升级
+    if (currentLevel === 0) {
+      newLevel = 1; // 复习本→一级
+    } else if (currentLevel === 1) {
+      newLevel = 2; // 一级→二级
+    } else if (currentLevel === 2) {
+      newLevel = 3; // 二级→三级
+    } else {
+      newLevel = 3; // 三级保持三级
+    }
+  }
+  
+  // 更新缓存
+  _wrongLevelCache[qId] = newLevel;
+  return newLevel;
+}
+
 // 统一答案比较：多选题去除分隔符后排序比较
 function checkAnswer(userAnswer, correctAnswer, questionType) {
   if (!userAnswer || !correctAnswer) return false;
@@ -6761,9 +6885,15 @@ function answerPractice(qId, letter) {
 
   const isCorrect = checkAnswer(letter, q.answer, q.type);
   practiceAnswered[qId] = { answer: letter, isCorrect, isFav: practiceAnswered[qId]?.isFav || false };
+  // 计算错题级别变化
+  const newWrongLevel = calculateWrongLevel(qId, isCorrect);
   // Buffer record for batch insert
-  bufferRecord({ student_id: currentUser.username, question_id: qId, is_correct: isCorrect, user_answer: letter, is_fav: false });
+  bufferRecord({ student_id: currentUser.username, question_id: qId, is_correct: isCorrect, user_answer: letter, is_fav: false, wrong_level: newWrongLevel });
   addXp(isCorrect ? XP_REWARDS.correct : XP_REWARDS.wrong, isCorrect ? '答对' : '答题');
+  // 显示级别变化提示
+  if (isCorrect && newWrongLevel === 0) {
+    showToast('🎉 答对！题目已移入复习本', 'success');
+  }
   // 记录答题日志（节流，每10题记录一次）
   if (Object.keys(practiceAnswered).length % 10 === 0) {
     recordLog('answer', { count: Object.keys(practiceAnswered).length });
@@ -6781,8 +6911,14 @@ function confirmMultiAnswer(qId) {
   const isCorrect = checkAnswer(answer, q.answer, 'multiple');
   practiceAnswered[qId] = { answer, isCorrect, isFav: practiceAnswered[qId]?.isFav || false };
   delete practiceMultiSelected[qId];
-  bufferRecord({ student_id: currentUser.username, question_id: qId, is_correct: isCorrect, user_answer: answer, is_fav: false });
+  // 计算错题级别变化
+  const newWrongLevel = calculateWrongLevel(qId, isCorrect);
+  bufferRecord({ student_id: currentUser.username, question_id: qId, is_correct: isCorrect, user_answer: answer, is_fav: false, wrong_level: newWrongLevel });
   addXp(isCorrect ? XP_REWARDS.correct : XP_REWARDS.wrong, isCorrect ? '答对' : '答题');
+  // 显示级别变化提示
+  if (isCorrect && newWrongLevel === 0) {
+    showToast('🎉 答对！题目已移入复习本', 'success');
+  }
   renderPracticeCard();
   savePracticeProgress();
 }
@@ -7973,7 +8109,7 @@ function renderWrongBookPageTo(containerId) {
     ${wrongQs.length > 0 ? `
       <div style="display:flex;gap:8px;margin-bottom:16px">
         <button class="btn btn-primary" style="flex:1" onclick="startWrongBookPractice()">📝 开始练习</button>
-        <button class="btn btn-outline" onclick="showClearWrongOptions()">🗑️ 清空</button>
+        <button class="btn btn-outline" onclick="showReviewBook()">📖 复习本</button>
       </div>
     ` : ''}
     ${list}
@@ -7986,6 +8122,96 @@ function renderWrongBookPage() {
   const container = document.getElementById('practiceSubContent') || document.getElementById('wrongBookContainer');
   if (container) {
     renderWrongBookPageTo(container.id);
+  }
+}
+
+// ===== 复习本功能 =====
+async function showReviewBook() {
+  const container = document.getElementById('practiceSubContent') || document.getElementById('wrongBookContainer');
+  if (!container) return;
+  
+  container.innerHTML = `<div class="card"><div class="card-title">📖 复习本加载中...</div></div>`;
+  
+  try {
+    const res = await fetch('/api/review-book', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
+      body: JSON.stringify({ student_id: currentUser.username })
+    });
+    const data = await res.json();
+    
+    const reviews = data.all || [];
+    
+    let html = `
+      <style>
+        .review-item { display:flex; align-items:center; padding:12px; background:#fff; border-radius:8px; margin-bottom:8px; box-shadow:0 1px 3px rgba(0,0,0,.1); }
+        .review-item:hover { background:#f0fdf4; }
+        .review-content { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .review-btn { padding:4px 8px; font-size:.75rem; margin-left:4px; }
+        .dark .review-item { background:#2d3748; }
+      </style>
+      
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <button class="btn btn-sm btn-outline" onclick="switchStudentSubTab('wrongBook')">⬅️ 返回错题本</button>
+        <span style="font-weight:600">📖 复习本</span>
+        <span style="font-size:.8rem;color:#6b7280">(${reviews.length}题)</span>
+        ${reviews.length > 0 ? `<button class="btn btn-sm btn-outline" style="margin-left:auto" onclick="clearReviewBook()">🗑️ 清空</button>` : ''}
+      </div>
+      
+      <div style="font-size:.75rem;color:#6b7280;margin-bottom:12px;padding:8px;background:#f0fdf4;border-radius:6px;border-left:3px solid #10b981">
+        💡 <b>复习本说明：</b>做对的错题会移入复习本，您可以随时移出或清空。
+      </div>
+    `;
+    
+    if (reviews.length === 0) {
+      html += `<div class="empty-state"><div class="empty-icon">🎉</div><p>复习本是空的，继续努力刷题吧！</p></div>`;
+    } else {
+      const page = _pg.reviewBook || 1;
+      const pageItems = pageSlice(reviews, page);
+      
+      html += pageItems.map((q, idx) => `
+        <div class="review-item">
+          <span style="color:#10b981;margin-right:8px">✅</span>
+          <span class="review-content">${escHtml((q.content||'').substring(0,50))}${(q.content||'').length > 50 ? '...' : ''}</span>
+          <button class="btn btn-sm btn-outline review-btn" onclick="removeFromReview(${q.question_id})">移出</button>
+          <button class="btn btn-sm btn-outline review-btn" onclick="practiceWrongQuestion(${q.question_id})">重做</button>
+        </div>
+      `).join('');
+      
+      html += paginateHtml('reviewBook', reviews.length, page);
+    }
+    
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = `<div class="card"><div class="card-title">❌ 加载失败</div><p>${escHtml(e.message)}</p><button class="btn btn-outline" onclick="switchStudentSubTab('wrongBook')">返回</button></div>`;
+  }
+}
+
+async function removeFromReview(questionId) {
+  if (!confirm('确定将此题移出复习本？移出后需要重新做错才会再次出现。')) return;
+  
+  try {
+    await dbUpdate('records', 
+      { data: { wrong_level: 1 }, match: { student_id: currentUser.username, question_id: questionId } }
+    );
+    showToast('已移出复习本', 'success');
+    showReviewBook();
+  } catch (e) {
+    showToast('移出失败：' + e.message, 'error');
+  }
+}
+
+async function clearReviewBook() {
+  if (!confirm('确定清空复习本？清空后所有题目需要重新做错才会出现。')) return;
+  
+  try {
+    await dbUpdate('records',
+      { data: { wrong_level: 1 }, match: { student_id: currentUser.username, wrong_level: 0 } }
+    );
+    showToast('复习本已清空', 'success');
+    showReviewBook();
+  } catch (e) {
+    showToast('清空失败：' + e.message, 'error');
   }
 }
 
@@ -8040,95 +8266,106 @@ async function practiceWrongQuestion(qId) {
   renderPracticeCard();
 }
 
-function showClearWrongOptions() {
-  // 获取各级别错题数量
-  const level1Count = document.querySelectorAll('#wrongList .wrong-level-1').length;
-  const level2Count = document.querySelectorAll('#wrongList .wrong-level-2').length;
-  const level3Count = document.querySelectorAll('#wrongList .wrong-level-3').length;
-  const totalCount = level1Count + level2Count + level3Count;
+function showReviewBook() {
+  // 显示复习本弹窗
+  renderReviewBookModal();
+}
+
+let _reviewBookData = null;
+
+async function renderReviewBookModal() {
+  // 获取复习本数据（wrong_level = 0）
+  const records = await dbSelect('records', { 
+    eq: { student_id: currentUser.username, wrong_level: 0 }, 
+    cacheBypass: true 
+  });
+  _reviewBookData = records;
   
-  if (totalCount === 0) {
-    showToast('错题本已为空', 'info');
+  if (records.length === 0) {
+    const html = `
+      <div style="padding:20px;text-align:center">
+        <div style="font-size:3rem;margin-bottom:16px">📖</div>
+        <div style="font-size:1.1rem;font-weight:600;margin-bottom:8px">复习本为空</div>
+        <div style="color:var(--text2);font-size:.875rem">答对一级错题后，题目会自动移入复习本</div>
+        <button class="btn btn-outline" style="margin-top:16px" onclick="closeModal()">关闭</button>
+      </div>
+    `;
+    openModal(html);
     return;
   }
+  
+  // 获取题目详情
+  const qIds = [...new Set(records.map(r => r.question_id))];
+  const questions = await dbSelect('questions', { cacheBypass: true });
+  const questionMap = {};
+  questions.forEach(q => { questionMap[q.id] = q; });
+  
+  // 渲染列表
+  const listHtml = records.map(r => {
+    const q = questionMap[r.question_id];
+    if (!q) return '';
+    const typeIcon = q.type === 'single' ? '🔘' : q.type === 'multiple' ? '☑️' : '⚖️';
+    return `
+      <div class="review-item" style="display:flex;align-items:center;padding:10px;background:var(--bg2);border-radius:8px;margin-bottom:8px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.875rem">${typeIcon} ${escHtml(q.content?.substring(0, 50) || '')}${q.content?.length > 50 ? '...' : ''}</div>
+          <div style="font-size:.75rem;color:var(--text2);margin-top:4px">移入时间：${fmtLocalShort(r.created_at)}</div>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="removeFromReviewBook('${r.question_id}')" style="margin-left:8px;white-space:nowrap">移出</button>
+      </div>
+    `;
+  }).join('');
   
   const html = `
-    <div style="padding:16px">
-      <div style="font-size:1rem;font-weight:600;margin-bottom:12px">选择要清空的错题级别</div>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <label style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--bg2);border-radius:8px;cursor:pointer">
-          <input type="checkbox" id="clearLevel1" ${level1Count > 0 ? 'checked' : 'disabled'}>
-          <span style="flex:1">⚠️ 一级错题（错1次）</span>
-          <span style="color:var(--text2)">${level1Count}题</span>
-        </label>
-        <label style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--bg2);border-radius:8px;cursor:pointer">
-          <input type="checkbox" id="clearLevel2" ${level2Count > 0 ? 'checked' : 'disabled'}>
-          <span style="flex:1">🔶 二级错题（错2次）</span>
-          <span style="color:var(--text2)">${level2Count}题</span>
-        </label>
-        <label style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--bg2);border-radius:8px;cursor:pointer">
-          <input type="checkbox" id="clearLevel3" ${level3Count > 0 ? 'checked' : 'disabled'}>
-          <span style="flex:1">🔴 三级错题（连续错3次+）</span>
-          <span style="color:var(--text2)">${level3Count}题</span>
-        </label>
+    <div style="padding:16px;max-height:60vh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div style="font-size:1rem;font-weight:600">📖 复习本 (${records.length}题)</div>
+        <button class="btn btn-outline btn-sm" onclick="clearReviewBook()">一键清空</button>
       </div>
-      <div style="margin-top:12px;padding:10px;background:#fef3c7;border-radius:8px;font-size:.8rem;color:#92400e">
-        ⚠️ 仅清除练习中的错题，考试错题记录将保留
+      <div style="font-size:.75rem;color:var(--text2);margin-bottom:12px;padding:8px;background:var(--bg1);border-radius:6px">
+        💡 一级错题答对后会移入复习本。复习本中的题目可随时清空或单独移出。
       </div>
-      <button class="btn btn-danger btn-full" style="margin-top:16px" onclick="doClearWrongByLevel()">确认清空</button>
+      <div id="reviewBookList">
+        ${listHtml}
+      </div>
     </div>
   `;
-  openModal(html);
+  openModal(html, '复习本');
 }
 
-async function doClearWrongByLevel() {
-  const clearLevel1 = document.getElementById('clearLevel1')?.checked;
-  const clearLevel2 = document.getElementById('clearLevel2')?.checked;
-  const clearLevel3 = document.getElementById('clearLevel3')?.checked;
+async function removeFromReviewBook(qId) {
+  if (!confirm('确定要将此题目移出复习本吗？')) return;
   
-  if (!clearLevel1 && !clearLevel2 && !clearLevel3) {
-    showToast('请至少选择一个级别', 'error');
-    return;
-  }
-  
-  // 获取所有练习错题
-  const records = await dbSelect('records', { eq: { student_id: currentUser.username, is_correct: false }, cacheBypass: true });
-  const practiceWrong = records.filter(r => !r.exam_id);
-  
-  // 统计每道题的错误次数
-  const questionWrongCount = {};
-  practiceWrong.forEach(r => {
-    const qid = r.question_id;
-    questionWrongCount[qid] = (questionWrongCount[qid] || 0) + 1;
-  });
-  
-  // 按级别筛选要删除的记录
-  const idsToDelete = [];
-  practiceWrong.forEach(r => {
-    const count = questionWrongCount[r.question_id] || 1;
-    const level = count >= 3 ? 3 : count;
-    if ((level === 1 && clearLevel1) || (level === 2 && clearLevel2) || (level === 3 && clearLevel3)) {
-      idsToDelete.push(r.id);
-    }
-  });
-  
-  if (idsToDelete.length === 0) {
-    showToast('没有符合条件的错题', 'info');
-    closeModal();
-    return;
-  }
-  
-  // 批量删除
-  await dbDelete('records', { id: idsToDelete });
+  // 更新 wrong_level 为 1（移回一级错题）
+  await dbUpdate('records', 
+    { wrong_level: 1 }, 
+    { student_id: currentUser.username, question_id: Number(qId) }
+  );
   cacheClearTable('records');
-  closeModal();
-  showToast(`已清除${idsToDelete.length}条错题记录`, 'success');
-  renderWrongBook();
+  showToast('已移出复习本', 'success');
+  
+  // 刷新弹窗
+  renderReviewBookModal();
 }
 
-async function clearWrongBook() {
-  // 使用新的分级清空选项
-  showClearWrongOptions();
+async function clearReviewBook() {
+  if (!confirm('确定要清空复习本吗？所有题目将被删除。')) return;
+  
+  // 删除所有 wrong_level = 0 的记录
+  const records = _reviewBookData || [];
+  if (records.length === 0) {
+    showToast('复习本已为空', 'info');
+    return;
+  }
+  
+  const ids = records.map(r => r.id).filter(Boolean);
+  if (ids.length > 0) {
+    await dbDelete('records', { id: ids });
+    cacheClearTable('records');
+  }
+  
+  closeModal();
+  showToast('复习本已清空', 'success');
 }
 
 // ===== Student Tab4: Profile =====

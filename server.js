@@ -217,10 +217,18 @@ const server = http.createServer(async (req, res) => {
         await handleReportApi(req, res, url, params);
         return;
       }
-      // Handle operation log API separately
+      // Handle operation log API and other extended APIs separately
       // Note: Must check /api/log/ or exact /api/log to avoid matching /api/login
       if (url.pathname === '/api/log' || url.pathname.startsWith('/api/log/')) {
         await handleLogApi(req, res, url, params);
+        return;
+      }
+      // Handle wrong-level and review APIs in handleDailyTaskApi
+      if (url.pathname === '/api/wrong-level' || url.pathname === '/api/review-book' ||
+          url.pathname === '/api/review-list' || url.pathname === '/api/review-remove' || 
+          url.pathname === '/api/review-clear' || url.pathname === '/api/remove-from-review' ||
+          url.pathname === '/api/clear-review-book' || url.pathname === '/api/admin-wrong-stats') {
+        await handleDailyTaskApi(req, res, url, params);
         return;
       }
       await handleApi(req, res, url, params);
@@ -1387,7 +1395,16 @@ async function handleHomeworkApi(req, res, url, params) {
 
 // ===== Daily Task API Handler =====
 async function handleDailyTaskApi(req, res, url, params) {
-  const route = url.pathname.replace('/api/daily-task/', '').replace('/api/daily-task', '');
+  let route = url.pathname.replace('/api/daily-task/', '').replace('/api/daily-task', '');
+  // 支持其他路由如 /api/wrong-level, /api/review-book 等
+  if (url.pathname === '/api/wrong-level') route = 'wrong-level';
+  if (url.pathname === '/api/review-list') route = 'review-list';
+  if (url.pathname === '/api/review-book') route = 'review-book';
+  if (url.pathname === '/api/review-remove') route = 'review-remove';
+  if (url.pathname === '/api/review-clear') route = 'review-clear';
+  if (url.pathname === '/api/remove-from-review') route = 'remove-from-review';
+  if (url.pathname === '/api/clear-review-book') route = 'clear-review-book';
+  if (url.pathname === '/api/admin-wrong-stats') route = 'admin-wrong-stats';
   
   // 解析GET请求参数
   const queryParams = {};
@@ -1611,70 +1628,77 @@ async function handleDailyTaskApi(req, res, url, params) {
     }
     
     case 'wrong-level': {
-      // 错题分级统计
+      // 错题分级统计（使用数据库中的 wrong_level 字段）
       const { student_id, level } = allParams;
       if (!student_id) {
         sendJson(res, { error: '缺少student_id' }, 400);
         return;
       }
       
-      // 统计每道题的错误次数
-      // 一级错题：做错1次
-      // 二级错题：做错2次
-      // 三级错题：连续做错3次及以上（最近几次答题都是错的）
-      
-      // 先获取所有错题的基本统计
+      // 查询每道题的最新记录及其 wrong_level
+      // 使用 DISTINCT ON 获取每道题的最新记录
       const wrongStats = await pool.query(`
-        SELECT 
+        SELECT DISTINCT ON (r.question_id)
           r.question_id,
+          r.wrong_level,
           q.type,
           q.content,
           q.options,
           q.answer,
           q.level as q_level,
-          COUNT(*) FILTER (WHERE NOT r.is_correct) as wrong_count,
-          COUNT(*) as total_count
+          q.analysis
         FROM records r
         JOIN questions q ON q.id = r.question_id
-        WHERE r.student_id = $1
-        ${level ? `AND q.level = $2` : ''}
-        GROUP BY r.question_id, q.type, q.content, q.options, q.answer, q.level
-        HAVING COUNT(*) FILTER (WHERE NOT r.is_correct) > 0
-        ORDER BY wrong_count DESC
+        WHERE r.student_id = $1 
+          AND (r.wrong_level > 0 OR r.is_correct = false)
+          ${level ? `AND q.level = $2` : ''}
+        ORDER BY r.question_id, r.created_at DESC
       `, level ? [student_id, level] : [student_id]);
       
-      // 对每道题，检查最近答题记录判断是否连续错误
+      // 如果没有 wrong_level 或者为 null，动态计算
       const processedRows = [];
       for (const row of wrongStats.rows) {
-        // 获取该题最近的答题记录（最多10条）
-        const recentResult = await pool.query(`
-          SELECT is_correct
-          FROM records
-          WHERE student_id = $1 AND question_id = $2
-          ORDER BY created_at DESC
-          LIMIT 10
-        `, [student_id, row.question_id]);
+        let wrongLevel = row.wrong_level;
         
-        // 计算连续错误次数（从最近一次开始往前数）
-        let streak = 0;
-        for (const r of recentResult.rows) {
-          if (!r.is_correct) streak++;
-          else break;
+        // 如果数据库中没有 wrong_level，则动态计算
+        if (wrongLevel === null || wrongLevel === undefined) {
+          // 获取该题的答题历史
+          const historyResult = await pool.query(`
+            SELECT is_correct
+            FROM records
+            WHERE student_id = $1 AND question_id = $2
+            ORDER BY created_at DESC
+            LIMIT 10
+          `, [student_id, row.question_id]);
+          
+          let wrongCount = 0;
+          let streak = 0;
+          for (const r of historyResult.rows) {
+            if (!r.is_correct) {
+              wrongCount++;
+              streak++;
+            } else {
+              streak = 0;
+            }
+          }
+          
+          // 计算级别
+          if (wrongCount === 0) wrongLevel = 0;
+          else if (streak >= 3) wrongLevel = 3;
+          else if (wrongCount >= 2) wrongLevel = 2;
+          else wrongLevel = 1;
         }
         
-        // 判断错题级别
-        let wrongLevel = 1;
-        if (row.wrong_count >= 3 && streak >= 3) wrongLevel = 3;
-        else if (row.wrong_count >= 2) wrongLevel = 2;
-        
-        processedRows.push({
-          ...row,
-          wrong_level: wrongLevel,
-          recent_wrong_streak: streak
-        });
+        // 只显示错题（wrong_level > 0）
+        if (wrongLevel > 0) {
+          processedRows.push({
+            ...row,
+            wrong_level: wrongLevel
+          });
+        }
       }
       
-      // 按级别分组统计
+      // 按级别分组
       const level1 = processedRows.filter(r => r.wrong_level === 1);
       const level2 = processedRows.filter(r => r.wrong_level === 2);
       const level3 = processedRows.filter(r => r.wrong_level === 3);
@@ -1690,6 +1714,112 @@ async function handleDailyTaskApi(req, res, url, params) {
           level3: level3.length,
           total: processedRows.length
         }
+      });
+      break;
+    }
+    
+    case 'review-book': {
+      // 复习本（wrong_level = 0 的题目）
+      const { student_id, level } = allParams;
+      if (!student_id) {
+        sendJson(res, { error: '缺少student_id' }, 400);
+        return;
+      }
+      
+      // 查询复习本中的题目（最新记录的 wrong_level = 0）
+      const reviewStats = await pool.query(`
+        SELECT DISTINCT ON (r.question_id)
+          r.question_id,
+          r.wrong_level,
+          q.type,
+          q.content,
+          q.options,
+          q.answer,
+          q.level as q_level,
+          q.analysis
+        FROM records r
+        JOIN questions q ON q.id = r.question_id
+        WHERE r.student_id = $1 
+          AND r.wrong_level = 0
+          AND r.is_correct = true
+          ${level ? `AND q.level = $2` : ''}
+        ORDER BY r.question_id, r.created_at DESC
+      `, level ? [student_id, level] : [student_id]);
+      
+      sendJson(res, {
+        all: reviewStats.rows,
+        count: reviewStats.rows.length
+      });
+      break;
+    }
+    
+    case 'remove-from-review': {
+      // 从复习本移除题目（删除记录）
+      const { student_id, question_id } = allParams;
+      if (!student_id || !question_id) {
+        sendJson(res, { error: '缺少参数' }, 400);
+        return;
+      }
+      
+      await pool.query(
+        'DELETE FROM records WHERE student_id = $1 AND question_id = $2',
+        [student_id, question_id]
+      );
+      
+      sendJson(res, { success: true });
+      break;
+    }
+    
+    case 'clear-review-book': {
+      // 清空复习本
+      const { student_id } = allParams;
+      if (!student_id) {
+        sendJson(res, { error: '缺少student_id' }, 400);
+        return;
+      }
+      
+      await pool.query(
+        "DELETE FROM records WHERE student_id = $1 AND wrong_level = 0 AND is_correct = true",
+        [student_id]
+      );
+      
+      sendJson(res, { success: true });
+      break;
+    }
+    
+    case 'admin-wrong-stats': {
+      // 管理员查看学生错题统计
+      const { cohort } = allParams;
+      
+      let cohortFilter = '';
+      const params = [];
+      if (cohort) {
+        cohortFilter = 'AND s.cohort = $1';
+        params.push(cohort);
+      }
+      
+      // 统计每个学生的错题数量
+      const statsResult = await pool.query(`
+        SELECT 
+          s.username,
+          s.nickname,
+          s.cohort,
+          s.level,
+          COUNT(DISTINCT CASE WHEN r.wrong_level = 1 THEN r.question_id END) as level1_count,
+          COUNT(DISTINCT CASE WHEN r.wrong_level = 2 THEN r.question_id END) as level2_count,
+          COUNT(DISTINCT CASE WHEN r.wrong_level = 3 THEN r.question_id END) as level3_count,
+          COUNT(DISTINCT CASE WHEN r.wrong_level > 0 OR r.is_correct = false THEN r.question_id END) as total_wrong
+        FROM students s
+        LEFT JOIN records r ON r.student_id = s.username
+        WHERE s.status = 'active' ${cohortFilter}
+        GROUP BY s.username, s.nickname, s.cohort, s.level
+        HAVING COUNT(DISTINCT CASE WHEN r.wrong_level > 0 OR r.is_correct = false THEN r.question_id END) > 0
+        ORDER BY total_wrong DESC
+      `, params);
+      
+      sendJson(res, {
+        students: statsResult.rows,
+        total_students: statsResult.rows.length
       });
       break;
     }
@@ -2256,7 +2386,16 @@ async function handleReportApi(req, res, url, params) {
 
 // ===== Operation Log API Handler =====
 async function handleLogApi(req, res, url, params) {
-  const route = url.pathname.replace('/api/log/', '').replace('/api/log', '');
+  // 解析路由：支持 /api/log/* 和其他独立API如 /api/wrong-level
+  let route;
+  if (url.pathname.startsWith('/api/log/')) {
+    route = url.pathname.replace('/api/log/', '');
+  } else if (url.pathname === '/api/log') {
+    route = '';
+  } else {
+    // 其他独立API，如 /api/wrong-level
+    route = url.pathname.replace('/api/', '');
+  }
   
   // 解析GET请求参数
   const queryParams = {};
