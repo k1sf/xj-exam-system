@@ -2095,39 +2095,32 @@ function downloadFile(content, filename, mimeType = 'text/csv;charset=utf-8') {
   const blob = content instanceof Blob ? content : new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   
-  // 方案1: 使用 Web Share API (移动端优先)
-  if (navigator.share && navigator.canShare) {
-    const file = new File([blob], filename, { type: mimeType.split(';')[0] });
-    navigator.share({ files: [file], title: filename })
-      .then(() => showToast('导出成功', 'success'))
-      .catch(() => fallbackDownload(url, filename));
-    return;
-  }
+  // 显示下载中提示
+  showToast('正在下载...', 'info');
   
-  // 方案2: 传统下载方式
-  fallbackDownload(url, filename);
+  // 使用传统下载方式（最可靠）
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:#007bff;color:#fff;border-radius:8px;z-index:99999;text-decoration:none;font-size:16px;';
+  a.textContent = '点击下载 ' + filename;
+  document.body.appendChild(a);
+  
+  // 自动点击下载
+  setTimeout(() => {
+    a.click();
+    
+    // 3秒后移除元素和撤销URL
+    setTimeout(() => {
+      if (a.parentNode) a.parentNode.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 3000);
+  }, 100);
 }
 
 // CSV下载（自动添加BOM）
 function downloadCSV(csvContent, filename) {
   downloadFile('\uFEFF' + csvContent, filename, 'text/csv;charset=utf-8');
-}
-
-function fallbackDownload(url, filename) {
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.style.cssText = 'position:fixed;left:-9999px;';
-  document.body.appendChild(a);
-  a.click();
-  
-  // 延迟移除元素和撤销URL，确保移动端有足够时间开始下载
-  setTimeout(() => {
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, 1000);
-  
-  showToast('导出成功，请检查下载目录', 'success');
 }
 
 function showToast(msg, type = 'info') {
