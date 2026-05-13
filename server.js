@@ -1755,7 +1755,7 @@ async function handleDailyTaskApi(req, res, url, params) {
     
     case 'remove-from-review':
     case 'review-remove': {
-      // 从复习本移出题目（改回一级错题）
+      // 从复习本移出题目（删除记录，需要重新做错才会出现）
       const { student_id, question_id } = allParams;
       if (!student_id || !question_id) {
         sendJson(res, { error: '缺少参数' }, 400);
@@ -1763,7 +1763,7 @@ async function handleDailyTaskApi(req, res, url, params) {
       }
       
       await pool.query(
-        'UPDATE records SET wrong_level = 1 WHERE student_id = $1 AND question_id = $2 AND wrong_level = 0',
+        'DELETE FROM records WHERE student_id = $1 AND question_id = $2 AND wrong_level = 0 AND is_correct = true',
         [student_id, question_id]
       );
       

@@ -8191,10 +8191,13 @@ async function removeFromReview(questionId) {
   if (!confirm('确定将此题移出复习本？移出后需要重新做错才会再次出现。')) return;
   
   try {
-    await dbUpdate('records', 
-      { wrong_level: 1 }, 
-      { student_id: currentUser.username, question_id: questionId }
-    );
+    const res = await fetch('/api/review-remove', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
+      body: JSON.stringify({ student_id: currentUser.username, question_id: questionId })
+    });
+    const result = await res.json();
+    if (!res.ok || result.error) throw new Error(result.error || `HTTP ${res.status}`);
     showToast('已移出复习本', 'success');
     showReviewBook();
   } catch (e) {
@@ -8206,10 +8209,13 @@ async function clearReviewBook() {
   if (!confirm('确定清空复习本？清空后所有题目需要重新做错才会出现。')) return;
   
   try {
-    await dbUpdate('records',
-      { wrong_level: 1 }, 
-      { student_id: currentUser.username, wrong_level: 0 }
-    );
+    const res = await fetch('/api/review-clear', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
+      body: JSON.stringify({ student_id: currentUser.username })
+    });
+    const result = await res.json();
+    if (!res.ok || result.error) throw new Error(result.error || `HTTP ${res.status}`);
     showToast('复习本已清空', 'success');
     showReviewBook();
   } catch (e) {
@@ -8259,24 +8265,31 @@ async function startWrongBookPractice() {
 async function practiceWrongQuestion(qId) {
   const allQ = await dbSelect('questions', { order: ['id', false] });
   const q = allQ.find(x => x.id === qId);
-  if (!q) return;
+  if (!q) {
+    showToast('题目不存在', 'error');
+    return;
+  }
   practiceQuestions = [q];
   practiceIndex = 0;
   practiceAnswered = {};
   practiceMultiSelected = {};
   practiceMode = 'review';
+  // 切换到刷题Tab并渲染
+  _practiceSubTab = 'all';
+  await renderPractice();
   renderPracticeCard();
+  showToast('开始练习复习题', 'success');
 }
 
 async function startReviewPractice() {
   if (!currentUser) return;
   const res = await fetch('/api/review-book', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
     body: JSON.stringify({ student_id: currentUser.username })
   });
   const data = await res.json();
-  const reviewQs = data.questions || [];
+  const reviewQs = data.all || [];
   if (reviewQs.length === 0) {
     showToast('复习本为空！', 'info');
     return;
@@ -8287,6 +8300,9 @@ async function startReviewPractice() {
   practiceAnswered = {};
   practiceMultiSelected = {};
   practiceMode = 'review';
+  // 切换到刷题Tab并渲染
+  _practiceSubTab = 'all';
+  await renderPractice();
   renderPracticeCard();
   showToast(`开始练习 ${practiceQuestions.length} 道复习题！`, 'success');
 }
