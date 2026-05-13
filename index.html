@@ -6630,7 +6630,7 @@ async function renderPracticeSub() {
     practiceMode = 'all';
     practiceIndex = 0;
     
-    // 预加载收藏状态
+    // 预加载收藏状态和错题级别
     const latestRecordByQ = {};
     records.forEach(r => {
       if (!latestRecordByQ[r.question_id] || new Date(r.created_at) > new Date(latestRecordByQ[r.question_id].created_at)) {
@@ -6638,9 +6638,14 @@ async function renderPracticeSub() {
       }
     });
     Object.entries(latestRecordByQ).forEach(([qId, r]) => {
+      // 收藏状态
       if (r.is_fav) {
         practiceAnswered[qId] = practiceAnswered[qId] || {};
         practiceAnswered[qId].isFav = true;
+      }
+      // 错题级别（wrong_level: 0=复习本, 1-3=错题级别, null/undefined=不在错题本）
+      if (r.wrong_level !== null && r.wrong_level !== undefined) {
+        _wrongLevelCache[qId] = r.wrong_level;
       }
     });
   }
@@ -6846,31 +6851,77 @@ function calculateWrongLevel(qId, isCorrect) {
   if (currentLevel === undefined) {
     // 从题目对象获取（如果已加载），兼容 question_id 和 id 两种格式，使用 == 进行类型宽松比较
     const q = practiceQuestions.find(x => x.id == qId || x.question_id == qId);
-    currentLevel = q?.wrong_level || 0;
+    currentLevel = q?.wrong_level ?? -1; // -1 表示不在错题本中
   }
   
+  const currentMode = localStorage.getItem('xjPracticeMode') || 'practice';
+  const isInWrongBook = currentLevel >= 1 && currentLevel <= 3; // 是否在错题本中
+  const isInReview = currentLevel === 0; // 是否在复习本中
+  
   let newLevel;
-  if (isCorrect) {
-    // 答对：降级
-    if (currentLevel === 0) {
-      newLevel = -1; // 复习本题答对，标记为删除（彻底掌握）
-    } else if (currentLevel === 1) {
-      newLevel = 0; // 一级→复习本
-    } else if (currentLevel === 2) {
-      newLevel = 1; // 二级→一级
+  
+  if (currentMode === 'wrong') {
+    // === 错题本模式 ===
+    if (isCorrect) {
+      // 答对：降级
+      if (currentLevel === 1) {
+        newLevel = 0; // 一级→复习本
+      } else if (currentLevel === 2) {
+        newLevel = 1; // 二级→一级
+      } else {
+        newLevel = 2; // 三级→二级
+      }
     } else {
-      newLevel = 2; // 三级→二级
+      // 答错：升级
+      if (currentLevel === 1) {
+        newLevel = 2; // 一级→二级
+      } else if (currentLevel === 2) {
+        newLevel = 3; // 二级→三级
+      } else {
+        newLevel = 3; // 三级保持三级
+      }
+    }
+  } else if (currentMode === 'review') {
+    // === 复习本模式 ===
+    if (isCorrect) {
+      newLevel = -1; // 删除记录（彻底掌握）
+    } else {
+      newLevel = 1; // 做错→一级错题
     }
   } else {
-    // 答错：升级
-    if (currentLevel === 0) {
-      newLevel = 1; // 复习本→一级
-    } else if (currentLevel === 1) {
-      newLevel = 2; // 一级→二级
-    } else if (currentLevel === 2) {
-      newLevel = 3; // 二级→三级
+    // === 正常刷题模式 ===
+    if (isCorrect) {
+      if (isInWrongBook) {
+        // 在错题本中，答对降级
+        if (currentLevel === 1) {
+          newLevel = 0; // 一级→复习本
+        } else if (currentLevel === 2) {
+          newLevel = 1; // 二级→一级
+        } else {
+          newLevel = 2; // 三级→二级
+        }
+      } else if (isInReview) {
+        // 在复习本中，答对删除
+        newLevel = -1;
+      } else {
+        // 不在错题本中，答对不记录
+        newLevel = -1;
+      }
     } else {
-      newLevel = 3; // 三级保持三级
+      // 答错：升级或进入错题本
+      if (isInWrongBook) {
+        // 已在错题本中，升级
+        if (currentLevel === 1) {
+          newLevel = 2; // 一级→二级
+        } else if (currentLevel === 2) {
+          newLevel = 3; // 二级→三级
+        } else {
+          newLevel = 3; // 三级保持三级
+        }
+      } else {
+        // 不在错题本中，第一次做错→一级
+        newLevel = 1;
+      }
     }
   }
   
@@ -6920,13 +6971,22 @@ function answerPractice(qId, letter) {
   practiceAnswered[actualQId] = { answer: letter, isCorrect, isFav: practiceAnswered[actualQId]?.isFav || false };
   // 计算错题级别变化
   const newWrongLevel = calculateWrongLevel(actualQId, isCorrect);
-  // Buffer record for batch insert
-  bufferRecord({ student_id: currentUser.username, question_id: actualQId, is_correct: isCorrect, user_answer: letter, is_fav: false, wrong_level: newWrongLevel });
-  addXp(isCorrect ? XP_REWARDS.correct : XP_REWARDS.wrong, isCorrect ? '答对' : '答题');
-  // 显示级别变化提示
-  if (isCorrect && newWrongLevel === 0) {
-    showToast('🎉 答对！题目已移入复习本', 'success');
+  
+  // 根据级别决定是否保存记录
+  if (newWrongLevel === -1) {
+    // 不在错题本中答对，或复习本题答对，删除记录（如有）
+    delete practiceAnswered[actualQId];
+    dbDelete('records', { student_id: currentUser.username, question_id: actualQId });
+  } else {
+    // 保存/更新记录
+    bufferRecord({ student_id: currentUser.username, question_id: actualQId, is_correct: isCorrect, user_answer: letter, is_fav: false, wrong_level: newWrongLevel });
+    // 显示级别变化提示
+    if (isCorrect && newWrongLevel === 0) {
+      showToast('🎉 答对！题目已移入复习本', 'success');
+    }
   }
+  
+  addXp(isCorrect ? XP_REWARDS.correct : XP_REWARDS.wrong, isCorrect ? '答对' : '答题');
   // 记录答题日志（节流，每10题记录一次）
   if (Object.keys(practiceAnswered).length % 10 === 0) {
     recordLog('answer', { count: Object.keys(practiceAnswered).length });
@@ -6949,14 +7009,17 @@ function confirmMultiAnswer(qId) {
   delete practiceMultiSelected[actualQId];
   // 计算错题级别变化
   const newWrongLevel = calculateWrongLevel(actualQId, isCorrect);
+  const currentMode = localStorage.getItem('xjPracticeMode') || 'practice';
   
-  // 复习本题答对（newWrongLevel === -1）时，删除记录
+  // 不需要保存记录的情况（正常刷题答对不在错题本的题，或复习本题答对）
   if (newWrongLevel === -1) {
     // 从答题记录中移除，不再保存
-    delete practiceAnswered[qId];
-    // 删除数据库中的记录
+    delete practiceAnswered[actualQId];
+    // 删除数据库中的记录（如有）
     dbDelete('records', { student_id: currentUser.username, question_id: actualQId });
-    showToast('🎉 答对！题目已从复习本移除', 'success');
+    if (currentMode === 'review') {
+      showToast('🎉 答对！题目已从复习本移除', 'success');
+    }
   } else {
     bufferRecord({ student_id: currentUser.username, question_id: actualQId, is_correct: isCorrect, user_answer: answer, is_fav: false, wrong_level: newWrongLevel });
     // 显示级别变化提示
