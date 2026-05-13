@@ -2090,6 +2090,46 @@ function hideLoading() {
   document.getElementById('loading-overlay').style.display = 'none';
 }
 
+// 移动端兼容的通用文件下载函数
+function downloadFile(content, filename, mimeType = 'text/csv;charset=utf-8') {
+  const blob = content instanceof Blob ? content : new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  
+  // 方案1: 使用 Web Share API (移动端优先)
+  if (navigator.share && navigator.canShare) {
+    const file = new File([blob], filename, { type: mimeType.split(';')[0] });
+    navigator.share({ files: [file], title: filename })
+      .then(() => showToast('导出成功', 'success'))
+      .catch(() => fallbackDownload(url, filename));
+    return;
+  }
+  
+  // 方案2: 传统下载方式
+  fallbackDownload(url, filename);
+}
+
+// CSV下载（自动添加BOM）
+function downloadCSV(csvContent, filename) {
+  downloadFile('\uFEFF' + csvContent, filename, 'text/csv;charset=utf-8');
+}
+
+function fallbackDownload(url, filename) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.style.cssText = 'position:fixed;left:-9999px;';
+  document.body.appendChild(a);
+  a.click();
+  
+  // 延迟移除元素和撤销URL，确保移动端有足够时间开始下载
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 1000);
+  
+  showToast('导出成功，请检查下载目录', 'success');
+}
+
 function showToast(msg, type = 'info') {
   const container = document.getElementById('toast-container');
   const el = document.createElement('div');
@@ -3606,10 +3646,7 @@ function exportExamCSV(examId) {
       rows.push([st?.nickname||sid, sid, s.correct, s.total, pct+'%']);
     });
     const csv = rows.map(r => r.join(',')).join('\n');
-    const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `${exam.title}_成绩.csv`; a.click();
-    URL.revokeObjectURL(url);
+    downloadCSV(csv, `${exam.title}_成绩.csv`);
     showToast('导出成功', 'success');
   }, 100);
 }
@@ -3910,11 +3947,7 @@ function exportQuickExamCSV(examId) {
       rows.push([idx+1, s.guestName||'', s.phone, s.correct, s.total, pct+'%', pct>=passRate?'通过':'未通过']);
     });
     const csv = rows.map(r => r.join(',')).join('\n');
-    const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `${exam.title}_成绩.csv`; a.click();
-    URL.revokeObjectURL(url);
-    showToast('导出成功', 'success');
+    downloadCSV(csv, `${exam.title}_成绩.csv`);
   }, 100);
 }
 
@@ -4454,15 +4487,8 @@ function exportEnrollmentCSV() {
     e.status === 'approved' ? '已导入' : '待审核'
   ]);
   
-  const csv = [headers.join('\t'), ...rows.map(r => r.join('\t'))].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `报名列表_${_currentEnrollmentConfig.title}_${new Date().toISOString().slice(0,10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-  showToast('导出成功', 'success');
+  const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+  downloadCSV(csv, `报名列表_${_currentEnrollmentConfig.title}_${new Date().toISOString().slice(0,10)}.csv`);
 }
 
 
@@ -5360,13 +5386,7 @@ function exportLearningCSV() {
   const rows = learningRankData.map((s, i) =>
     `${i+1},"${s.nickname}","${s.cohort||''}","${s.level||''}",${s.total},${s.correct},${s.total > 0 ? Math.round(s.correct/s.total*100) : 0}%,${s.streak}`
   ).join('\n');
-  const bom = '\uFEFF';
-  const blob = new Blob([bom + header + rows], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = `学情排行_${learningDate || 'export'}.csv`;
-  a.click(); URL.revokeObjectURL(url);
-  showToast('导出成功', 'success');
+  downloadCSV(header + rows, `学情排行_${learningDate || 'export'}.csv`);
 }
 
 // ===== QR Code Modal =====
@@ -10893,13 +10913,7 @@ async function doDatabaseExport() {
       ...data
     };
     
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `exam_backup_${new Date().toISOString().slice(0,10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadFile(JSON.stringify(exportData, null, 2), `exam_backup_${new Date().toISOString().slice(0,10)}.json`, 'application/json');
     
     progress.style.display = 'none';
     result.innerHTML = `
