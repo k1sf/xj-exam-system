@@ -1812,6 +1812,25 @@ function checkSession() {
   currentLevel = level;
   return { role, user, admin, level };
 }
+function showHelpModal() {
+  showHelp('student');
+}
+async function switchLevel(newLevel) {
+  if (!currentUser || !currentUser.can_change_level) {
+    alert('您的账号不允许切换级别，如需修改请联系管理员');
+    return;
+  }
+  if (newLevel === currentLevel) return;
+  if (!confirm(`确定要切换到「${newLevel}」吗？\n切换后将按新级别显示题目和考试。`)) return;
+  currentLevel = newLevel;
+  currentUser.level = newLevel;
+  localStorage.setItem('xjLevel', newLevel);
+  // 更新数据库
+  await dbUpdate('students', { data: { level: newLevel }, match: { username: currentUser.username } });
+  // 刷新当前页面
+  if (typeof renderStudentView === 'function') renderStudentView();
+  alert('级别已切换为「' + newLevel + '」');
+}
 function clearLogin() {
   localStorage.removeItem('xjRole');
   localStorage.removeItem('xjExpiry');
@@ -2429,6 +2448,7 @@ function renderAdmin() {
       <div class="admin-topbar">
         <div class="admin-topbar-title">${adminName}${masterBadge}</div>
         <div class="admin-topbar-actions">
+          <button class="admin-topbar-qrcode" onclick="syncAll()" style="font-size:0.75rem">🔄 同步</button>
           <button class="admin-topbar-qrcode" onclick="showQrModal()" style="font-size:0.75rem">📋 二维码</button>
           <button class="admin-topbar-logout" onclick="handleLogout()">退出</button>
         </div>
@@ -5717,10 +5737,34 @@ async function adminChangePwd() {
 
 // ===== Student Page =====
 function levelSwitchHtml() {
-  const canChange = currentUser && currentUser.can_change_level === true;
   const sLv = currentUser?.study_level || 1;
   const sIcon = studyLevelIcon(sLv);
-  return `<span style="display:flex;align-items:center;gap:4px"><span style="font-size:.75rem;background:rgba(255,255,255,.2);padding:1px 6px;border-radius:8px">${sIcon} Lv.${sLv}</span> ${LEVEL_ICONS[currentLevel]||''} ${escHtml(currentLevel)}</span>`;
+  return `<span style="display:flex;align-items:center;gap:4px"><span style="font-size:.75rem;background:rgba(255,255,255,.2);padding:1px 6px;border-radius:8px">${sIcon} Lv.${sLv}</span></span>`;
+}
+
+function syncData() {
+  if (!navigator.onLine) {
+    alert('网络不可用，请检查网络连接');
+    return;
+  }
+  // 显示同步中状态
+  const syncBtn = document.getElementById('syncBtn');
+  if (syncBtn) {
+    syncBtn.textContent = '同步中...';
+    syncBtn.disabled = true;
+  }
+  
+  // 清除缓存并重新加载
+  cacheClearAll();
+  flushXpSync();
+  
+  setTimeout(() => {
+    if (syncBtn) {
+      syncBtn.textContent = '同步';
+      syncBtn.disabled = false;
+    }
+    alert('同步完成');
+  }, 500);
 }
 
 // ===== Student Homework Functions =====
@@ -6529,7 +6573,10 @@ function renderStudent() {
     <div class="student-page">
       <div style="background:linear-gradient(135deg,var(--primary),#7c3aed);color:#fff;padding:8px 16px;font-size:0.82rem;display:flex;align-items:center;justify-content:space-between">
         <div style="display:flex;align-items:center;gap:8px">${levelSwitchHtml()}</div>
-        <button onclick="handleLogout()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#fff;padding:3px 10px;font-size:0.78rem;cursor:pointer">退出</button>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button id="syncBtn" onclick="syncData()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#fff;padding:3px 10px;font-size:0.78rem;cursor:pointer">同步</button>
+          <button onclick="handleLogout()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#fff;padding:3px 10px;font-size:0.78rem;cursor:pointer">退出</button>
+        </div>
       </div>
       <div class="student-content" id="studentContent"></div>
       <div class="student-tabbar">
@@ -8049,17 +8096,16 @@ async function renderProfile() {
       </div>
     </div>
     <div class="card" style="animation-delay:0.4s;margin-top:12px">
-      <div class="card-title">🔐 修改密码</div>
-      <div style="display:flex;flex-direction:column;gap:10px">
-        <input class="input" type="password" id="oldPwd" placeholder="当前密码">
-        <input class="input" type="password" id="newPwd" placeholder="新密码（至少6位）">
-        <input class="input" type="password" id="confirmPwd" placeholder="确认新密码">
-        <button class="btn btn-primary btn-full" onclick="changePassword()">修改密码</button>
-      </div>
-    </div>
-    <div class="card" style="animation-delay:0.5s;margin-top:12px">
-      <div class="card-title">⚙️ 显示设置</div>
+      <div class="card-title">⚙️ 设置</div>
       <div style="display:flex;flex-direction:column;gap:12px">
+        ${currentUser.can_change_level ? `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:8px;border-bottom:1px solid var(--border)">
+          <span>📊 级别切换</span>
+          <select class="input" style="width:auto;padding:4px 8px;font-size:.85rem" onchange="switchLevel(this.value)">
+            ${['初级','中级','高级','技师','高级技师'].map(l => `<option value="${l}" ${l === currentLevel ? 'selected' : ''}>${LEVEL_ICONS[l]||''} ${l}</option>`).join('')}
+          </select>
+        </div>
+        ` : ''}
         <div style="display:flex;align-items:center;justify-content:space-between">
           <span>🌙 暗色模式</span>
           <label class="switch"><input type="checkbox" id="profileDarkMode" onchange="toggleDarkMode(this.checked)"><span class="slider"></span></label>
@@ -8068,6 +8114,16 @@ async function renderProfile() {
           <span>🔤 大字版</span>
           <label class="switch"><input type="checkbox" id="profileLargeFont" onchange="toggleLargeText(this.checked)"><span class="slider"></span></label>
         </div>
+        <button class="btn" style="background:var(--bg);border:1px solid var(--border);margin-top:4px" onclick="showHelpModal()">📖 帮助文档</button>
+      </div>
+    </div>
+    <div class="card" style="animation-delay:0.5s;margin-top:12px">
+      <div class="card-title">🔐 修改密码</div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <input class="input" type="password" id="oldPwd" placeholder="当前密码">
+        <input class="input" type="password" id="newPwd" placeholder="新密码（至少6位）">
+        <input class="input" type="password" id="confirmPwd" placeholder="确认新密码">
+        <button class="btn btn-primary btn-full" onclick="changePassword()">修改密码</button>
       </div>
     </div>
 
