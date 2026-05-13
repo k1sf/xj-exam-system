@@ -6619,20 +6619,19 @@ async function renderPracticeSub() {
     practiceMode = 'all';
     practiceIndex = 0;
     
-    // 预加载收藏状态（统一使用字符串键）
+    // 预加载收藏状态（统一使用字符串键，根据最新记录确定状态）
     const latestRecordByQ = {};
     records.forEach(r => {
-      if (!latestRecordByQ[r.question_id] || new Date(r.created_at) > new Date(latestRecordByQ[r.question_id].created_at)) {
+      const existing = latestRecordByQ[r.question_id];
+      if (!existing || new Date(r.created_at) > new Date(existing.created_at)) {
         latestRecordByQ[r.question_id] = r;
       }
     });
     Object.entries(latestRecordByQ).forEach(([qId, r]) => {
-      // 收藏状态 - 统一使用字符串键
-      if (r.is_fav) {
-        const key = String(qId);
-        practiceAnswered[key] = practiceAnswered[key] || {};
-        practiceAnswered[key].isFav = true;
-      }
+      // 收藏状态 - 统一使用字符串键，无论 true 还是 false 都设置
+      const key = String(qId);
+      practiceAnswered[key] = practiceAnswered[key] || {};
+      practiceAnswered[key].isFav = !!r.is_fav;
     });
   }
   
@@ -6675,8 +6674,19 @@ async function switchPracticeMode(mode) {
 
   switch(mode) {
     case 'fav': {
-      const favQIds = [...new Set(records.filter(r => r.is_fav).map(r => r.question_id))];
-      practiceQuestions = allQ.filter(q => favQIds.includes(q.id));
+      // 先获取每道题目的最新记录，然后筛选收藏的题目
+      const latestRecordByQ = {};
+      records.forEach(r => {
+        const existing = latestRecordByQ[r.question_id];
+        if (!existing || new Date(r.created_at) > new Date(existing.created_at)) {
+          latestRecordByQ[r.question_id] = r;
+        }
+      });
+      // 统一转换为数字类型进行比较
+      const favQIds = Object.entries(latestRecordByQ)
+        .filter(([, r]) => r.is_fav)
+        .map(([qId]) => Number(qId));
+      practiceQuestions = allQ.filter(q => favQIds.includes(Number(q.id)));
       break;
     }
     case 'random': {
@@ -6820,8 +6830,9 @@ function answerPractice(qId, letter) {
   const isCorrect = checkAnswer(letter, q.answer, q.type);
   practiceAnswered[actualQId] = { answer: letter, isCorrect, isFav: practiceAnswered[actualQId]?.isFav || false };
   
-  // 保存答题记录
-  bufferRecord({ student_id: currentUser.username, question_id: actualQId, is_correct: isCorrect, user_answer: letter, is_fav: false });
+  // 保存答题记录（保留现有收藏状态）
+  const currentFav = practiceAnswered[actualQId]?.isFav || false;
+  bufferRecord({ student_id: currentUser.username, question_id: actualQId, is_correct: isCorrect, user_answer: letter, is_fav: currentFav });
   
   addXp(isCorrect ? XP_REWARDS.correct : XP_REWARDS.wrong, isCorrect ? '答对' : '答题');
   // 记录答题日志（节流，每10题记录一次）
@@ -6845,8 +6856,9 @@ function confirmMultiAnswer(qId) {
   practiceAnswered[actualQId] = { answer, isCorrect, isFav: practiceAnswered[actualQId]?.isFav || false };
   delete practiceMultiSelected[actualQId];
   
-  // 保存答题记录
-  bufferRecord({ student_id: currentUser.username, question_id: actualQId, is_correct: isCorrect, user_answer: answer, is_fav: false });
+  // 保存答题记录（保留现有收藏状态）
+  const currentFav = practiceAnswered[actualQId]?.isFav || false;
+  bufferRecord({ student_id: currentUser.username, question_id: actualQId, is_correct: isCorrect, user_answer: answer, is_fav: currentFav });
   
   addXp(isCorrect ? XP_REWARDS.correct : XP_REWARDS.wrong, isCorrect ? '答对' : '答题');
   renderPracticeCard();
@@ -7917,6 +7929,26 @@ async function viewExamResult(examId) {
 
 async function renderProfile() {
   if (!currentUser) return;
+  
+  // 加载统计数据
+  const records = await dbSelect('records', { eq: { student_id: currentUser.username }, cacheBypass: true });
+  
+  // 计算每道题目的最新记录（用于收藏状态）
+  const latestRecordByQ = {};
+  records.forEach(r => {
+    const existing = latestRecordByQ[r.question_id];
+    if (!existing || new Date(r.created_at) > new Date(existing.created_at)) {
+      latestRecordByQ[r.question_id] = r;
+    }
+  });
+  
+  // 统计数据
+  const totalCount = Object.keys(latestRecordByQ).length;
+  const wrongCount = Object.values(latestRecordByQ).filter(r => !r.is_correct).length;
+  const favCount = Object.values(latestRecordByQ).filter(r => r.is_fav).length;
+  const correctCount = totalCount - wrongCount;
+  const pct = totalCount > 0 ? Math.round(correctCount / totalCount * 100) : 0;
+  
   const sLv = currentUser ? Math.min(currentUser.study_level || 1, 30) : 1;
   const sIcon = studyLevelIcon(sLv);
   const sTitle = studyLevelTitle(sLv);
