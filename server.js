@@ -1663,29 +1663,24 @@ async function handleDailyTaskApi(req, res, url, params) {
       // 获取当前学生的排名
       let myRank = null;
       if (my_student_id) {
-        // my_student_id可能是uuid或手机号，需要查找对应的username
-        const myStudentResult = await pool.query(`
-          SELECT username FROM students WHERE id = $1 OR username = $1
-        `, [my_student_id]);
-        
-        if (myStudentResult.rows.length > 0) {
-          const myUsername = myStudentResult.rows[0].username;
-          const myRankResult = await pool.query(`
-            WITH ranked AS (
-              SELECT s.username, 
-                     COUNT(r.id) as total_questions,
-                     RANK() OVER (ORDER BY COUNT(r.id) DESC) as rank
-              FROM students s
-              LEFT JOIN records r ON r.student_id = s.username ${dateFilter.replace('AND', 'AND')}
-              WHERE s.status = 'active'
-              ${level ? `AND s.level = $1` : ''}
-              GROUP BY s.username
-              HAVING COUNT(r.id) > 0
-            )
-            SELECT rank FROM ranked WHERE username = $2
-          `, level ? [level, myUsername] : [myUsername]);
-          myRank = myRankResult.rows[0]?.rank || null;
-        }
+        // my_student_id 是手机号，直接用 username 匹配
+        const myUsername = my_student_id;
+        const placeholder = level ? '$2' : '$1';
+        const myRankResult = await pool.query(`
+          WITH ranked AS (
+            SELECT s.username, 
+                   COUNT(r.id) as total_questions,
+                   RANK() OVER (ORDER BY COUNT(r.id) DESC) as rank
+            FROM students s
+            LEFT JOIN records r ON r.student_id = s.username ${dateFilter.replace('AND', 'AND')}
+            WHERE s.status = 'active'
+            ${level ? `AND s.level = $1` : ''}
+            GROUP BY s.username
+            HAVING COUNT(r.id) > 0
+          )
+          SELECT rank FROM ranked WHERE username = ${placeholder}
+        `, level ? [level, myUsername] : [myUsername]);
+        myRank = myRankResult.rows[0]?.rank || null;
       }
       
       sendJson(res, {

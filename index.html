@@ -8081,7 +8081,9 @@ async function loadTaskProgressInProfile() {
   
   try {
     // student_id 存储的是手机号(username)
-    const res = await fetch(`/api/daily-task/status?student_id=${currentUser.username}`);
+    const res = await fetch(`/api/daily-task/status?student_id=${currentUser.username}`, {
+      headers: { 'X-API-Token': API_TOKEN }
+    });
     const task = await res.json();
     
     const container = document.getElementById('taskProgressContent');
@@ -8234,7 +8236,9 @@ async function loadRanking(period = 'today') {
   container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3)"><span class="spinner"></span> 加载排名...</div>';
   
   try {
-    const res = await fetch(`/api/daily-task/ranking?period=${period}&level=${currentLevel}&my_student_id=${currentUser.username}`);
+    const res = await fetch(`/api/daily-task/ranking?period=${period}&level=${currentLevel}&my_student_id=${currentUser.username}`, {
+      headers: { 'X-API-Token': API_TOKEN }
+    });
     const data = await res.json();
     
     const periodLabels = { today: '今日', week: '本周', month: '本月' };
