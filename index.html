@@ -3920,7 +3920,8 @@ function exportQuickExamCSV(examId) {
   if (!exam) return;
   showToast('正在生成...', 'info');
   setTimeout(async () => {
-    const recs = await dbSelect('records', { eq: { exam_id: examId } });
+    const examIdNum = Number(examId);
+    const recs = await dbSelect('records', { eq: { exam_id: examIdNum } });
     const scoreMap = {};
     recs.forEach(r => {
       const key = r.student_id;
