@@ -1226,11 +1226,11 @@ async function syncAll() {
 // 立即同步（用于关键操作）
 async function syncImmediately() {
   await syncAll();
-  // 清除所有相关缓存
-  cacheRemoveAnywhere('records');
-  cacheRemoveAnywhere('students');
-  cacheRemoveAnywhere('questions');
-  cacheRemoveAnywhere('exams');
+  // 清除所有相关缓存（使用 cacheClearTable 彻底清除，确保刷新时获取最新数据）
+  cacheClearTable('records');
+  cacheClearTable('students');
+  cacheClearTable('questions');
+  cacheClearTable('exams');
 }
 
 // ===== Exam Mode Control =====
@@ -1370,7 +1370,12 @@ function refreshCurrentView() {
     let activeTab = 'practice';
     tabs.forEach(t => { if (t.classList.contains('active')) activeTab = t.dataset.tab; });
     switch(activeTab) {
-      case 'practice': renderPractice(); break;
+      case 'practice': 
+        // 强制重新加载题目和收藏状态
+        practiceQuestions = null;
+        practiceAnswered = {};
+        renderPractice(); 
+        break;
       case 'exam': renderStudentExam(); break;
       case 'profile': renderProfile(); break;
     }
@@ -6680,14 +6685,11 @@ async function renderPracticeSub() {
   if (!practiceQuestions || practiceQuestions.length === 0) {
     container.innerHTML = `<div style="text-align:center;padding:40px"><div class="spinner-lg" style="margin:0 auto"></div><div style="margin-top:12px;color:var(--text2)">加载题目...</div></div>`;
     
-    const allQ = await dbSelect('questions', { eq: { level: currentLevel }, order: ['id', false] });
-    const records = await dbSelect('records', { eq: { student_id: currentUser.username } });
+    // 保存当前模式，以便重新加载后恢复
+    const savedMode = practiceMode || 'all';
     
-    practiceQuestions = allQ || [];
-    practiceAnswered = {};
-    practiceMultiSelected = {};
-    practiceMode = 'all';
-    practiceIndex = 0;
+    const allQ = await dbSelect('questions', { eq: { level: currentLevel }, order: ['id', false] });
+    const records = await dbSelect('records', { eq: { student_id: currentUser.username }, cacheBypass: true });
     
     // 预加载收藏状态（统一使用字符串键，根据最新记录确定状态）
     const latestRecordByQ = {};
@@ -6697,12 +6699,32 @@ async function renderPracticeSub() {
         latestRecordByQ[r.question_id] = r;
       }
     });
+    
+    // 先初始化 practiceAnswered
+    practiceAnswered = {};
     Object.entries(latestRecordByQ).forEach(([qId, r]) => {
-      // 收藏状态 - 统一使用字符串键，无论 true 还是 false 都设置
       const key = String(qId);
-      practiceAnswered[key] = practiceAnswered[key] || {};
-      practiceAnswered[key].isFav = !!r.is_fav;
+      practiceAnswered[key] = { isFav: !!r.is_fav };
     });
+    
+    // 根据 savedMode 过滤题目
+    practiceMode = savedMode;
+    if (savedMode === 'fav') {
+      // 收藏模式：只显示收藏的题目
+      const favQIds = Object.entries(latestRecordByQ)
+        .filter(([, r]) => r.is_fav)
+        .map(([qId]) => Number(qId));
+      practiceQuestions = (allQ || []).filter(q => favQIds.includes(Number(q.id)));
+    } else if (savedMode === 'random') {
+      // 随机模式：打乱顺序
+      practiceQuestions = [...(allQ || [])].sort(() => Math.random() - 0.5);
+    } else {
+      // 全部模式
+      practiceQuestions = allQ || [];
+    }
+    
+    practiceMultiSelected = {};
+    practiceIndex = 0;
   }
   
   // 渲染刷题界面
@@ -6994,8 +7016,25 @@ async function toggleFav(qId) {
     if (!practiceAnswered[qIdStr]) practiceAnswered[qIdStr] = {};
     practiceAnswered[qIdStr].isFav = isFav;
     if (isFav) addXp(XP_REWARDS.fav, '收藏');
-    // 立即刷新卡片以更新收藏按钮状态
-    renderPracticeCard();
+    
+    // 在收藏夹模式下取消收藏时，立即从列表中移除该题目
+    if (practiceMode === 'fav' && !isFav) {
+      const idx = practiceQuestions.findIndex(q => String(q.id || q.question_id) === qIdStr);
+      if (idx !== -1) {
+        practiceQuestions.splice(idx, 1);
+        // 如果移除的是当前题目，调整索引
+        if (idx < practiceIndex) {
+          practiceIndex--;
+        } else if (idx === practiceIndex && practiceIndex >= practiceQuestions.length) {
+          practiceIndex = Math.max(0, practiceQuestions.length - 1);
+        }
+      }
+      // 重新渲染整个练习界面
+      renderPracticeCard();
+    } else {
+      // 其他情况只刷新当前卡片
+      renderPracticeCard();
+    }
   } else {
     // 新建收藏记录，进入缓冲区统一处理
     const newRecord = { student_id: currentUser.username, question_id: qIdStr, is_correct: false, user_answer: '', is_fav: true };
