@@ -1753,8 +1753,9 @@ async function handleDailyTaskApi(req, res, url, params) {
       break;
     }
     
-    case 'remove-from-review': {
-      // 从复习本移除题目（删除记录）
+    case 'remove-from-review':
+    case 'review-remove': {
+      // 从复习本移出题目（改回一级错题）
       const { student_id, question_id } = allParams;
       if (!student_id || !question_id) {
         sendJson(res, { error: '缺少参数' }, 400);
@@ -1762,7 +1763,7 @@ async function handleDailyTaskApi(req, res, url, params) {
       }
       
       await pool.query(
-        'DELETE FROM records WHERE student_id = $1 AND question_id = $2',
+        'UPDATE records SET wrong_level = 1 WHERE student_id = $1 AND question_id = $2 AND wrong_level = 0',
         [student_id, question_id]
       );
       
@@ -1770,7 +1771,8 @@ async function handleDailyTaskApi(req, res, url, params) {
       break;
     }
     
-    case 'clear-review-book': {
+    case 'clear-review-book':
+    case 'review-clear': {
       // 清空复习本
       const { student_id } = allParams;
       if (!student_id) {

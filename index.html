@@ -8151,11 +8151,11 @@ async function showReviewBook() {
         .dark .review-item { background:#2d3748; }
       </style>
       
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
         <button class="btn btn-sm btn-outline" onclick="switchStudentSubTab('wrongBook')">⬅️ 返回错题本</button>
         <span style="font-weight:600">📖 复习本</span>
         <span style="font-size:.8rem;color:#6b7280">(${reviews.length}题)</span>
-        ${reviews.length > 0 ? `<button class="btn btn-sm btn-outline" style="margin-left:auto" onclick="clearReviewBook()">🗑️ 清空</button>` : ''}
+        ${reviews.length > 0 ? `<button class="btn btn-sm btn-primary" style="margin-left:auto" onclick="startReviewPractice()">📝 一键做题</button><button class="btn btn-sm btn-outline" onclick="clearReviewBook()">🗑️ 清空</button>` : ''}
       </div>
       
       <div style="font-size:.75rem;color:#6b7280;margin-bottom:12px;padding:8px;background:#f0fdf4;border-radius:6px;border-left:3px solid #10b981">
@@ -8192,7 +8192,8 @@ async function removeFromReview(questionId) {
   
   try {
     await dbUpdate('records', 
-      { data: { wrong_level: 1 }, match: { student_id: currentUser.username, question_id: questionId } }
+      { wrong_level: 1 }, 
+      { student_id: currentUser.username, question_id: questionId }
     );
     showToast('已移出复习本', 'success');
     showReviewBook();
@@ -8206,7 +8207,8 @@ async function clearReviewBook() {
   
   try {
     await dbUpdate('records',
-      { data: { wrong_level: 1 }, match: { student_id: currentUser.username, wrong_level: 0 } }
+      { wrong_level: 1 }, 
+      { student_id: currentUser.username, wrong_level: 0 }
     );
     showToast('复习本已清空', 'success');
     showReviewBook();
@@ -8262,8 +8264,31 @@ async function practiceWrongQuestion(qId) {
   practiceIndex = 0;
   practiceAnswered = {};
   practiceMultiSelected = {};
-  practiceMode = 'wrong';
+  practiceMode = 'review';
   renderPracticeCard();
+}
+
+async function startReviewPractice() {
+  if (!currentUser) return;
+  const res = await fetch('/api/review-book', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ student_id: currentUser.username })
+  });
+  const data = await res.json();
+  const reviewQs = data.questions || [];
+  if (reviewQs.length === 0) {
+    showToast('复习本为空！', 'info');
+    return;
+  }
+  const allQ = await dbSelect('questions', { order: ['id', false] });
+  practiceQuestions = reviewQs.map(r => allQ.find(q => q.id === r.question_id)).filter(Boolean);
+  practiceIndex = 0;
+  practiceAnswered = {};
+  practiceMultiSelected = {};
+  practiceMode = 'review';
+  renderPracticeCard();
+  showToast(`开始练习 ${practiceQuestions.length} 道复习题！`, 'success');
 }
 
 async function renderProfile() {
