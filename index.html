@@ -6617,7 +6617,7 @@ async function renderPracticeSub() {
     return;
   }
   
-  // 初始化题目数据（首次加载）
+  // 初始化题目数据（首次加载，且不是错题/复习模式）
   if (!practiceQuestions || practiceQuestions.length === 0) {
     container.innerHTML = `<div style="text-align:center;padding:40px"><div class="spinner-lg" style="margin:0 auto"></div><div style="margin-top:12px;color:var(--text2)">加载题目...</div></div>`;
     
@@ -6645,20 +6645,47 @@ async function renderPracticeSub() {
     });
   }
   
+  // 检查是否是错题/复习模式，如果是则不显示模式切换按钮
+  const isSpecialMode = practiceMode === 'wrong' || practiceMode === 'review';
+  const modeLabel = practiceMode === 'wrong' ? '❌ 错题练习' : (practiceMode === 'review' ? '📖 复习练习' : '');
+  
   // 渲染刷题界面
-  const modes = [
-    { key: 'all', label: '全部', icon: '📝' },
-    { key: 'fav', label: '收藏', icon: '⭐' },
-    { key: 'random', label: '随机', icon: '🎲' }
-  ];
-  const modeBtns = modes.map(m => `<button class="mode-btn ${practiceMode===m.key?'active':''}" onclick="switchPracticeMode('${m.key}')">${m.icon} ${m.label}</button>`).join('');
+  let headerHtml = '';
+  if (isSpecialMode) {
+    headerHtml = `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <button class="btn btn-sm btn-outline" onclick="backToNormalPractice()">⬅️ 返回</button>
+        <span style="font-weight:600">${modeLabel}</span>
+        <span style="font-size:.8rem;color:#6b7280">(${practiceQuestions.length}题)</span>
+      </div>
+    `;
+  } else {
+    const modes = [
+      { key: 'all', label: '全部', icon: '📝' },
+      { key: 'fav', label: '收藏', icon: '⭐' },
+      { key: 'random', label: '随机', icon: '🎲' }
+    ];
+    const modeBtns = modes.map(m => `<button class="mode-btn ${practiceMode===m.key?'active':''}" onclick="switchPracticeMode('${m.key}')">${m.icon} ${m.label}</button>`).join('');
+    headerHtml = `<div class="practice-modes">${modeBtns}</div>`;
+  }
+  
   container.innerHTML = `
     <div id="homeworkBanner"></div>
-    <div class="practice-modes">${modeBtns}</div>
+    ${headerHtml}
     <div id="practiceCardArea"></div>
   `;
   loadStudentHomework();
   renderPracticeCard();
+}
+
+// 返回普通刷题模式
+async function backToNormalPractice() {
+  practiceMode = 'all';
+  practiceIndex = 0;
+  practiceAnswered = {};
+  practiceMultiSelected = {};
+  practiceQuestions = [];
+  await renderPracticeSub();
 }
 
 async function renderWrongBookSub() {
@@ -6744,7 +6771,9 @@ function renderPracticeCard() {
   }
 
   const q = practiceQuestions[practiceIndex];
-  const answered = practiceAnswered[q.id];
+  // 确保 ID 存在（兼容错题数据中的 question_id 字段）
+  const qId = q.id || q.question_id;
+  const answered = practiceAnswered[qId];
   const progress = ((practiceIndex + 1) / practiceQuestions.length * 100).toFixed(1);
 
   // Normalize options
@@ -6759,7 +6788,7 @@ function renderPracticeCard() {
   const typeMap = { single: ['单选', 'tag-blue'], multiple: ['多选', 'tag-purple'], judge: ['判断', 'tag-green'] };
   const [typeLabel, typeClass] = typeMap[q.type] || ['未知', 'tag-gray'];
   const isMulti = q.type === 'multiple';
-  const multiSel = practiceMultiSelected[q.id] || {};
+  const multiSel = practiceMultiSelected[qId] || {};
 
   const isAnswered = answered && answered.isCorrect !== undefined;
   const optHtml = options.map((opt, oi) => {
@@ -6778,14 +6807,14 @@ function renderPracticeCard() {
     } else if (isMulti && multiSel[opt.letter]) {
       cls += ' selected';
     }
-    return `<button class="${cls}" data-idx="${oi}" data-letter="${opt.letter}" onclick="answerPractice(${q.id},'${opt.letter}')">${icon}<span>${opt.letter}. ${escHtml(opt.text)}</span></button>`;
+    return `<button class="${cls}" data-idx="${oi}" data-letter="${opt.letter}" onclick="answerPractice(${qId},'${opt.letter}')">${icon}<span>${opt.letter}. ${escHtml(opt.text)}</span></button>`;
   }).join('');
 
   const favActive = answered?.isFav ? 'active' : '';
   const analysisHtml = isAnswered && q.analysis ? `
     <div class="analysis-box"><span class="analysis-icon">💡</span>${escHtml(q.analysis)}</div>
   ` : '';
-  const multiConfirmHtml = isMulti && !isAnswered ? `<div class="confirm-submit-bar"><button class="multi-confirm-btn" onclick="confirmMultiAnswer(${q.id})">确认提交</button></div>` : '';
+  const multiConfirmHtml = isMulti && !isAnswered ? `<div class="confirm-submit-bar"><button class="multi-confirm-btn" onclick="confirmMultiAnswer(${qId})">确认提交</button></div>` : '';
 
   area.innerHTML = `
     <div class="practice-card">
@@ -6798,7 +6827,7 @@ function renderPracticeCard() {
       ${analysisHtml}
       <div class="practice-actions">
         <button class="btn btn-outline" onclick="practicePrev()" ${practiceIndex===0?'disabled':''}>上一题</button>
-        <button class="btn fav-btn ${favActive}" onclick="toggleFav(${q.id})" aria-label="收藏">${answered?.isFav?'⭐':'☆'}</button>
+        <button class="btn fav-btn ${favActive}" onclick="toggleFav(${qId})" aria-label="收藏">${answered?.isFav?'⭐':'☆'}</button>
         <button class="btn btn-primary" onclick="practiceNext()">下一题</button>
       </div>
     </div>
@@ -6815,8 +6844,8 @@ function calculateWrongLevel(qId, isCorrect) {
   // 从缓存或题目中获取当前级别
   let currentLevel = _wrongLevelCache[qId];
   if (currentLevel === undefined) {
-    // 从题目对象获取（如果已加载）
-    const q = practiceQuestions.find(x => x.id === qId);
+    // 从题目对象获取（如果已加载），兼容 question_id 和 id 两种格式
+    const q = practiceQuestions.find(x => x.id === qId || x.question_id === qId);
     currentLevel = q?.wrong_level || 0;
   }
   
@@ -6861,17 +6890,21 @@ function checkAnswer(userAnswer, correctAnswer, questionType) {
 }
 
 function answerPractice(qId, letter) {
-  const q = practiceQuestions.find(x => x.id === qId);
+  // 兼容 question_id 和 id 两种格式
+  const q = practiceQuestions.find(x => x.id === qId || x.question_id === qId);
   if (!q) return;
+  
+  // 使用统一的 ID（优先使用 id，其次使用 question_id）
+  const actualQId = q.id || q.question_id;
 
   if (q.type === 'multiple') {
     // Multi-select: toggle selection - update DOM locally, no full re-render
-    if (!practiceMultiSelected[qId]) practiceMultiSelected[qId] = {};
-    practiceMultiSelected[qId][letter] = !practiceMultiSelected[qId][letter];
+    if (!practiceMultiSelected[actualQId]) practiceMultiSelected[actualQId] = {};
+    practiceMultiSelected[actualQId][letter] = !practiceMultiSelected[actualQId][letter];
     // Update only the clicked option button's CSS class
     const btn = document.querySelector(`#optionsArea .opt-btn[data-letter="${letter}"]`);
     if (btn) {
-      if (practiceMultiSelected[qId][letter]) {
+      if (practiceMultiSelected[actualQId][letter]) {
         btn.classList.add('selected');
       } else {
         btn.classList.remove('selected');
@@ -6881,14 +6914,14 @@ function answerPractice(qId, letter) {
   }
 
   // Single/Judge: immediate answer - full re-render to show result
-  if (practiceAnswered[qId] && practiceAnswered[qId].isCorrect !== undefined) return;
+  if (practiceAnswered[actualQId] && practiceAnswered[actualQId].isCorrect !== undefined) return;
 
   const isCorrect = checkAnswer(letter, q.answer, q.type);
-  practiceAnswered[qId] = { answer: letter, isCorrect, isFav: practiceAnswered[qId]?.isFav || false };
+  practiceAnswered[actualQId] = { answer: letter, isCorrect, isFav: practiceAnswered[actualQId]?.isFav || false };
   // 计算错题级别变化
-  const newWrongLevel = calculateWrongLevel(qId, isCorrect);
+  const newWrongLevel = calculateWrongLevel(actualQId, isCorrect);
   // Buffer record for batch insert
-  bufferRecord({ student_id: currentUser.username, question_id: qId, is_correct: isCorrect, user_answer: letter, is_fav: false, wrong_level: newWrongLevel });
+  bufferRecord({ student_id: currentUser.username, question_id: actualQId, is_correct: isCorrect, user_answer: letter, is_fav: false, wrong_level: newWrongLevel });
   addXp(isCorrect ? XP_REWARDS.correct : XP_REWARDS.wrong, isCorrect ? '答对' : '答题');
   // 显示级别变化提示
   if (isCorrect && newWrongLevel === 0) {
@@ -6903,17 +6936,20 @@ function answerPractice(qId, letter) {
 }
 
 function confirmMultiAnswer(qId) {
-  const q = practiceQuestions.find(x => x.id === qId);
+  // 兼容 question_id 和 id 两种格式
+  const q = practiceQuestions.find(x => x.id === qId || x.question_id === qId);
   if (!q) return;
-  const sel = practiceMultiSelected[qId] || {};
+  const actualQId = q.id || q.question_id;
+  
+  const sel = practiceMultiSelected[actualQId] || {};
   const answer = Object.keys(sel).filter(k => sel[k]).sort().join(',');
   if (!answer) { showToast('请先选择答案', 'info'); return; }
   const isCorrect = checkAnswer(answer, q.answer, 'multiple');
-  practiceAnswered[qId] = { answer, isCorrect, isFav: practiceAnswered[qId]?.isFav || false };
-  delete practiceMultiSelected[qId];
+  practiceAnswered[actualQId] = { answer, isCorrect, isFav: practiceAnswered[actualQId]?.isFav || false };
+  delete practiceMultiSelected[actualQId];
   // 计算错题级别变化
-  const newWrongLevel = calculateWrongLevel(qId, isCorrect);
-  bufferRecord({ student_id: currentUser.username, question_id: qId, is_correct: isCorrect, user_answer: answer, is_fav: false, wrong_level: newWrongLevel });
+  const newWrongLevel = calculateWrongLevel(actualQId, isCorrect);
+  bufferRecord({ student_id: currentUser.username, question_id: actualQId, is_correct: isCorrect, user_answer: answer, is_fav: false, wrong_level: newWrongLevel });
   addXp(isCorrect ? XP_REWARDS.correct : XP_REWARDS.wrong, isCorrect ? '答对' : '答题');
   // 显示级别变化提示
   if (isCorrect && newWrongLevel === 0) {
@@ -8248,7 +8284,11 @@ async function startWrongBookPractice() {
   const level1 = wrongQs.filter(q => (q.wrong_level || 1) === 1).sort(() => Math.random() - 0.5);
   wrongQs = [...level3, ...level2, ...level1];
   
-  practiceQuestions = wrongQs;
+  // 转换为标准题目格式（question_id -> id）
+  practiceQuestions = wrongQs.map(q => ({
+    ...q,
+    id: q.question_id || q.id
+  }));
   practiceIndex = 0;
   practiceAnswered = {};
   practiceMultiSelected = {};
