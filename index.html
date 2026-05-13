@@ -8815,30 +8815,9 @@ async function sendNotificationToStudents() {
   }
 }
 
-// shareQuickExam - 分享快捷考试
+// shareQuickExam - 分享快捷考试（显示二维码和链接）
 function shareQuickExam(examId) {
-  const domain = window.location.origin;
-  const url = `${domain}/#quick=${examId}`;
-  
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(url).then(() => {
-      showToast('链接已复制', 'success');
-    }).catch(() => {
-      openModal('分享快捷考试', `
-        <div style="padding:10px 0">
-          <p style="margin-bottom:10px">复制以下链接分享给考生：</p>
-          <input class="input" value="${url}" readonly onclick="this.select()">
-        </div>
-      `);
-    });
-  } else {
-    openModal('分享快捷考试', `
-      <div style="padding:10px 0">
-        <p style="margin-bottom:10px">复制以下链接分享给考生：</p>
-        <input class="input" value="${url}" readonly onclick="this.select()">
-      </div>
-    `);
-  }
+  showQuickExamQr(examId);
 }
 
 // prevHomeworkQuestion - 上一题
