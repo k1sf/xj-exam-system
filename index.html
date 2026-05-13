@@ -4473,11 +4473,11 @@ function exportEnrollmentCSV() {
   
   const headers = ['姓名', '手机号', '级别', '班级', '报名时间', '状态'];
   const rows = filtered.map(e => [
-    e.name,
-    '\t'+e.phone,
-    e.level,
+    e.name || '',
+    '\t'+(e.phone || ''),
+    e.level || '',
     e.cohort || '',
-    fmtLocal(e.created_at),
+    '\t'+(fmtLocal(e.created_at) || ''),
     e.status === 'approved' ? '已导入' : '待审核'
   ]);
   
