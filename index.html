@@ -1202,7 +1202,7 @@ let _examSyncTimer = null; // 考试模式定时器
 
 // ===== Unified Sync Function =====
 async function syncAll() {
-  if (_isSyncing) return;
+  if (_isSyncing) return { success: false, message: '正在同步中...' };
   _isSyncing = true;
   try {
     // Flush all buffers
@@ -1214,8 +1214,10 @@ async function syncAll() {
     _hasUnsynced = false;
     _lastSyncTime = Date.now();
     console.log('[Sync] All data synced successfully');
+    return { success: true, message: '同步成功' };
   } catch(e) {
     console.error('[Sync] Sync failed:', e);
+    return { success: false, message: '同步失败: ' + e.message };
   } finally {
     _isSyncing = false;
   }
@@ -1316,19 +1318,33 @@ bufferFavUpdate = function(id, isFav) {
 
 // ===== Manual Sync Button in Header =====
 function renderSyncButton() {
-  if (!currentUser) return '';
-  return `<button class="header-btn" onclick="manualSync()" title="同步数据">🔄 <span id="syncStatus"></span></button>`;
+  return `<button id="syncBtn" class="header-btn" onclick="manualSync()" title="同步数据">🔄 同步</button>`;
 }
 
 async function manualSync() {
-  if (btn) btn.textContent = '同步中...';
-  await syncImmediately();
-  if (btn) {
-    btn.textContent = '已同步';
-    setTimeout(() => { if (btn) btn.textContent = ''; }, 2000);
+  const btn = document.getElementById('syncBtn');
+  if (!btn) {
+    showToast('同步按钮未找到', 'error');
+    return;
   }
-  // 刷新当前页面内容
-  refreshCurrentView();
+  const originalText = '🔄 同步';
+  btn.disabled = true;
+  btn.textContent = '🔄 同步中...';
+  try {
+    const result = await syncImmediately();
+    btn.textContent = '✓ 已同步';
+    setTimeout(() => { if (btn) { btn.textContent = originalText; btn.disabled = false; } }, 2000);
+    // 刷新当前页面内容
+    refreshCurrentView();
+    showToast('同步成功！', 'success');
+  } catch(e) {
+    console.error('同步失败:', e);
+    if (btn) {
+      btn.textContent = '✗ 失败';
+      setTimeout(() => { if (btn) btn.textContent = originalText; }, 2000);
+    }
+    alert('同步失败，请重试');
+  }
 }
 
 // 根据当前视图刷新对应内容
@@ -6575,7 +6591,7 @@ function renderStudent() {
       <div style="background:linear-gradient(135deg,var(--primary),#7c3aed);color:#fff;padding:8px 16px;font-size:0.82rem;display:flex;align-items:center;justify-content:space-between">
         <div style="display:flex;align-items:center;gap:8px">${levelSwitchHtml()}</div>
         <div style="display:flex;align-items:center;gap:8px">
-          <button id="syncBtn" onclick="syncData()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#fff;padding:3px 10px;font-size:0.78rem;cursor:pointer">同步</button>
+          <button id="syncBtn" onclick="manualSync()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#fff;padding:3px 10px;font-size:0.78rem;cursor:pointer">同步</button>
           <button onclick="handleLogout()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#fff;padding:3px 10px;font-size:0.78rem;cursor:pointer">退出</button>
         </div>
       </div>
