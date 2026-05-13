@@ -990,6 +990,16 @@ function studyLevelIcon(lv) {
   if (lv >= 4) return '📖';
   return '🔰';
 }
+function studyLevelTitle(lv) {
+  if (lv >= 30) return '宗师';
+  if (lv >= 25) return '大师';
+  if (lv >= 20) return '专家';
+  if (lv >= 15) return '高手';
+  if (lv >= 10) return '行家';
+  if (lv >= 7) return '熟手';
+  if (lv >= 4) return '学徒';
+  return '初学者';
+}
 function fmtLocal(v) {
   if (!v) return '';
   const d = new Date(v);
