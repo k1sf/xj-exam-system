@@ -2464,7 +2464,7 @@ function renderAdmin() {
       <div class="admin-topbar">
         <div class="admin-topbar-title">${adminName}${masterBadge}</div>
         <div class="admin-topbar-actions">
-          <button class="admin-topbar-qrcode" onclick="syncAll()" style="font-size:0.75rem">🔄 同步</button>
+          <button class="admin-topbar-qrcode" id="syncBtn" onclick="manualSync()" style="font-size:0.75rem">🔄 同步</button>
           <button class="admin-topbar-qrcode" onclick="showQrModal()" style="font-size:0.75rem">📋 二维码</button>
           <button class="admin-topbar-logout" onclick="handleLogout()">退出</button>
         </div>
