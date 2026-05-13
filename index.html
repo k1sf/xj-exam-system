@@ -5739,7 +5739,8 @@ async function adminChangePwd() {
 function levelSwitchHtml() {
   const sLv = currentUser?.study_level || 1;
   const sIcon = studyLevelIcon(sLv);
-  return `<span style="display:flex;align-items:center;gap:4px"><span style="font-size:.75rem;background:rgba(255,255,255,.2);padding:1px 6px;border-radius:8px">${sIcon} Lv.${sLv}</span></span>`;
+  const levelName = currentUser?.level || '初级';
+  return `<span style="display:flex;align-items:center;gap:6px"><span style="font-size:.75rem;background:rgba(255,255,255,.2);padding:1px 6px;border-radius:8px">${sIcon} Lv.${sLv}</span><span style="font-size:.75rem;background:rgba(255,255,255,.15);padding:1px 8px;border-radius:8px">${escHtml(levelName)}</span></span>`;
 }
 
 function syncData() {
