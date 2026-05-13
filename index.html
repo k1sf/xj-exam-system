@@ -6844,8 +6844,8 @@ function calculateWrongLevel(qId, isCorrect) {
   // 从缓存或题目中获取当前级别
   let currentLevel = _wrongLevelCache[qId];
   if (currentLevel === undefined) {
-    // 从题目对象获取（如果已加载），兼容 question_id 和 id 两种格式
-    const q = practiceQuestions.find(x => x.id === qId || x.question_id === qId);
+    // 从题目对象获取（如果已加载），兼容 question_id 和 id 两种格式，使用 == 进行类型宽松比较
+    const q = practiceQuestions.find(x => x.id == qId || x.question_id == qId);
     currentLevel = q?.wrong_level || 0;
   }
   
@@ -6890,8 +6890,8 @@ function checkAnswer(userAnswer, correctAnswer, questionType) {
 }
 
 function answerPractice(qId, letter) {
-  // 兼容 question_id 和 id 两种格式
-  const q = practiceQuestions.find(x => x.id === qId || x.question_id === qId);
+  // 兼容 question_id 和 id 两种格式，使用 == 进行类型宽松比较
+  const q = practiceQuestions.find(x => x.id == qId || x.question_id == qId);
   if (!q) return;
   
   // 使用统一的 ID（优先使用 id，其次使用 question_id）
@@ -6936,8 +6936,8 @@ function answerPractice(qId, letter) {
 }
 
 function confirmMultiAnswer(qId) {
-  // 兼容 question_id 和 id 两种格式
-  const q = practiceQuestions.find(x => x.id === qId || x.question_id === qId);
+  // 兼容 question_id 和 id 两种格式，使用 == 进行类型宽松比较
+  const q = practiceQuestions.find(x => x.id == qId || x.question_id == qId);
   if (!q) return;
   const actualQId = q.id || q.question_id;
   
@@ -8284,10 +8284,10 @@ async function startWrongBookPractice() {
   const level1 = wrongQs.filter(q => (q.wrong_level || 1) === 1).sort(() => Math.random() - 0.5);
   wrongQs = [...level3, ...level2, ...level1];
   
-  // 转换为标准题目格式（question_id -> id）
+  // 转换为标准题目格式（question_id -> id，确保是数字类型）
   practiceQuestions = wrongQs.map(q => ({
     ...q,
-    id: q.question_id || q.id
+    id: parseInt(q.question_id || q.id, 10)
   }));
   practiceIndex = 0;
   practiceAnswered = {};
@@ -8335,7 +8335,7 @@ async function startReviewPractice() {
     return;
   }
   const allQ = await dbSelect('questions', { order: ['id', false] });
-  practiceQuestions = reviewQs.map(r => allQ.find(q => q.id === r.question_id)).filter(Boolean);
+  practiceQuestions = reviewQs.map(r => allQ.find(q => q.id == r.question_id)).filter(Boolean);
   practiceIndex = 0;
   practiceAnswered = {};
   practiceMultiSelected = {};
