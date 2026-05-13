@@ -4871,7 +4871,7 @@ let _manageSubTab = 'learning';
 
 function renderAdminManage() {
   const content = `
-    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+    <div id="manageTabBtns" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
       <button class="btn ${_manageSubTab === 'learning' ? 'btn-primary' : 'btn-outline'}" onclick="switchManageSubTab('learning')">📊 学情</button>
       <button class="btn ${_manageSubTab === 'settings' ? 'btn-primary' : 'btn-outline'}" onclick="switchManageSubTab('settings')">⚙️ 设置</button>
       <button class="btn ${_manageSubTab === 'notify' ? 'btn-primary' : 'btn-outline'}" onclick="switchManageSubTab('notify')">📢 消息</button>
@@ -4887,6 +4887,18 @@ function switchManageSubTab(tab) {
   _manageSubTab = tab;
   const container = document.getElementById('manageSubContent');
   if (!container) return;
+  
+  // 更新按钮样式
+  const btns = document.querySelectorAll('#manageTabBtns .btn');
+  btns.forEach(btn => {
+    btn.classList.remove('btn-primary');
+    btn.classList.add('btn-outline');
+  });
+  const activeBtn = document.querySelector(`#manageTabBtns .btn[onclick="switchManageSubTab('${tab}')"]`);
+  if (activeBtn) {
+    activeBtn.classList.remove('btn-outline');
+    activeBtn.classList.add('btn-primary');
+  }
   
   switch(tab) {
     case 'learning': renderLearningSub(); break;
