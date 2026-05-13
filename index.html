@@ -7965,12 +7965,13 @@ async function viewExamResult(examId) {
 async function renderProfile() {
   if (!currentUser) return;
   
+  try {
   // 加载统计数据
   const records = await dbSelect('records', { eq: { student_id: currentUser.username }, cacheBypass: true });
   
   // 计算每道题目的最新记录（用于收藏状态）
   const latestRecordByQ = {};
-  records.forEach(r => {
+  (records || []).forEach(r => {
     const existing = latestRecordByQ[r.question_id];
     if (!existing || new Date(r.created_at) > new Date(existing.created_at)) {
       latestRecordByQ[r.question_id] = r;
@@ -8061,6 +8062,17 @@ async function renderProfile() {
   loadTaskProgressInProfile();
   // 加载排名
   loadRanking('today');
+  
+  } catch (e) {
+    console.error('renderProfile error:', e);
+    document.getElementById('studentContent').innerHTML = `
+      <div class="card" style="margin-top:12px;padding:20px;text-align:center">
+        <div style="font-size:2rem;margin-bottom:12px">⚠️</div>
+        <div style="color:var(--text2)">加载失败，请刷新重试</div>
+        <button class="btn btn-primary" style="margin-top:12px" onclick="renderProfile()">重新加载</button>
+      </div>
+    `;
+  }
 }
 
 // 在"我的"页面显示任务进度

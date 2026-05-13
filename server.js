@@ -1403,6 +1403,7 @@ async function handleDailyTaskApi(req, res, url, params) {
         return;
       }
       
+      try {
       const today = new Date().toISOString().split('T')[0];
       
       // 获取或创建今日任务记录
@@ -1427,20 +1428,39 @@ async function handleDailyTaskApi(req, res, url, params) {
         `, [student_id]);
       }
       
-      // 检查今日作业是否完成
-      const homeworkCheck = await pool.query(`
-        SELECT COUNT(*) as pending FROM homeworks h
-        JOIN students s ON (s.cohort = ANY(h.cohorts) OR s.level = h.level OR h.target_type = 'all')
-        LEFT JOIN homework_records hr ON hr.homework_id = h.id AND hr.student_id = $1
-        WHERE h.status = 'active' AND h.end_time > NOW()
-        AND (hr.is_completed = false OR hr.is_completed IS NULL)
-      `, [student_id]);
+      // 检查今日作业是否完成（如果 homeworks 表不存在则跳过）
+      let hasPendingHomework = false;
+      try {
+        const homeworkCheck = await pool.query(`
+          SELECT COUNT(*) as pending FROM homeworks h
+          JOIN students s ON (s.cohort = ANY(h.cohorts) OR s.level = h.level OR h.target_type = 'all')
+          LEFT JOIN homework_records hr ON hr.homework_id = h.id AND hr.student_id = $1
+          WHERE h.status = 'active' AND h.end_time > NOW()
+          AND (hr.is_completed = false OR hr.is_completed IS NULL)
+        `, [student_id]);
+        hasPendingHomework = parseInt(homeworkCheck.rows[0].pending) > 0;
+      } catch (e) {
+        // homeworks 表不存在，跳过作业检查
+      }
       
       const taskData = result.rows[0] || {};
       sendJson(res, {
         ...taskData,
-        has_pending_homework: parseInt(homeworkCheck.rows[0].pending) > 0
+        has_pending_homework: hasPendingHomework
       });
+      } catch (e) {
+        console.error('daily-task status error:', e);
+        // 返回默认值
+        sendJson(res, {
+          login_bonus: true,
+          practice_count: 0,
+          practice_target: 20,
+          homework_done: false,
+          wrong_practice_count: 0,
+          wrong_practice_target: 10,
+          has_pending_homework: false
+        });
+      }
       break;
     }
     
