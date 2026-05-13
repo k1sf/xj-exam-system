@@ -6608,6 +6608,13 @@ async function switchPracticeMode(mode) {
   practiceIndex = 0;
   practiceMultiSelected = {};
 
+  // 更新按钮样式
+  document.querySelectorAll('.practice-modes .mode-btn').forEach(btn => {
+    btn.classList.remove('active');
+  });
+  const activeBtn = document.querySelector(`.practice-modes .mode-btn[onclick="switchPracticeMode('${mode}')"]`);
+  if (activeBtn) activeBtn.classList.add('active');
+
   const allQ = await dbSelect('questions', { eq: { level: currentLevel }, order: ['id', false] });
   // 使用 cacheBypass 确保获取最新的收藏状态
   const records = await dbSelect('records', { eq: { student_id: currentUser.username }, cacheBypass: true });
@@ -6802,10 +6809,17 @@ async function toggleFav(qId) {
     if (!practiceAnswered[qId]) practiceAnswered[qId] = {};
     practiceAnswered[qId].isFav = isFav;
     if (isFav) addXp(XP_REWARDS.fav, '收藏');
+    // 立即刷新卡片以更新收藏按钮状态
+    renderPracticeCard();
   } else {
     // 新建收藏记录，进入缓冲区统一处理
     const newRecord = { student_id: currentUser.username, question_id: qId, is_correct: false, user_answer: '', is_fav: true };
     _recordBuffer.push(newRecord);
+    if (!practiceAnswered[qId]) practiceAnswered[qId] = {};
+    practiceAnswered[qId].isFav = true;
+    addXp(XP_REWARDS.fav, '收藏');
+    // 立即刷新卡片以更新收藏按钮状态
+    renderPracticeCard();
     if (_recordBuffer.length >= RECORD_BUFFER_MAX_SIZE) flushRecordBuffer();
   }
 }
@@ -7953,10 +7967,15 @@ function renderWrongBookPageTo(containerId) {
     </div>
     
     <div style="font-size:.75rem;color:#6b7280;margin-bottom:12px;padding:8px;background:#f3f4f6;border-radius:6px;">
-      💡 <b>错题分级说明：</b>一级=错1次，二级=错2次，三级=连续错3次及以上
+      💡 <b>错题分级说明：</b>一级=错1次，二级=错2次，三级=连续错3次及以上。建议优先攻克三级错题！
     </div>
     
-    ${wrongQs.length > 0 ? `<button class="btn btn-danger btn-full" style="margin-bottom:16px" onclick="showClearWrongOptions()">🗑️ 清空错题本</button>` : ''}
+    ${wrongQs.length > 0 ? `
+      <div style="display:flex;gap:8px;margin-bottom:16px">
+        <button class="btn btn-primary" style="flex:1" onclick="startWrongBookPractice()">📝 开始练习</button>
+        <button class="btn btn-outline" onclick="showClearWrongOptions()">🗑️ 清空</button>
+      </div>
+    ` : ''}
     ${list}
     ${paginateHtml('wrongBook', wrongQs.length, page)}
   `;
@@ -7970,6 +7989,45 @@ function renderWrongBookPage() {
   }
 }
 
+// 开始练习当前筛选的错题
+async function startWrongBookPractice() {
+  const data = _wrongLevelData || { all: [] };
+  const filter = _wrongBookFilter || 'all';
+  
+  // 根据当前筛选获取错题
+  let wrongQs = [];
+  if (filter === 'level1') wrongQs = data.level1 || [];
+  else if (filter === 'level2') wrongQs = data.level2 || [];
+  else if (filter === 'level3') wrongQs = data.level3 || [];
+  else wrongQs = data.all || [];
+  
+  if (wrongQs.length === 0) {
+    showToast('当前没有错题可练习', 'info');
+    return;
+  }
+  
+  // 按错题级别排序（三级优先），然后随机打乱
+  wrongQs = [...wrongQs].sort((a, b) => (b.wrong_level || 1) - (a.wrong_level || 1));
+  // 三级错题放在前面，但同级内随机
+  const level3 = wrongQs.filter(q => (q.wrong_level || 1) >= 3).sort(() => Math.random() - 0.5);
+  const level2 = wrongQs.filter(q => (q.wrong_level || 1) === 2).sort(() => Math.random() - 0.5);
+  const level1 = wrongQs.filter(q => (q.wrong_level || 1) === 1).sort(() => Math.random() - 0.5);
+  wrongQs = [...level3, ...level2, ...level1];
+  
+  practiceQuestions = wrongQs;
+  practiceIndex = 0;
+  practiceAnswered = {};
+  practiceMultiSelected = {};
+  practiceMode = 'wrong';
+  
+  // 切换到刷题Tab并渲染
+  _practiceSubTab = 'all';
+  await renderPractice();
+  renderPracticeCard();
+  
+  showToast(`开始练习 ${wrongQs.length} 道错题，优先攻克三级错题！`, 'success');
+}
+
 async function practiceWrongQuestion(qId) {
   const allQ = await dbSelect('questions', { order: ['id', false] });
   const q = allQ.find(x => x.id === qId);
@@ -7979,7 +8037,7 @@ async function practiceWrongQuestion(qId) {
   practiceAnswered = {};
   practiceMultiSelected = {};
   practiceMode = 'wrong';
-  renderPracticeUI();
+  renderPracticeCard();
 }
 
 function showClearWrongOptions() {
