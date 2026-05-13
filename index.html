@@ -807,7 +807,6 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <div id="app"></div>
 
 <!-- Sync Indicator -->
-<div class="sync-indicator online" id="syncIndicator" onclick="manualSync()" title="点击手动同步">
   <span class="sync-dot"></span>
   <span id="syncText">已连接</span>
   <span class="sync-badge" id="syncBadge" style="display:none">0</span>
@@ -1307,12 +1306,10 @@ bufferFavUpdate = function(id, isFav) {
 // ===== Manual Sync Button in Header =====
 function renderSyncButton() {
   if (!currentUser) return '';
-  return `<button class="header-btn" onclick="manualSync()" title="点击立即同步数据" style="background:rgba(255,255,255,0.15);border:none;color:#fff;padding:6px 10px;border-radius:6px;font-size:13px;cursor:pointer;">
     🔄 <span id="syncStatus"></span>
   </button>`;
 }
 
-async function manualSync() {
   const btn = document.getElementById('syncStatus');
   if (btn) btn.textContent = '同步中...';
   await syncImmediately();
@@ -2388,7 +2385,6 @@ function renderAdmin() {
         <div class="admin-topbar-title">${adminName}${masterBadge}</div>
         <div class="admin-topbar-actions">
           <button class="admin-topbar-qrcode" onclick="showQrModal()" style="font-size:0.75rem">📋 二维码</button>
-	          <button class="admin-topbar-sync" onclick="manualSync()" style="font-size:0.75rem;background:#28a745;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer" title="点击立即同步数据">🔄 同步</button>
           <button class="admin-topbar-logout" onclick="handleLogout()">退出</button>
         </div>
       </div>
@@ -6078,16 +6074,13 @@ function renderStudent() {
         <div style="display:flex;align-items:center;gap:4px">
           <button onclick="showNotificationCenter()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#fff;padding:3px 8px;font-size:0.78rem;cursor:pointer;position:relative" title="通知中心">🔔<span id="notificationBadge" style="display:none;position:absolute;top:-4px;right:-4px;background:#ef4444;color:#fff;font-size:0.6rem;min-width:14px;height:14px;border-radius:7px;text-align:center;line-height:14px"></span></button>
           <button onclick="showSettingsModal()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#fff;padding:3px 8px;font-size:0.78rem;cursor:pointer">⚙️</button>
-	          <button onclick="manualSync()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#fff;padding:3px 8px;font-size:0.78rem;cursor:pointer" title="点击立即同步数据">🔄</button>
           <button onclick="handleLogout()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#fff;padding:3px 10px;font-size:0.78rem;cursor:pointer">退出</button>
         </div>
       </div>
       <div class="student-content" id="studentContent"></div>
       <div class="student-tabbar">
-        <button class="student-tab active" data-tab="practice" onclick="switchStudentTab('practice')"><span class="tab-icon">📝</span><span>刷题</span></button>
-        <button class="student-tab" data-tab="mock" onclick="switchStudentTab('mock')"><span class="tab-icon">🎯</span><span>模拟</span></button>
+        <button class="student-tab active" data-tab="practice" onclick="switchStudentTab('practice')"><span class="tab-icon">📝</span><span>练习</span></button>
         <button class="student-tab" data-tab="exam" onclick="switchStudentTab('exam')"><span class="tab-icon">📋</span><span>考试</span></button>
-        <button class="student-tab" data-tab="wrong" onclick="switchStudentTab('wrong')"><span class="tab-icon">❌</span><span>错题本</span></button>
         <button class="student-tab" data-tab="profile" onclick="switchStudentTab('profile')"><span class="tab-icon">👤</span><span>我的</span></button>
       </div>
     </div>
@@ -6127,103 +6120,103 @@ function switchStudentTab(tab) {
   document.querySelectorAll('.student-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   switch(tab) {
     case 'practice': renderPractice(); break;
-    case 'mock': renderMockExam(); break;
-    case 'exam': renderStudentExam(); break;
-    case 'wrong': renderWrongBook(); break;
+    case 'exam': renderExamTab(); break;
     case 'profile': renderProfile(); break;
   }
 }
 
-// ===== Student Tab1: Practice =====
+// ===== 练习Tab（含子Tab：刷题/错题本）=====
+let _practiceSubTab = 'all'; // 'all' 或 'wrong'
+
 async function renderPractice() {
-  // Try cache-only first (no cloud access for tab switches)
-  let allQ = await dbSelect('questions', { eq: { level: currentLevel }, order: ['id', false], cacheOnly: true });
-  let records = await dbSelect('records', { eq: { student_id: currentUser.username }, cacheOnly: true });
-
-  if (!allQ || !records) {
-    // Cache miss - show loading and fetch from cloud
-    const content = document.getElementById('studentContent');
-    content.innerHTML = `<div style="text-align:center;padding:40px"><div class="spinner-lg" style="margin:0 auto"></div><div style="margin-top:12px;color:var(--text2)">加载题目...</div></div>`;
-    allQ = await dbSelect('questions', { eq: { level: currentLevel }, order: ['id', false] });
-    records = await dbSelect('records', { eq: { student_id: currentUser.username }, cacheBypass: true });
-  }
-
-  practiceQuestions = allQ;
-  practiceAnswered = {};
-  practiceMultiSelected = {};
-  practiceMode = 'all';
-
-  // Pre-populate fav status (use latest record per question)
-  const latestRecordByQ = {};
-  records.forEach(r => {
-    if (!latestRecordByQ[r.question_id] || new Date(r.created_at) > new Date(latestRecordByQ[r.question_id].created_at)) {
-      latestRecordByQ[r.question_id] = r;
-    }
-  });
-  Object.entries(latestRecordByQ).forEach(([qId, r]) => {
-    if (r.is_fav) {
-      practiceAnswered[qId] = practiceAnswered[qId] || {};
-      practiceAnswered[qId].isFav = true;
-    }
-  });
-
-  // Check for saved progress in "all" mode
-  const saved = loadPracticeProgress();
-  if (saved && saved.total === allQ.length && saved.firstQId === allQ[0]?.id && saved.index > 0) {
-    renderPracticeUI();
-    showContinueDialog(saved);
+  const subTabs = [
+    { key: 'all', label: '刷题', icon: '📝' },
+    { key: 'wrong', label: '错题本', icon: '❌' }
+  ];
+  const subBtns = subTabs.map(s => `<button class="mode-btn ${_practiceSubTab===s.key?'active':''}" onclick="switchPracticeSubTab('${s.key}')">${s.icon} ${s.label}</button>`).join('');
+  
+  document.getElementById('studentContent').innerHTML = `
+    <div class="practice-modes" style="margin-bottom:8px">${subBtns}</div>
+    <div id="practiceSubContent"></div>
+  `;
+  
+  if (_practiceSubTab === 'wrong') {
+    renderWrongBookSub();
   } else {
-    practiceIndex = 0;
-    renderPracticeUI();
+    await renderPracticeSub();
   }
 }
 
-function renderPracticeUI() {
+function switchPracticeSubTab(sub) {
+  _practiceSubTab = sub;
+  renderPractice();
+}
+
+async function renderPracticeSub() {
+  const container = document.getElementById('practiceSubContent');
+  if (!container) return;
+  
+  // 初始化题目数据（首次加载）
+  if (!practiceQuestions || practiceQuestions.length === 0) {
+    container.innerHTML = `<div style="text-align:center;padding:40px"><div class="spinner-lg" style="margin:0 auto"></div><div style="margin-top:12px;color:var(--text2)">加载题目...</div></div>`;
+    
+    const allQ = await dbSelect('questions', { eq: { level: currentLevel }, order: ['id', false] });
+    const records = await dbSelect('records', { eq: { student_id: currentUser.username } });
+    
+    practiceQuestions = allQ || [];
+    practiceAnswered = {};
+    practiceMultiSelected = {};
+    practiceMode = 'all';
+    practiceIndex = 0;
+    
+    // 预加载收藏状态
+    const latestRecordByQ = {};
+    records.forEach(r => {
+      if (!latestRecordByQ[r.question_id] || new Date(r.created_at) > new Date(latestRecordByQ[r.question_id].created_at)) {
+        latestRecordByQ[r.question_id] = r;
+      }
+    });
+    Object.entries(latestRecordByQ).forEach(([qId, r]) => {
+      if (r.is_fav) {
+        practiceAnswered[qId] = practiceAnswered[qId] || {};
+        practiceAnswered[qId].isFav = true;
+      }
+    });
+  }
+  
+  // 渲染刷题界面
   const modes = [
     { key: 'all', label: '全部', icon: '📝' },
-    { key: 'wrong', label: '错题', icon: '❌' },
     { key: 'fav', label: '收藏', icon: '⭐' },
     { key: 'random', label: '随机', icon: '🎲' }
   ];
   const modeBtns = modes.map(m => `<button class="mode-btn ${practiceMode===m.key?'active':''}" onclick="switchPracticeMode('${m.key}')">${m.icon} ${m.label}</button>`).join('');
-  document.getElementById('studentContent').innerHTML = `
-    <div id="dailyTaskPanel"></div>
-    <div id="rankingBanner"></div>
+  container.innerHTML = `
     <div id="homeworkBanner"></div>
     <div class="practice-modes">${modeBtns}</div>
     <div id="practiceCardArea"></div>
   `;
-  loadDailyTasks();
-  loadRankingBanner();
   loadStudentHomework();
   renderPracticeCard();
 }
 
-async function loadRankingBanner() {
-  const container = document.getElementById('rankingBanner');
-  if (!container || !currentUser) return;
+async function renderWrongBookSub() {
+  // 复用原有的错题本渲染逻辑
+  const container = document.getElementById('practiceSubContent');
+  if (!container) return;
   
   try {
-    // 获取我的排名
-    const res = await fetch(`/api/daily-task/ranking?period=week&my_student_id=${currentUser.id}`);
+    const res = await fetch(`${location.origin}/api/daily-task/wrong-level?student_id=${currentUser.username}&level=${currentLevel}`);
     const data = await res.json();
     
-    if (data.myRank && data.myRank > 0) {
-      container.innerHTML = `
-        <div onclick="switchStudentTab('profile')" style="background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#fff;padding:10px 14px;border-radius:10px;margin:8px 0;display:flex;justify-content:space-between;align-items:center;cursor:pointer">
-          <div style="display:flex;align-items:center;gap:8px">
-            <span style="font-size:1.2rem">🏆</span>
-            <div>
-              <div style="font-size:.85rem;font-weight:600">本周排名 #${data.myRank}</div>
-              <div style="font-size:.75rem;opacity:.9">${data.myStats?.total_questions || 0}题 · ${data.myStats?.accuracy || 0}%正确率</div>
-            </div>
-          </div>
-          <span style="font-size:.8rem">查看完整排名 →</span>
-        </div>
-      `;
-    }
+    _wrongLevelData = data;
+    _wrongBookFilter = 'all';
+    _pg.wrongBook = 1;
+    
+    // 直接渲染到container
+    renderWrongBookPageTo(container);
   } catch (e) {
-    // 静默失败
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>加载错题失败</p></div>';
   }
 }
 
@@ -6236,15 +6229,10 @@ async function switchPracticeMode(mode) {
   // 使用 cacheBypass 确保获取最新的收藏状态
   const records = await dbSelect('records', { eq: { student_id: currentUser.username }, cacheBypass: true });
 
-  // 查看错题/收藏前如有未同步数据则立即同步
+  // 查看收藏前如有未同步数据则立即同步
   if (_hasUnsynced) syncImmediately();
 
   switch(mode) {
-    case 'wrong': {
-      const wrongQIds = [...new Set(records.filter(r => !r.is_correct).map(r => r.question_id))];
-      practiceQuestions = allQ.filter(q => wrongQIds.includes(q.id));
-      break;
-    }
     case 'fav': {
       const favQIds = [...new Set(records.filter(r => r.is_fav).map(r => r.question_id))];
       practiceQuestions = allQ.filter(q => favQIds.includes(q.id));
@@ -6261,12 +6249,12 @@ async function switchPracticeMode(mode) {
   if (mode === 'all') {
     const saved = loadPracticeProgress();
     if (saved && saved.total === allQ.length && saved.firstQId === allQ[0]?.id && saved.index > 0) {
-      renderPracticeUI();
+      renderPracticeCard();
       showContinueDialog(saved);
       return;
     }
   }
-  renderPracticeUI();
+  renderPracticeCard();
 }
 
 function renderPracticeCard() {
@@ -6687,31 +6675,95 @@ async function startMockExam() {
   });
 }
 
-// ===== Student Tab2: Exam =====
+// ===== 考试Tab（含子Tab：正式考试/模拟考试）=====
+let _examSubTab = 'formal'; // 'formal' 或 'mock'
 let _filteredStudentExams = [];
 let _takenExamIds = new Set();
-async function renderStudentExam() {
-  // Cache-only: no cloud access for tab switches
+
+async function renderExamTab() {
+  const subTabs = [
+    { key: 'formal', label: '正式考试', icon: '📋' },
+    { key: 'mock', label: '模拟考试', icon: '🎯' }
+  ];
+  const subBtns = subTabs.map(s => `<button class="mode-btn ${_examSubTab===s.key?'active':''}" onclick="switchExamSubTab('${s.key}')">${s.icon} ${s.label}</button>`).join('');
+  
+  document.getElementById('studentContent').innerHTML = `
+    <div class="practice-modes" style="margin-bottom:8px">${subBtns}</div>
+    <div id="examSubContent"></div>
+  `;
+  
+  if (_examSubTab === 'mock') {
+    document.getElementById('examSubContent').innerHTML = renderMockSettingsUI();
+  } else {
+    await renderFormalExamSub();
+  }
+}
+
+function switchExamSubTab(sub) {
+  _examSubTab = sub;
+  renderExamTab();
+}
+
+async function renderFormalExamSub() {
+  const container = document.getElementById('examSubContent');
+  if (!container) return;
+  
+  // 加载考试数据
   let examsCache = await dbSelect('exams', { order: ['id', false], cacheOnly: true });
   allExams = examsCache || await dbSelect('exams', { order: ['id', false] });
   const now = Date.now();
   _filteredStudentExams = allExams.filter(e => {
-    if (e.is_quick) return false; // 快捷考试不显示在学生考试Tab
-    // Filter by student's level
+    if (e.is_quick) return false;
     if (e.level && e.level !== currentLevel) return false;
     if (e.cohort && currentUser.cohort && e.cohort !== currentUser.cohort) return false;
     return true;
   });
 
-  // Check which exams the student has already taken
   let myRecords = await dbSelect('records', { eq: { student_id: currentUser.username }, cacheOnly: true });
   if (!myRecords) myRecords = await dbSelect('records', { eq: { student_id: currentUser.username } });
   _takenExamIds = new Set();
   myRecords.forEach(r => { if (r.exam_id) _takenExamIds.add(Number(r.exam_id)); });
 
   _pg.studentExam = 1;
-  _pageRenderers.studentExam = renderStudentExamPage;
-  renderStudentExamPage();
+  renderFormalExamList(container);
+}
+
+function renderFormalExamList(container) {
+  const exams = _filteredStudentExams;
+  const now = Date.now();
+  const page = _pg.studentExam;
+  const pageItems = pageSlice(exams, page);
+  const list = pageItems.length ? pageItems.map(e => {
+    const start = new Date(e.start_time).getTime();
+    const end = new Date(e.end_time).getTime();
+    const status = now < start ? 'upcoming' : now > end ? 'ended' : 'ongoing';
+    const statusMap = { upcoming: ['未开始', 'tag-gray'], ongoing: ['进行中', 'tag-green'], ended: ['已结束', 'tag-red'] };
+    const [label, cls] = statusMap[status];
+    const qCount = (e.question_ids || []).length;
+    const hasTaken = _takenExamIds.has(Number(e.id));
+    let actionHtml = '';
+    if (hasTaken) {
+      actionHtml = '<button class="btn btn-full" style="margin-top:8px;background:var(--border);color:var(--text2);cursor:not-allowed;border:none">✅ 已参加</button>';
+    } else if (status === 'ongoing') {
+      actionHtml = '<button class="btn btn-primary btn-full" style="margin-top:8px" onclick="enterExam(' + e.id + ')">进入考试</button>';
+    } else if (status === 'ended') {
+      actionHtml = '<button class="btn btn-sm btn-outline" style="margin-top:8px" onclick="viewExamResult(' + e.id + ')">查看成绩</button>';
+    }
+    return '<div class="exam-list-card ' + status + '">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span class="exam-title" style="flex:1">' + escHtml(e.title) + '</span><span class="tag ' + cls + '">' + label + '</span></div>' +
+      '<div class="exam-meta">📋 ' + qCount + '题 · ⏱️ ' + e.duration + '分钟</div>' +
+      '<div class="exam-time">🕐 ' + formatTime(e.start_time) + ' → ' + formatTime(e.end_time) + '</div>' +
+      actionHtml +
+      '</div>';
+  }).join('') : '<div class="empty-state"><div class="empty-icon">📋</div><p>暂无考试</p></div>';
+
+  container.innerHTML = list + paginateHtml('studentExam', exams.length, page);
+}
+
+// ===== 原考试函数（保留兼容）=====
+async function renderStudentExam() {
+  _examSubTab = 'formal';
+  await renderExamTab();
 }
 function renderStudentExamPage() {
   const exams = _filteredStudentExams;
@@ -7381,22 +7433,23 @@ async function viewExamResult(examId) {
   `;
 }
 
-// ===== Student Tab3: Wrong Book =====
+// ===== 错题本功能（已整合到练习Tab） =====
 let _filteredWrongQs = [];
-async function renderWrongBook() {
-  // 使用错题分级API获取数据
+
+// 加载错题数据（供练习Tab调用）
+async function loadWrongBookData() {
   try {
     const res = await fetch(`${location.origin}/api/daily-task/wrong-level?student_id=${currentUser.username}&level=${currentLevel}`);
     const data = await res.json();
     
     _wrongLevelData = data;
-    _wrongBookFilter = 'all'; // 当前筛选：all, level1, level2, level3
+    _wrongBookFilter = 'all';
     _pg.wrongBook = 1;
     _pageRenderers.wrongBook = renderWrongBookPage;
-    renderWrongBookPage();
+    return data;
   } catch (e) {
     console.error('获取错题分级失败:', e);
-    // 降级处理：使用旧逻辑
+    // 降级处理
     let records = await dbSelect('records', { eq: { student_id: currentUser.username } });
     if (!records) records = [];
     const wrongRecords = records.filter(r => !r.is_correct);
@@ -7415,7 +7468,7 @@ async function renderWrongBook() {
     _wrongBookFilter = 'all';
     _pg.wrongBook = 1;
     _pageRenderers.wrongBook = renderWrongBookPage;
-    renderWrongBookPage();
+    return _wrongLevelData;
   }
 }
 
@@ -7425,7 +7478,11 @@ function filterWrongBook(level) {
   renderWrongBookPage();
 }
 
-function renderWrongBookPage() {
+// 渲染错题本页面到指定容器（供练习Tab调用）
+function renderWrongBookPageTo(containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  
   const data = _wrongLevelData || { all: [], counts: { level1: 0, level2: 0, level3: 0, total: 0 } };
   const filter = _wrongBookFilter || 'all';
   
@@ -7460,7 +7517,7 @@ function renderWrongBookPage() {
 
   const counts = data.counts || { level1: 0, level2: 0, level3: 0, total: 0 };
   
-  document.getElementById('studentContent').innerHTML = `
+  container.innerHTML = `
     <style>
       .wrong-level-tabs { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
       .wrong-level-tab { padding:6px 12px; border-radius:16px; font-size:.85rem; cursor:pointer; border:2px solid transparent; transition:all .2s; }
@@ -7501,6 +7558,10 @@ function renderWrongBookPage() {
     ${list}
     ${paginateHtml('wrongBook', wrongQs.length, page)}
   `;
+}
+
+function renderWrongBookPage() {
+  renderWrongBookPageTo('wrongBookContainer');
 }
 
 async function practiceWrongQuestion(qId) {
@@ -7657,37 +7718,32 @@ async function renderProfile() {
       </div>
       <div style="margin-top:8px;font-size:.75rem;color:var(--text3);text-align:center">累计经验值：${xp} XP</div>
     </div>
+    <!-- 每日任务进度 -->
+    <div class="card" style="margin-top:12px" id="taskProgressCard">
+      <div class="card-title">📋 今日任务</div>
+      <div id="taskProgressContent" style="min-height:60px">
+        <div style="text-align:center;padding:20px;color:var(--text3)"><span class="spinner"></span> 加载中...</div>
+      </div>
+    </div>
     <div class="stats-grid" style="margin-top:12px">
       <div class="stat-card blue"><div class="stat-icon">✍️</div><div class="stat-value" data-target="${totalCount}">0</div><div class="stat-label">答题总数</div></div>
       <div class="stat-card green"><div class="stat-icon">✓</div><div class="stat-value" data-target="${pct}">0</div><div class="stat-label">正确率%</div></div>
       <div class="stat-card orange"><div class="stat-icon">❌</div><div class="stat-value" data-target="${wrongCount}">0</div><div class="stat-label">错题数</div></div>
       <div class="stat-card purple"><div class="stat-icon">⭐</div><div class="stat-value" data-target="${favCount}">0</div><div class="stat-label">收藏数</div></div>
     </div>
-    <div class="card" style="animation-delay:0.2s;margin-top:16px" id="wrongAnalysisCard">
-      <div class="card-title">📊 错题分析</div>
-      <div id="wrongAnalysisContent" style="min-height:80px">
-        <div style="text-align:center;padding:20px;color:var(--text3)"><span class="spinner"></span> 加载中...</div>
+    <div class="card" style="animation-delay:0.3s;margin-top:12px" id="rankingCard">
+      <div class="card-title">🏆 学习排名</div>
+      <div id="rankingContent" style="min-height:100px">
+        <div style="text-align:center;padding:20px;color:var(--text3)"><span class="spinner"></span> 加载排名...</div>
       </div>
     </div>
-    <div class="card" style="animation-delay:0.3s;margin-top:12px">
+    <div class="card" style="animation-delay:0.4s;margin-top:12px">
       <div class="card-title">🔐 修改密码</div>
       <div style="display:flex;flex-direction:column;gap:10px">
         <input class="input" type="password" id="oldPwd" placeholder="当前密码">
         <input class="input" type="password" id="newPwd" placeholder="新密码（至少6位）">
         <input class="input" type="password" id="confirmPwd" placeholder="确认新密码">
         <button class="btn btn-primary btn-full" onclick="changePassword()">修改密码</button>
-      </div>
-    </div>
-    <div class="card" style="animation-delay:0.4s;margin-top:12px" id="rankingCard">
-      <div class="card-title">🏆 学习排名</div>
-      <div id="rankingContent" style="min-height:100px">
-        <div style="text-align:center;padding:20px;color:var(--text3)"><span class="spinner"></span> 加载排名...</div>
-      </div>
-    </div>
-    <div class="card" style="animation-delay:0.5s;margin-top:12px" id="mockHistoryCard">
-      <div class="card-title">🎯 模拟考试记录</div>
-      <div id="mockHistoryContent" style="min-height:80px">
-        <div style="text-align:center;padding:20px;color:var(--text3)"><span class="spinner"></span> 加载中...</div>
       </div>
     </div>
 
@@ -7697,12 +7753,53 @@ async function renderProfile() {
     animateNumber(el, parseInt(el.dataset.target));
   });
   
-  // 加载错题分析
-  loadWrongAnalysis();
+  // 加载任务进度
+  loadTaskProgressInProfile();
   // 加载排名
   loadRanking('today');
-  // 加载模拟考试历史
-  loadMockHistoryInProfile();
+}
+
+// 在"我的"页面显示任务进度
+async function loadTaskProgressInProfile() {
+  if (!currentUser) return;
+  
+  try {
+    const res = await fetch(`/api/daily-task/status?student_id=${currentUser.id}`);
+    const task = await res.json();
+    
+    const container = document.getElementById('taskProgressContent');
+    if (!container) return;
+    
+    const tasks = [
+      { name: '登录奖励', done: task.login_bonus, icon: '🎁' },
+      { name: `刷题${task.practice_target || 20}道`, done: task.practice_count >= (task.practice_target || 20), progress: `${task.practice_count}/${task.practice_target || 20}`, icon: '✍️' },
+      { name: '完成作业', done: task.homework_done, icon: '📝' },
+      { name: `错题练习${task.wrong_practice_target || 10}道`, done: task.wrong_practice_count >= (task.wrong_practice_target || 10), progress: `${task.wrong_practice_count}/${task.wrong_practice_target || 10}`, icon: '🔄' }
+    ];
+    
+    const doneCount = tasks.filter(t => t.done).length;
+    
+    container.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">
+        ${tasks.map(t => `
+          <div style="display:flex;align-items:center;gap:8px;padding:10px;background:${t.done ? 'rgba(16,185,129,0.1)' : 'var(--bg)'};border-radius:8px;border:1px solid ${t.done ? '#10b981' : 'var(--border)'}">
+            <span style="font-size:1.2rem">${t.icon}</span>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:.8rem;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.name}</div>
+              ${t.progress ? `<div style="font-size:.7rem;color:var(--text3)">${t.progress}</div>` : ''}
+            </div>
+            ${t.done ? '<span style="color:#10b981;font-size:1rem">✓</span>' : '<span style="color:var(--text3);font-size:1rem">○</span>'}
+          </div>
+        `).join('')}
+      </div>
+      <div style="margin-top:10px;text-align:center;font-size:.8rem;color:var(--text3)">
+        今日完成：${doneCount}/4 项任务
+      </div>
+    `;
+  } catch (e) {
+    const container = document.getElementById('taskProgressContent');
+    if (container) container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3)">加载失败</div>';
+  }
 }
 
 async function loadMockHistoryInProfile() {
