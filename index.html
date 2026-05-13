@@ -6875,20 +6875,6 @@ async function toggleFav(qId) {
     if (isFav) addXp(XP_REWARDS.fav, '收藏');
     // 立即刷新卡片以更新收藏按钮状态
     renderPracticeCard();
-    
-    // 在收藏模式下取消收藏，从列表中移除该题目
-    if (!isFav && practiceMode === 'fav') {
-      const idx = practiceQuestions.findIndex(q => q.id === qId);
-      if (idx !== -1) {
-        practiceQuestions.splice(idx, 1);
-        // 如果当前索引超出范围，调整到最后
-        if (practiceIndex >= practiceQuestions.length) {
-          practiceIndex = Math.max(0, practiceQuestions.length - 1);
-        }
-        // 重新渲染题目列表
-        renderPracticeCard();
-      }
-    }
   } else {
     // 新建收藏记录，进入缓冲区统一处理
     const newRecord = { student_id: currentUser.username, question_id: qId, is_correct: false, user_answer: '', is_fav: true };
