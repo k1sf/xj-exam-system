@@ -5729,10 +5729,10 @@ async function loadDailyTasks() {
   
   try {
     const today = new Date().toISOString().split('T')[0];
-    const res = await fetch(`/api/daily-task/status?student_id=${currentUser.id}`);
+    const res = await fetch(`/api/daily-task/status?student_id=${currentUser.username}`);
     _dailyTasks = await res.json();
     
-    const weekRes = await fetch(`/api/daily-task/week-progress?student_id=${currentUser.id}`);
+    const weekRes = await fetch(`/api/daily-task/week-progress?student_id=${currentUser.username}`);
     _weeklyStats = await weekRes.json();
     
     renderDailyTaskPanel();
@@ -8123,7 +8123,7 @@ async function loadMockHistoryInProfile() {
   if (!currentUser) return;
   
   try {
-    const res = await fetch(`/api/daily-task/mock-history?student_id=${currentUser.id}&limit=10`);
+    const res = await fetch(`/api/daily-task/mock-history?student_id=${currentUser.username}&limit=10`);
     const data = await res.json();
     
     const container = document.getElementById('mockHistoryContent');
@@ -8138,7 +8138,7 @@ async function loadMockHistoryInProfile() {
 
 async function loadWrongAnalysis() {
   try {
-    const res = await fetch(`/api/daily-task/wrong-analysis?student_id=${currentUser.id}`);
+    const res = await fetch(`/api/daily-task/wrong-analysis?student_id=${currentUser.username}`);
     const data = await res.json();
     
     const container = document.getElementById('wrongAnalysisContent');
@@ -8234,7 +8234,7 @@ async function loadRanking(period = 'today') {
   container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3)"><span class="spinner"></span> 加载排名...</div>';
   
   try {
-    const res = await fetch(`/api/daily-task/ranking?period=${period}&level=${currentLevel}&my_student_id=${currentUser.id}`);
+    const res = await fetch(`/api/daily-task/ranking?period=${period}&level=${currentLevel}&my_student_id=${currentUser.username}`);
     const data = await res.json();
     
     const periodLabels = { today: '今日', week: '本周', month: '本月' };
@@ -8270,7 +8270,7 @@ async function loadRanking(period = 'today') {
       html += '<div style="display:flex;flex-direction:column;gap:6px">';
       data.rankings.slice(0, 10).forEach((r, i) => {
         const rankIcon = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}`;
-        const isMe = r.id === currentUser.id;
+        const isMe = r.username === currentUser.username;
         html += `
           <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:${isMe ? 'var(--primary-light)' : 'var(--bg)'};border-radius:10px;border:${isMe ? '2px solid var(--primary)' : 'none'}">
             <div style="width:28px;text-align:center;font-weight:700;font-size:1.1rem">${rankIcon}</div>
