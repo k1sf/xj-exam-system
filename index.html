@@ -5067,11 +5067,11 @@ function renderSettingsSub() {
       <div class="card-title">🎨 显示设置</div>
       <div style="display:flex;flex-direction:column;gap:12px">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <input type="checkbox" id="darkModeAdmin" ${localStorage.getItem('darkMode')==='1'?'checked':''} onchange="localStorage.setItem('darkMode',this.checked?'1':'0');location.reload()">
+          <input type="checkbox" id="darkModeAdmin" ${localStorage.getItem('xjDarkMode')==='1'?'checked':''} onchange="toggleDarkMode(this.checked)">
           <span>🌙 暗色模式</span>
         </label>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <input type="checkbox" id="bigFontAdmin" ${localStorage.getItem('bigFont')==='1'?'checked':''} onchange="localStorage.setItem('bigFont',this.checked?'1':'0');location.reload()">
+          <input type="checkbox" id="bigFontAdmin" ${localStorage.getItem('xjLargeText')==='1'?'checked':''} onchange="toggleLargeText(this.checked)">
           <span>🔤 大字版</span>
         </label>
       </div>
@@ -6086,7 +6086,7 @@ function renderHomeworkUI() {
   const h = _currentStudentHomework;
   const total = h.question_count;
   const progress = _homeworkQuestions.length;
-  const isDark = localStorage.getItem('darkMode') === 'true';
+  const isDark = localStorage.getItem('xjDarkMode') === '1';
   
   // 生成进度导航点
   const dotsHtml = _homeworkQuestions.slice(0, total).map((q, i) => {
