@@ -1372,40 +1372,6 @@ function isAdminMode() {
   return userRole === 'admin';
 }
 
-// Override admin operations to sync immediately
-const _originalDbInsert = dbInsert;
-dbInsert = async function(...args) {
-  const result = await _originalDbInsert.apply(this, args);
-  if (isAdminMode()) {
-    await syncImmediately();
-  } else {
-    markUnsynced();
-  }
-  return result;
-};
-
-const _originalDbUpdate = dbUpdate;
-dbUpdate = async function(...args) {
-  const result = await _originalDbUpdate.apply(this, args);
-  if (isAdminMode()) {
-    await syncImmediately();
-  } else {
-    markUnsynced();
-  }
-  return result;
-};
-
-const _originalDbDelete = dbDelete;
-dbDelete = async function(...args) {
-  const result = await _originalDbDelete.apply(this, args);
-  if (isAdminMode()) {
-    await syncImmediately();
-  } else {
-    markUnsynced();
-  }
-  return result;
-};
-
 // ===== Offline Queue & Sync System =====
 const OFFLINE_QUEUE_KEY = 'xjOfflineQueue';
 let isSyncing = false;
@@ -2059,6 +2025,40 @@ async function dbCount(table, filter) {
   } catch(e) { return 0; }
 }
 
+// ===== Override admin operations to sync immediately =====
+const _originalDbInsert = dbInsert;
+dbInsert = async function(...args) {
+  const result = await _originalDbInsert.apply(this, args);
+  if (isAdminMode()) {
+    await syncImmediately();
+  } else {
+    markUnsynced();
+  }
+  return result;
+};
+
+const _originalDbUpdate = dbUpdate;
+dbUpdate = async function(...args) {
+  const result = await _originalDbUpdate.apply(this, args);
+  if (isAdminMode()) {
+    await syncImmediately();
+  } else {
+    markUnsynced();
+  }
+  return result;
+};
+
+const _originalDbDelete = dbDelete;
+dbDelete = async function(...args) {
+  const result = await _originalDbDelete.apply(this, args);
+  if (isAdminMode()) {
+    await syncImmediately();
+  } else {
+    markUnsynced();
+  }
+  return result;
+};
+
 // ===== Admin Permission Guard =====
 function requireAdmin() {
   if (userRole !== 'admin') {
@@ -2536,6 +2536,7 @@ async function createStudents() {
     }
     if (rows.length === 0) {
       showToast(failed.length ? `创建失败：${failed.join('；')}` : '无有效数据', 'error');
+      btn.disabled = false; btn.textContent = '批量创建账号';
       return;
     }
     const result = await dbInsert('students', rows);
@@ -2649,6 +2650,7 @@ function filterStudents() {
 function renderStudentListPage() {
   const filtered = _filteredStudents;
   const list = document.getElementById('studentListContainer');
+  if (!list) { console.warn('studentListContainer not found'); return; }
   if (filtered.length === 0) {
     list.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>暂无学生</p></div>';
     return;
