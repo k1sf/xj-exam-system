@@ -1346,7 +1346,6 @@ function refreshCurrentView() {
     switch(activeTab) {
       case 'practice': renderPractice(); break;
       case 'exam': renderStudentExam(); break;
-      case 'wrong': renderWrongBook(); break;
       case 'profile': renderProfile(); break;
     }
   }
@@ -6574,26 +6573,16 @@ function switchStudentTab(tab) {
   }
 }
 
-// ===== 练习Tab（含子Tab：刷题/错题本）=====
-let _practiceSubTab = 'all'; // 'all' 或 'wrong'
+// ===== 练习Tab =====
+let _practiceSubTab = 'all';
 
 async function renderPractice() {
-  const subTabs = [
-    { key: 'all', label: '刷题', icon: '📝' },
-    { key: 'wrong', label: '错题本', icon: '❌' }
-  ];
-  const subBtns = subTabs.map(s => `<button class="mode-btn ${_practiceSubTab===s.key?'active':''}" onclick="switchPracticeSubTab('${s.key}')">${s.icon} ${s.label}</button>`).join('');
-  
+  // 简化：直接显示刷题内容
   document.getElementById('studentContent').innerHTML = `
-    <div class="practice-modes" style="margin-bottom:8px">${subBtns}</div>
     <div id="practiceSubContent"></div>
   `;
   
-  if (_practiceSubTab === 'wrong') {
-    renderWrongBookSub();
-  } else {
-    await renderPracticeSub();
-  }
+  await renderPracticeSub();
 }
 
 function switchPracticeSubTab(sub) {
@@ -6630,7 +6619,7 @@ async function renderPracticeSub() {
     practiceMode = 'all';
     practiceIndex = 0;
     
-    // 预加载收藏状态和错题级别
+    // 预加载收藏状态
     const latestRecordByQ = {};
     records.forEach(r => {
       if (!latestRecordByQ[r.question_id] || new Date(r.created_at) > new Date(latestRecordByQ[r.question_id].created_at)) {
@@ -6643,37 +6632,17 @@ async function renderPracticeSub() {
         practiceAnswered[qId] = practiceAnswered[qId] || {};
         practiceAnswered[qId].isFav = true;
       }
-      // 错题级别（wrong_level: 0=复习本, 1-3=错题级别, null/undefined=不在错题本）
-      if (r.wrong_level !== null && r.wrong_level !== undefined) {
-        // 使用字符串键，确保类型一致
-        _wrongLevelCache[String(qId)] = r.wrong_level;
-      }
     });
   }
   
-  // 检查是否是错题/复习模式，如果是则不显示模式切换按钮
-  const isSpecialMode = practiceMode === 'wrong' || practiceMode === 'review';
-  const modeLabel = practiceMode === 'wrong' ? '❌ 错题练习' : (practiceMode === 'review' ? '📖 复习练习' : '');
-  
   // 渲染刷题界面
-  let headerHtml = '';
-  if (isSpecialMode) {
-    headerHtml = `
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-        <button class="btn btn-sm btn-outline" onclick="backToNormalPractice()">⬅️ 返回</button>
-        <span style="font-weight:600">${modeLabel}</span>
-        <span style="font-size:.8rem;color:#6b7280">(${practiceQuestions.length}题)</span>
-      </div>
-    `;
-  } else {
-    const modes = [
-      { key: 'all', label: '全部', icon: '📝' },
-      { key: 'fav', label: '收藏', icon: '⭐' },
-      { key: 'random', label: '随机', icon: '🎲' }
-    ];
-    const modeBtns = modes.map(m => `<button class="mode-btn ${practiceMode===m.key?'active':''}" onclick="switchPracticeMode('${m.key}')">${m.icon} ${m.label}</button>`).join('');
-    headerHtml = `<div class="practice-modes">${modeBtns}</div>`;
-  }
+  const modes = [
+    { key: 'all', label: '全部', icon: '📝' },
+    { key: 'fav', label: '收藏', icon: '⭐' },
+    { key: 'random', label: '随机', icon: '🎲' }
+  ];
+  const modeBtns = modes.map(m => `<button class="mode-btn ${practiceMode===m.key?'active':''}" onclick="switchPracticeMode('${m.key}')">${m.icon} ${m.label}</button>`).join('');
+  const headerHtml = `<div class="practice-modes">${modeBtns}</div>`;
   
   container.innerHTML = `
     <div id="homeworkBanner"></div>
@@ -6682,37 +6651,6 @@ async function renderPracticeSub() {
   `;
   loadStudentHomework();
   renderPracticeCard();
-}
-
-// 返回普通刷题模式
-async function backToNormalPractice() {
-  practiceMode = 'all';
-  practiceIndex = 0;
-  practiceAnswered = {};
-  practiceMultiSelected = {};
-  practiceQuestions = [];
-  await renderPracticeSub();
-}
-
-async function renderWrongBookSub() {
-  // 复用原有的错题本渲染逻辑
-  const container = document.getElementById('practiceSubContent');
-  if (!container) return;
-  
-  try {
-    const res = await fetch(`${location.origin}/api/daily-task/wrong-level?student_id=${currentUser.username}&level=${currentLevel}`);
-    const data = await res.json();
-    
-    _wrongLevelData = data;
-    _wrongBookFilter = 'all';
-    _pg.wrongBook = 1;
-    
-    // 直接渲染到container
-    container.id = 'practiceSubContent';
-    renderWrongBookPageTo('practiceSubContent');
-  } catch (e) {
-    container.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>加载错题失败</p></div>';
-  }
 }
 
 async function switchPracticeMode(mode) {
@@ -6840,97 +6778,6 @@ function renderPracticeCard() {
   `;
 }
 
-// 错题级别缓存（避免频繁查询数据库）
-let _wrongLevelCache = {};
-
-// 计算错题级别变化
-// 答对：一级→复习本(0)，二级→一级(1)，三级→二级(2)
-// 答错：不错→一级(1)，一级→二级(2)，二级→三级(3)，三级→三级(3)
-function calculateWrongLevel(qId, isCorrect) {
-  // 从缓存或题目中获取当前级别（兼容数字和字符串类型的键）
-  let currentLevel = _wrongLevelCache[qId] ?? _wrongLevelCache[String(qId)] ?? _wrongLevelCache[Number(qId)];
-  if (currentLevel === undefined) {
-    // 从题目对象获取（如果已加载），兼容 question_id 和 id 两种格式，使用 == 进行类型宽松比较
-    const q = practiceQuestions.find(x => x.id == qId || x.question_id == qId);
-    currentLevel = q?.wrong_level ?? -1; // -1 表示不在错题本中
-  }
-  
-  const currentMode = localStorage.getItem('xjPracticeMode') || 'practice';
-  const isInWrongBook = currentLevel >= 1 && currentLevel <= 3; // 是否在错题本中
-  const isInReview = currentLevel === 0; // 是否在复习本中
-  
-  let newLevel;
-  
-  if (currentMode === 'wrong') {
-    // === 错题本模式 ===
-    if (isCorrect) {
-      // 答对：降级
-      if (currentLevel === 1) {
-        newLevel = 0; // 一级→复习本
-      } else if (currentLevel === 2) {
-        newLevel = 1; // 二级→一级
-      } else {
-        newLevel = 2; // 三级→二级
-      }
-    } else {
-      // 答错：升级
-      if (currentLevel === 1) {
-        newLevel = 2; // 一级→二级
-      } else if (currentLevel === 2) {
-        newLevel = 3; // 二级→三级
-      } else {
-        newLevel = 3; // 三级保持三级
-      }
-    }
-  } else if (currentMode === 'review') {
-    // === 复习本模式 ===
-    if (isCorrect) {
-      newLevel = -1; // 删除记录（彻底掌握）
-    } else {
-      newLevel = 1; // 做错→一级错题
-    }
-  } else {
-    // === 正常刷题模式 ===
-    if (isCorrect) {
-      if (isInWrongBook) {
-        // 在错题本中，答对降级
-        if (currentLevel === 1) {
-          newLevel = 0; // 一级→复习本
-        } else if (currentLevel === 2) {
-          newLevel = 1; // 二级→一级
-        } else {
-          newLevel = 2; // 三级→二级
-        }
-      } else if (isInReview) {
-        // 在复习本中，答对删除
-        newLevel = -1;
-      } else {
-        // 不在错题本中，答对不记录
-        newLevel = -1;
-      }
-    } else {
-      // 答错：升级或进入错题本
-      if (isInWrongBook) {
-        // 已在错题本中，升级
-        if (currentLevel === 1) {
-          newLevel = 2; // 一级→二级
-        } else if (currentLevel === 2) {
-          newLevel = 3; // 二级→三级
-        } else {
-          newLevel = 3; // 三级保持三级
-        }
-      } else {
-        // 不在错题本中，第一次做错→一级
-        newLevel = 1;
-      }
-    }
-  }
-  
-  // 更新缓存
-  _wrongLevelCache[qId] = newLevel;
-  return newLevel;
-}
-
 // 统一答案比较：多选题去除分隔符后排序比较
 function checkAnswer(userAnswer, correctAnswer, questionType) {
   if (!userAnswer || !correctAnswer) return false;
@@ -6970,22 +6817,9 @@ function answerPractice(qId, letter) {
 
   const isCorrect = checkAnswer(letter, q.answer, q.type);
   practiceAnswered[actualQId] = { answer: letter, isCorrect, isFav: practiceAnswered[actualQId]?.isFav || false };
-  // 计算错题级别变化
-  const newWrongLevel = calculateWrongLevel(actualQId, isCorrect);
   
-  // 根据级别决定是否保存记录
-  if (newWrongLevel === -1) {
-    // 不在错题本中答对，或复习本题答对，删除记录（如有）
-    // 但保留答题状态用于显示结果
-    dbDelete('records', { student_id: currentUser.username, question_id: actualQId });
-  } else {
-    // 保存/更新记录
-    bufferRecord({ student_id: currentUser.username, question_id: actualQId, is_correct: isCorrect, user_answer: letter, is_fav: false, wrong_level: newWrongLevel });
-    // 显示级别变化提示
-    if (isCorrect && newWrongLevel === 0) {
-      showToast('🎉 答对！题目已移入复习本', 'success');
-    }
-  }
+  // 保存答题记录
+  bufferRecord({ student_id: currentUser.username, question_id: actualQId, is_correct: isCorrect, user_answer: letter, is_fav: false });
   
   addXp(isCorrect ? XP_REWARDS.correct : XP_REWARDS.wrong, isCorrect ? '答对' : '答题');
   // 记录答题日志（节流，每10题记录一次）
@@ -7008,24 +6842,9 @@ function confirmMultiAnswer(qId) {
   const isCorrect = checkAnswer(answer, q.answer, 'multiple');
   practiceAnswered[actualQId] = { answer, isCorrect, isFav: practiceAnswered[actualQId]?.isFav || false };
   delete practiceMultiSelected[actualQId];
-  // 计算错题级别变化
-  const newWrongLevel = calculateWrongLevel(actualQId, isCorrect);
-  const currentMode = localStorage.getItem('xjPracticeMode') || 'practice';
   
-  // 不需要保存记录的情况（正常刷题答对不在错题本的题，或复习本题答对）
-  if (newWrongLevel === -1) {
-    // 删除数据库中的记录（如有），但保留答题状态用于显示结果
-    dbDelete('records', { student_id: currentUser.username, question_id: actualQId });
-    if (currentMode === 'review') {
-      showToast('🎉 答对！题目已从复习本移除', 'success');
-    }
-  } else {
-    bufferRecord({ student_id: currentUser.username, question_id: actualQId, is_correct: isCorrect, user_answer: answer, is_fav: false, wrong_level: newWrongLevel });
-    // 显示级别变化提示
-    if (isCorrect && newWrongLevel === 0) {
-      showToast('🎉 答对！题目已移入复习本', 'success');
-    }
-  }
+  // 保存答题记录
+  bufferRecord({ student_id: currentUser.username, question_id: actualQId, is_correct: isCorrect, user_answer: answer, is_fav: false });
   
   addXp(isCorrect ? XP_REWARDS.correct : XP_REWARDS.wrong, isCorrect ? '答对' : '答题');
   renderPracticeCard();
@@ -7981,7 +7800,6 @@ function renderExamResult(correct, total) {
         <button class="student-tab ${isMock?'active':''}" data-tab="practice" onclick="switchStudentTab('practice')"><span class="tab-icon">📝</span><span>刷题</span></button>
         <button class="student-tab ${isMock?'active':''}" data-tab="mock" onclick="switchStudentTab('mock')"><span class="tab-icon">🎯</span><span>模拟</span></button>
         <button class="student-tab ${isMock?'':'active'}" data-tab="exam" onclick="switchStudentTab('exam')"><span class="tab-icon">📋</span><span>考试</span></button>
-        <button class="student-tab" data-tab="wrong" onclick="switchStudentTab('wrong')"><span class="tab-icon">❌</span><span>错题本</span></button>
         <button class="student-tab" data-tab="profile" onclick="switchStudentTab('profile')"><span class="tab-icon">👤</span><span>我的</span></button>
       </div>`;
 
@@ -8087,337 +7905,10 @@ async function viewExamResult(examId) {
         <button class="student-tab" data-tab="practice" onclick="switchStudentTab('practice')"><span class="tab-icon">📝</span><span>刷题</span></button>
         <button class="student-tab" data-tab="mock" onclick="switchStudentTab('mock')"><span class="tab-icon">🎯</span><span>模拟</span></button>
         <button class="student-tab active" data-tab="exam" onclick="switchStudentTab('exam')"><span class="tab-icon">📋</span><span>考试</span></button>
-        <button class="student-tab" data-tab="wrong" onclick="switchStudentTab('wrong')"><span class="tab-icon">❌</span><span>错题本</span></button>
         <button class="student-tab" data-tab="profile" onclick="switchStudentTab('profile')"><span class="tab-icon">👤</span><span>我的</span></button>
       </div>
     </div>
   `;
-}
-
-// ===== 错题本功能（已整合到练习Tab） =====
-let _filteredWrongQs = [];
-
-// 加载错题数据（供练习Tab调用）
-async function loadWrongBookData() {
-  try {
-    const res = await fetch(`${location.origin}/api/daily-task/wrong-level?student_id=${currentUser.username}&level=${currentLevel}`);
-    const data = await res.json();
-    
-    _wrongLevelData = data;
-    _wrongBookFilter = 'all';
-    _pg.wrongBook = 1;
-    _pageRenderers.wrongBook = renderWrongBookPage;
-    return data;
-  } catch (e) {
-    console.error('获取错题分级失败:', e);
-    // 降级处理
-    let records = await dbSelect('records', { eq: { student_id: currentUser.username } });
-    if (!records) records = [];
-    const wrongRecords = records.filter(r => !r.is_correct);
-    const wrongQIds = [...new Set(wrongRecords.map(r => r.question_id))];
-    let allQ = await dbSelect('questions', { order: ['id', false], cacheBypass: true });
-    if (!allQ) allQ = [];
-    const levelQIds = new Set(allQ.filter(q => q.level === currentLevel).map(q => q.id));
-    _wrongLevelData = {
-      all: wrongQIds.filter(id => levelQIds.has(id)).map(id => {
-        const q = allQ.find(x => x.id === id);
-        const count = wrongRecords.filter(r => r.question_id === id).length;
-        return q ? { ...q, wrong_count: count, wrong_level: count >= 3 ? 3 : count } : null;
-      }).filter(Boolean),
-      counts: { total: wrongQIds.length }
-    };
-    _wrongBookFilter = 'all';
-    _pg.wrongBook = 1;
-    _pageRenderers.wrongBook = renderWrongBookPage;
-    return _wrongLevelData;
-  }
-}
-
-function filterWrongBook(level) {
-  _wrongBookFilter = level;
-  _pg.wrongBook = 1;
-  renderWrongBookPage();
-}
-
-// 渲染错题本页面到指定容器（供练习Tab调用）
-function renderWrongBookPageTo(containerId) {
-  const container = document.getElementById(containerId);
-  if (!container) return;
-  
-  const data = _wrongLevelData || { all: [], counts: { level1: 0, level2: 0, level3: 0, total: 0 } };
-  const filter = _wrongBookFilter || 'all';
-  
-  // 根据筛选获取题目列表
-  let wrongQs = [];
-  if (filter === 'level1') wrongQs = data.level1 || [];
-  else if (filter === 'level2') wrongQs = data.level2 || [];
-  else if (filter === 'level3') wrongQs = data.level3 || [];
-  else wrongQs = data.all || [];
-  
-  const page = _pg.wrongBook;
-  const pageItems = pageSlice(wrongQs, page);
-  
-  // 错题级别颜色和标签
-  const levelStyles = {
-    1: { bg: '#fef3c7', color: '#92400e', label: '一级', icon: '⚠️' },
-    2: { bg: '#fed7aa', color: '#9a3412', label: '二级', icon: '🔶' },
-    3: { bg: '#fecaca', color: '#7f1d1d', label: '三级', icon: '🔴' }
-  };
-  
-  const list = pageItems.length ? pageItems.map(q => {
-    const lv = q.wrong_level || 1;
-    const style = levelStyles[lv] || levelStyles[1];
-    return `
-      <div class="wrong-item" onclick="practiceWrongQuestion(${q.question_id || q.id})">
-        <span class="wrong-level-badge" style="background:${style.bg};color:${style.color}">${style.icon}${style.label}</span>
-        <span class="wrong-content">${escHtml((q.content||'').substring(0,50))}</span>
-        <span class="wrong-count">${q.wrong_count || 1}次</span>
-      </div>
-    `;
-  }).join('') : '<div class="empty-state"><div class="empty-icon">🎉</div><p>当前分类下没有错题，继续保持！</p></div>';
-
-  const counts = data.counts || { level1: 0, level2: 0, level3: 0, total: 0 };
-  
-  container.innerHTML = `
-    <style>
-      .wrong-level-tabs { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
-      .wrong-level-tab { padding:6px 12px; border-radius:16px; font-size:.85rem; cursor:pointer; border:2px solid transparent; transition:all .2s; }
-      .wrong-level-tab.active { border-color:#3b82f6; font-weight:600; }
-      .wrong-level-tab.lv1 { background:#fef3c7; color:#92400e; }
-      .wrong-level-tab.lv2 { background:#fed7aa; color:#9a3412; }
-      .wrong-level-tab.lv3 { background:#fecaca; color:#7f1d1d; }
-      .wrong-level-tab.all { background:#e5e7eb; color:#374151; }
-      .wrong-level-badge { padding:2px 8px; border-radius:10px; font-size:.7rem; font-weight:600; margin-right:8px; white-space:nowrap; }
-      .wrong-item { display:flex; align-items:center; padding:12px; background:#fff; border-radius:8px; margin-bottom:8px; cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,.1); transition:transform .1s; }
-      .wrong-item:active { transform:scale(.98); }
-      .wrong-content { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-      .wrong-count { color:#6b7280; font-size:.8rem; margin-left:8px; }
-      .dark .wrong-item { background:#2d3748; }
-      .dark .wrong-level-tab.all { background:#4a5568; color:#e2e8f0; }
-    </style>
-    
-    <div class="wrong-level-tabs">
-      <div class="wrong-level-tab all ${filter==='all'?'active':''}" onclick="filterWrongBook('all')">
-        全部 (${counts.total})
-      </div>
-      <div class="wrong-level-tab lv1 ${filter==='level1'?'active':''}" onclick="filterWrongBook('level1')">
-        ⚠️ 一级 (${counts.level1})
-      </div>
-      <div class="wrong-level-tab lv2 ${filter==='level2'?'active':''}" onclick="filterWrongBook('level2')">
-        🔶 二级 (${counts.level2})
-      </div>
-      <div class="wrong-level-tab lv3 ${filter==='level3'?'active':''}" onclick="filterWrongBook('level3')">
-        🔴 三级 (${counts.level3})
-      </div>
-    </div>
-    
-    <div style="font-size:.75rem;color:#6b7280;margin-bottom:12px;padding:8px;background:#f3f4f6;border-radius:6px;">
-      💡 <b>错题分级说明：</b>一级=错1次，二级=错2次，三级=连续错3次及以上。建议优先攻克三级错题！
-    </div>
-    
-    ${wrongQs.length > 0 ? `
-      <div style="display:flex;gap:8px;margin-bottom:16px">
-        <button class="btn btn-primary" style="flex:1" onclick="startWrongBookPractice()">📝 开始练习</button>
-        <button class="btn btn-outline" onclick="showReviewBook()">📖 复习本</button>
-      </div>
-    ` : ''}
-    ${list}
-    ${paginateHtml('wrongBook', wrongQs.length, page)}
-  `;
-}
-
-function renderWrongBookPage() {
-  // 检测当前使用哪个容器（学生端错题本用 practiceSubContent，其他用 wrongBookContainer）
-  const container = document.getElementById('practiceSubContent') || document.getElementById('wrongBookContainer');
-  if (container) {
-    renderWrongBookPageTo(container.id);
-  }
-}
-
-// ===== 复习本功能 =====
-async function showReviewBook() {
-  const container = document.getElementById('practiceSubContent') || document.getElementById('wrongBookContainer');
-  if (!container) return;
-  
-  container.innerHTML = `<div class="card"><div class="card-title">📖 复习本加载中...</div></div>`;
-  
-  try {
-    const res = await fetch('/api/review-book', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-      body: JSON.stringify({ student_id: currentUser.username })
-    });
-    const data = await res.json();
-    
-    const reviews = data.all || [];
-    
-    let html = `
-      <style>
-        .review-item { display:flex; align-items:center; padding:12px; background:#fff; border-radius:8px; margin-bottom:8px; box-shadow:0 1px 3px rgba(0,0,0,.1); }
-        .review-item:hover { background:#f0fdf4; }
-        .review-content { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        .review-btn { padding:4px 8px; font-size:.75rem; margin-left:4px; }
-        .dark .review-item { background:#2d3748; }
-      </style>
-      
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-        <button class="btn btn-sm btn-outline" onclick="switchStudentSubTab('wrongBook')">⬅️ 返回错题本</button>
-        <span style="font-weight:600">📖 复习本</span>
-        <span style="font-size:.8rem;color:#6b7280">(${reviews.length}题)</span>
-        ${reviews.length > 0 ? `<button class="btn btn-sm btn-primary" style="margin-left:auto" onclick="startReviewPractice()">📝 一键做题</button><button class="btn btn-sm btn-outline" onclick="clearReviewBook()">🗑️ 清空</button>` : ''}
-      </div>
-      
-      <div style="font-size:.75rem;color:#6b7280;margin-bottom:12px;padding:8px;background:#f0fdf4;border-radius:6px;border-left:3px solid #10b981">
-        💡 <b>复习本说明：</b>做对的错题会移入复习本，您可以随时移出或清空。
-      </div>
-    `;
-    
-    if (reviews.length === 0) {
-      html += `<div class="empty-state"><div class="empty-icon">🎉</div><p>复习本是空的，继续努力刷题吧！</p></div>`;
-    } else {
-      const page = _pg.reviewBook || 1;
-      const pageItems = pageSlice(reviews, page);
-      
-      html += pageItems.map((q, idx) => `
-        <div class="review-item">
-          <span style="color:#10b981;margin-right:8px">✅</span>
-          <span class="review-content">${escHtml((q.content||'').substring(0,50))}${(q.content||'').length > 50 ? '...' : ''}</span>
-          <button class="btn btn-sm btn-outline review-btn" onclick="removeFromReview(${q.question_id})">移出</button>
-          <button class="btn btn-sm btn-outline review-btn" onclick="practiceWrongQuestion(${q.question_id})">重做</button>
-        </div>
-      `).join('');
-      
-      html += paginateHtml('reviewBook', reviews.length, page);
-    }
-    
-    container.innerHTML = html;
-  } catch (e) {
-    container.innerHTML = `<div class="card"><div class="card-title">❌ 加载失败</div><p>${escHtml(e.message)}</p><button class="btn btn-outline" onclick="switchStudentSubTab('wrongBook')">返回</button></div>`;
-  }
-}
-
-async function removeFromReview(questionId) {
-  if (!confirm('确定将此题移出复习本？移出后需要重新做错才会再次出现。')) return;
-  
-  try {
-    const res = await fetch('/api/review-remove', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-      body: JSON.stringify({ student_id: currentUser.username, question_id: questionId })
-    });
-    const result = await res.json();
-    if (!res.ok || result.error) throw new Error(result.error || `HTTP ${res.status}`);
-    showToast('已移出复习本', 'success');
-    showReviewBook();
-  } catch (e) {
-    showToast('移出失败：' + e.message, 'error');
-  }
-}
-
-async function clearReviewBook() {
-  if (!confirm('确定清空复习本？清空后所有题目需要重新做错才会出现。')) return;
-  
-  try {
-    const res = await fetch('/api/review-clear', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-      body: JSON.stringify({ student_id: currentUser.username })
-    });
-    const result = await res.json();
-    if (!res.ok || result.error) throw new Error(result.error || `HTTP ${res.status}`);
-    showToast('复习本已清空', 'success');
-    showReviewBook();
-  } catch (e) {
-    showToast('清空失败：' + e.message, 'error');
-  }
-}
-
-// 开始练习当前筛选的错题
-async function startWrongBookPractice() {
-  const data = _wrongLevelData || { all: [] };
-  const filter = _wrongBookFilter || 'all';
-  
-  // 根据当前筛选获取错题
-  let wrongQs = [];
-  if (filter === 'level1') wrongQs = data.level1 || [];
-  else if (filter === 'level2') wrongQs = data.level2 || [];
-  else if (filter === 'level3') wrongQs = data.level3 || [];
-  else wrongQs = data.all || [];
-  
-  if (wrongQs.length === 0) {
-    showToast('当前没有错题可练习', 'info');
-    return;
-  }
-  
-  // 按错题级别排序（三级优先），然后随机打乱
-  wrongQs = [...wrongQs].sort((a, b) => (b.wrong_level || 1) - (a.wrong_level || 1));
-  // 三级错题放在前面，但同级内随机
-  const level3 = wrongQs.filter(q => (q.wrong_level || 1) >= 3).sort(() => Math.random() - 0.5);
-  const level2 = wrongQs.filter(q => (q.wrong_level || 1) === 2).sort(() => Math.random() - 0.5);
-  const level1 = wrongQs.filter(q => (q.wrong_level || 1) === 1).sort(() => Math.random() - 0.5);
-  wrongQs = [...level3, ...level2, ...level1];
-  
-  // 转换为标准题目格式（question_id -> id，确保是数字类型）
-  practiceQuestions = wrongQs.map(q => ({
-    ...q,
-    id: parseInt(q.question_id || q.id, 10)
-  }));
-  practiceIndex = 0;
-  practiceAnswered = {};
-  practiceMultiSelected = {};
-  practiceMode = 'wrong';
-  
-  // 切换到刷题Tab并渲染
-  _practiceSubTab = 'all';
-  await renderPractice();
-  renderPracticeCard();
-  
-  showToast(`开始练习 ${wrongQs.length} 道错题，优先攻克三级错题！`, 'success');
-}
-
-async function practiceWrongQuestion(qId) {
-  const allQ = await dbSelect('questions', { order: ['id', false] });
-  const q = allQ.find(x => x.id === qId);
-  if (!q) {
-    showToast('题目不存在', 'error');
-    return;
-  }
-  practiceQuestions = [q];
-  practiceIndex = 0;
-  practiceAnswered = {};
-  practiceMultiSelected = {};
-  practiceMode = 'review';
-  // 切换到刷题Tab并渲染
-  _practiceSubTab = 'all';
-  await renderPractice();
-  renderPracticeCard();
-  showToast('开始练习复习题', 'success');
-}
-
-async function startReviewPractice() {
-  if (!currentUser) return;
-  const res = await fetch('/api/review-book', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-    body: JSON.stringify({ student_id: currentUser.username })
-  });
-  const data = await res.json();
-  const reviewQs = data.all || [];
-  if (reviewQs.length === 0) {
-    showToast('复习本为空！', 'info');
-    return;
-  }
-  const allQ = await dbSelect('questions', { order: ['id', false] });
-  practiceQuestions = reviewQs.map(r => allQ.find(q => q.id == r.question_id)).filter(Boolean);
-  practiceIndex = 0;
-  practiceAnswered = {};
-  practiceMultiSelected = {};
-  practiceMode = 'review';
-  // 切换到刷题Tab并渲染
-  _practiceSubTab = 'all';
-  await renderPractice();
-  renderPracticeCard();
-  showToast(`开始练习 ${practiceQuestions.length} 道复习题！`, 'success');
 }
 
 async function renderProfile() {
