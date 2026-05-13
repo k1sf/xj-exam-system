@@ -6657,6 +6657,8 @@ async function switchPracticeMode(mode) {
   practiceMode = mode;
   practiceIndex = 0;
   practiceMultiSelected = {};
+  practiceAnswered = {}; // 切换模式时清除答题状态，允许重新做题
+  clearPracticeProgress(); // 清除保存的进度
 
   // 更新按钮样式
   document.querySelectorAll('.practice-modes .mode-btn').forEach(btn => {
@@ -6687,14 +6689,47 @@ async function switchPracticeMode(mode) {
         .filter(([, r]) => r.is_fav)
         .map(([qId]) => Number(qId));
       practiceQuestions = allQ.filter(q => favQIds.includes(Number(q.id)));
+      
+      // 预加载收藏状态（收藏模式下需要显示收藏按钮状态）
+      practiceQuestions.forEach(q => {
+        const key = String(q.id);
+        const record = latestRecordByQ[q.id];
+        practiceAnswered[key] = { isFav: record ? !!record.is_fav : false };
+      });
       break;
     }
     case 'random': {
       practiceQuestions = [...allQ].sort(() => Math.random() - 0.5);
+      // 预加载收藏状态
+      const latestRecordByQ = {};
+      records.forEach(r => {
+        const existing = latestRecordByQ[r.question_id];
+        if (!existing || new Date(r.created_at) > new Date(existing.created_at)) {
+          latestRecordByQ[r.question_id] = r;
+        }
+      });
+      practiceQuestions.forEach(q => {
+        const key = String(q.id);
+        const record = latestRecordByQ[q.id];
+        practiceAnswered[key] = { isFav: record ? !!record.is_fav : false };
+      });
       break;
     }
     default:
       practiceQuestions = allQ;
+      // 预加载收藏状态
+      const latestRecordByQ = {};
+      records.forEach(r => {
+        const existing = latestRecordByQ[r.question_id];
+        if (!existing || new Date(r.created_at) > new Date(existing.created_at)) {
+          latestRecordByQ[r.question_id] = r;
+        }
+      });
+      practiceQuestions.forEach(q => {
+        const key = String(q.id);
+        const record = latestRecordByQ[q.id];
+        practiceAnswered[key] = { isFav: record ? !!record.is_fav : false };
+      });
   }
   // Check for saved progress when switching back to 'all' mode
   if (mode === 'all') {
