@@ -4135,7 +4135,7 @@ async function renderEnrollmentDetailPage() {
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
         <button class="admin-btn" onclick="renderAdminEnrollment()">← 返回</button>
         <div style="display:flex;gap:8px">
-          <button class="admin-btn" onclick="showShareEnrollmentModal(${c.id})">📱 分享</button>
+          <button class="admin-btn" onclick="showShareEnrollmentModal(${c.id})">📱 报名链接</button>
           ${c.status === 'active' ? `<button class="admin-btn" onclick="toggleEnrollmentStatus(${c.id}, 'closed')">🔒 关闭</button>` : `<button class="admin-btn primary" onclick="toggleEnrollmentStatus(${c.id}, 'active')">🔓 开启</button>`}
           <button class="admin-btn danger" onclick="deleteEnrollment(${c.id})">🗑 删除</button>
         </div>
