@@ -6534,7 +6534,6 @@ function renderStudent() {
       <div class="student-content" id="studentContent"></div>
       <div class="student-tabbar">
         <button class="student-tab active" data-tab="practice" onclick="switchStudentTab('practice')"><span class="tab-icon">📝</span><span>练习</span></button>
-        <button class="student-tab" data-tab="mock" onclick="switchStudentTab('mock')"><span class="tab-icon">🎯</span><span>模拟</span></button>
         <button class="student-tab" data-tab="exam" onclick="switchStudentTab('exam')"><span class="tab-icon">📋</span><span>考试</span></button>
         <button class="student-tab" data-tab="profile" onclick="switchStudentTab('profile')"><span class="tab-icon">👤</span><span>我的</span></button>
       </div>
@@ -6575,7 +6574,6 @@ function switchStudentTab(tab) {
   document.querySelectorAll('.student-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   switch(tab) {
     case 'practice': renderPractice(); break;
-    case 'mock': renderMockTab(); break;
     case 'exam': renderExamTab(); break;
     case 'profile': renderProfile(); break;
   }
@@ -6602,11 +6600,6 @@ function switchPracticeSubTab(sub) {
     return;
   }
   renderPractice();
-}
-
-// ===== 模拟考试Tab =====
-function renderMockTab() {
-  document.getElementById('studentContent').innerHTML = renderMockSettingsUI();
 }
 
 async function renderPracticeSub() {
