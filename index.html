@@ -2388,14 +2388,11 @@ function renderAdmin() {
         </div>
       </div>
       <div class="admin-tabs" id="adminTabs">
-        <button class="admin-tab active" data-tab="students" onclick="switchAdminTab('students')">👨‍🎓 学生</button>
+        <button class="admin-tab active" data-tab="students" onclick="switchAdminTab('students')">👥 学生</button>
         <button class="admin-tab" data-tab="questions" onclick="switchAdminTab('questions')">📚 题库</button>
-        <button class="admin-tab" data-tab="exams" onclick="switchAdminTab('exams')">📅 考试</button>
-        <button class="admin-tab" data-tab="quickexam" onclick="switchAdminTab('quickexam')">⚡ 快考</button>
-        <button class="admin-tab" data-tab="enrollment" onclick="switchAdminTab('enrollment')">📋 报名</button>
+        <button class="admin-tab" data-tab="exams" onclick="switchAdminTab('exams')">📋 考试</button>
         <button class="admin-tab" data-tab="homework" onclick="switchAdminTab('homework')">📝 作业</button>
-        <button class="admin-tab" data-tab="learning" onclick="switchAdminTab('learning')">📖 学情</button>
-        <button class="admin-tab" data-tab="settings" onclick="switchAdminTab('settings')">⚙️ 设置</button>
+        <button class="admin-tab" data-tab="manage" onclick="switchAdminTab('manage')">⚙️ 管理</button>
       </div>
       <div class="admin-content" id="adminContent"></div>
     </div>
@@ -2412,12 +2409,9 @@ function switchAdminTab(tab) {
     switch(tab) {
       case 'students': renderAdminStudents(); break;
       case 'questions': renderAdminQuestions(); break;
-      case 'exams': renderAdminExams(); break;
-      case 'quickexam': renderQuickExam(); break;
-      case 'enrollment': renderAdminEnrollment(); break;
+      case 'exams': renderAdminExamsTab(); break;
       case 'homework': renderAdminHomework(); break;
-      case 'learning': renderLearning(); break;
-      case 'settings': renderAdminSettings(); break;
+      case 'manage': renderAdminManage(); break;
     }
     content.style.transition = 'opacity 0.2s, transform 0.2s';
     content.style.opacity = '1';
@@ -2425,15 +2419,41 @@ function switchAdminTab(tab) {
   }, 50);
 }
 
-// ===== Admin Tab1: Students =====
+// ===== Admin Tab1: Students (合并学生+报名) =====
+let _studentSubTab = 'list';
+
 async function renderAdminStudents() {
   allStudents = await dbSelect('students', { order: ['created_at', false], cacheBypass: true });
-  // 拆分合并的期次为独立选项（如 "60真, 2026测试期" 拆分为 "60真" 和 "2026测试期"）
   const allCohorts = allStudents.flatMap(s => (s.cohort || '').split(',').map(c => c.trim()).filter(Boolean));
   const cohorts = [...new Set(allCohorts)];
   const cohortOpts = cohorts.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('');
-
+  
   document.getElementById('adminContent').innerHTML = `
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      <button class="btn ${_studentSubTab === 'list' ? 'btn-primary' : 'btn-outline'}" onclick="switchStudentSubTab('list')">👥 学生列表</button>
+      <button class="btn ${_studentSubTab === 'enroll' ? 'btn-primary' : 'btn-outline'}" onclick="switchStudentSubTab('enroll')">📝 报名管理</button>
+    </div>
+    <div id="studentSubContent"></div>
+  `;
+  switchStudentSubTab(_studentSubTab);
+}
+
+function switchStudentSubTab(tab) {
+  _studentSubTab = tab;
+  const container = document.getElementById('studentSubContent');
+  if (!container) return;
+  if (tab === 'list') renderStudentListSub();
+  else if (tab === 'enroll') renderEnrollSub();
+}
+
+async function renderStudentListSub() {
+  const container = document.getElementById('studentSubContent');
+  allStudents = await dbSelect('students', { order: ['created_at', false], cacheBypass: true });
+  const allCohorts = allStudents.flatMap(s => (s.cohort || '').split(',').map(c => c.trim()).filter(Boolean));
+  const cohorts = [...new Set(allCohorts)];
+  const cohortOpts = cohorts.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('');
+  
+  container.innerHTML = `
     <div class="card">
       <div class="card-title">➕ 创建学生账号</div>
       <div style="display:flex;flex-direction:column;gap:10px">
@@ -2837,6 +2857,51 @@ async function deleteStudent(username) {
   });
 }
 
+async function renderEnrollSub() {
+  const container = document.getElementById('studentSubContent');
+  if (!container) return;
+  
+  try {
+    const response = await fetch('/api/enroll-config/list', {
+      headers: { 'X-API-Token': API_TOKEN }
+    });
+    _enrollmentConfigs = await response.json();
+  } catch(e) {
+    _enrollmentConfigs = [];
+  }
+  
+  const configsHtml = _enrollmentConfigs.map(c => {
+    const statusColor = c.status === 'active' ? '#28a745' : '#dc3545';
+    const statusText = c.status === 'active' ? '进行中' : '已关闭';
+    const autoSyncBadge = c.auto_sync ? '<span style="background:#28a745;color:#fff;padding:2px 6px;border-radius:4px;font-size:0.7rem;margin-left:6px">自动同步</span>' : '<span style="background:#999;color:#fff;padding:2px 6px;border-radius:4px;font-size:0.7rem;margin-left:6px">手动导入</span>';
+    const levelsStr = (c.levels || []).map(l => LEVEL_ICONS[l] || '').join(' ');
+    const timeRange = [];
+    if (c.start_time) timeRange.push(fmtLocal(c.start_time));
+    if (c.end_time) timeRange.push(fmtLocal(c.end_time));
+    return `
+      <div class="card" style="margin-bottom:12px;cursor:pointer" onclick="openEnrollmentDetail(${c.id})">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span>📋 ${escHtml(c.title)}</span>
+          <span style="color:${statusColor};font-size:0.8rem">● ${statusText}${autoSyncBadge}</span>
+        </div>
+        <div style="font-size:0.85rem;color:var(--text2);margin-top:6px">
+          <div>级别：${levelsStr} ${escHtml((c.levels || []).join(', '))}</div>
+          ${timeRange.length ? `<div>时间：${timeRange.join(' ~ ')}</div>` : ''}
+          <div style="margin-top:6px">报名：${c.enrollment_count || 0}人 | 已导入：${c.approved_count || 0}人 | 待审核：${(c.enrollment_count || 0) - (c.approved_count || 0)}人</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  
+  container.innerHTML = `
+    <div class="card" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
+      <div style="font-weight:600">📋 报名管理</div>
+      <button class="admin-btn primary" onclick="showCreateEnrollmentModal()">+ 创建报名</button>
+    </div>
+    ${configsHtml || '<div style="text-align:center;padding:40px;color:var(--text2)">暂无报名活动</div>'}
+  `;
+}
+
 // ===== Admin Tab2: Questions =====
 async function renderAdminQuestions() {
   questionPage = 1;
@@ -3199,7 +3264,90 @@ async function deleteQuestion(qId) {
   });
 }
 
-// ===== Admin Tab3: Exams =====
+// ===== Admin Tab3: Exams (合并正式考试+快捷考试) =====
+let _adminExamSubTab = 'normal'; // normal | quick
+
+async function renderAdminExamsTab() {
+  allExams = await dbSelect('exams', { order: ['id', false] });
+  allQuestions = await dbSelect('questions', { order: ['id', true] });
+  _examRecords = await dbSelect('records');
+  renderAdminExamsSub();
+}
+
+function switchExamSubTab(tab) {
+  _adminExamSubTab = tab;
+  renderAdminExamsSub();
+}
+
+function renderAdminExamsSub() {
+  const normalCount = allExams.filter(e => !e.is_quick).length;
+  const quickCount = allExams.filter(e => e.is_quick).length;
+  
+  const content = `
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+      <button class="btn ${_adminExamSubTab === 'normal' ? 'btn-primary' : 'btn-outline'}" onclick="switchExamSubTab('normal')">📅 正式考试 (${normalCount})</button>
+      <button class="btn ${_adminExamSubTab === 'quick' ? 'btn-primary' : 'btn-outline'}" onclick="switchExamSubTab('quick')">⚡ 快捷考试 (${quickCount})</button>
+    </div>
+    <div id="examSubContent">${_adminExamSubTab === 'normal' ? renderNormalExamsContent() : renderQuickExamsContent()}</div>
+  `;
+  document.getElementById('adminContent').innerHTML = content;
+}
+
+function renderNormalExamsContent() {
+  const normalExams = allExams.filter(e => !e.is_quick);
+  if (!normalExams.length) {
+    return `<div class="empty-state"><div class="empty-icon">📭</div><p>暂无正式考试</p></div>
+            <button class="btn btn-outline btn-full" style="border-style:dashed" onclick="openCreateExam()">➕ 创建正式考试</button>`;
+  }
+  const list = normalExams.map(e => {
+    const now = Date.now();
+    const start = new Date(e.start_time).getTime();
+    const end = new Date(e.end_time).getTime();
+    const status = now < start ? 'upcoming' : now > end ? 'ended' : 'ongoing';
+    const statusMap = { upcoming: ['未开始', 'tag-gray'], ongoing: ['进行中', 'tag-green'], ended: ['已结束', 'tag-red'] };
+    const [statusLabel, statusClass] = statusMap[status];
+    const qCount = (e.question_ids || []).length;
+    return `<div class="exam-list-card ${status}">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span class="exam-title" style="flex:1">${escHtml(e.title)}</span>
+        <span class="tag ${statusClass}">${statusLabel}</span>
+      </div>
+      <div class="exam-meta">📋 ${qCount}题 · ⏱️ ${e.duration}分钟${e.level ? ` · ${LEVEL_ICONS[e.level]||''} ${escHtml(e.level)}` : ''}</div>
+      <div class="exam-time">🕐 ${formatTime(e.start_time)} → ${formatTime(e.end_time)}</div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-sm btn-outline" onclick="viewExamScores(${e.id})">📊 成绩</button>
+        <button class="btn btn-sm btn-ghost" onclick="deleteExam(${e.id})" style="color:var(--error)">🗑️</button>
+      </div>
+    </div>`;
+  }).join('');
+  return `<button class="btn btn-outline btn-full" style="border-style:dashed;margin-bottom:16px" onclick="openCreateExam()">➕ 创建正式考试</button>${list}`;
+}
+
+function renderQuickExamsContent() {
+  const quickExams = allExams.filter(e => e.is_quick);
+  if (!quickExams.length) {
+    return `<div class="empty-state"><div class="empty-icon">📭</div><p>暂无快捷考试</p></div>
+            <button class="btn btn-outline btn-full" style="border-style:dashed" onclick="openCreateQuickExam()">➕ 创建快捷考试</button>`;
+  }
+  const list = quickExams.map(e => {
+    const qCount = (e.question_ids || []).length;
+    const participants = _examRecords ? new Set(_examRecords.filter(r => r.exam_id === e.id).map(r => r.student_id)).size : 0;
+    return `<div class="exam-list-card">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span class="exam-title" style="flex:1">${escHtml(e.title)}</span>
+        <span class="tag tag-blue">快捷</span>
+      </div>
+      <div class="exam-meta">📋 ${qCount}题 · ⏱️ ${e.duration}分钟 · 👥 ${participants}人参与${e.pass_rate ? ` · 及格线${e.pass_rate}%` : ''}</div>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <button class="btn btn-sm btn-primary" onclick="shareQuickExam(${e.id})">📤 分享</button>
+        <button class="btn btn-sm btn-outline" onclick="viewQuickExamScores(${e.id})">📊 成绩</button>
+        <button class="btn btn-sm btn-ghost" onclick="deleteExam(${e.id})" style="color:var(--error)">🗑️</button>
+      </div>
+    </div>`;
+  }).join('');
+  return `<button class="btn btn-outline btn-full" style="border-style:dashed;margin-bottom:16px" onclick="openCreateQuickExam()">➕ 创建快捷考试</button>${list}`;
+}
+
 let _filteredAdminExams = [];
 async function renderAdminExams() {
   allExams = await dbSelect('exams', { order: ['id', false] });
@@ -4689,6 +4837,155 @@ async function deleteHomework(id) {
 }
 
 
+// ===== Admin Tab5: Manage (合并学情+设置) =====
+let _manageSubTab = 'learning';
+
+function renderAdminManage() {
+  const content = `
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+      <button class="btn ${_manageSubTab === 'learning' ? 'btn-primary' : 'btn-outline'}" onclick="switchManageSubTab('learning')">📊 学情</button>
+      <button class="btn ${_manageSubTab === 'settings' ? 'btn-primary' : 'btn-outline'}" onclick="switchManageSubTab('settings')">⚙️ 设置</button>
+      <button class="btn ${_manageSubTab === 'notify' ? 'btn-primary' : 'btn-outline'}" onclick="switchManageSubTab('notify')">📢 消息</button>
+      <button class="btn ${_manageSubTab === 'logs' ? 'btn-primary' : 'btn-outline'}" onclick="switchManageSubTab('logs')">📋 日志</button>
+    </div>
+    <div id="manageSubContent"></div>
+  `;
+  document.getElementById('adminContent').innerHTML = content;
+  switchManageSubTab(_manageSubTab);
+}
+
+function switchManageSubTab(tab) {
+  _manageSubTab = tab;
+  const container = document.getElementById('manageSubContent');
+  if (!container) return;
+  
+  switch(tab) {
+    case 'learning': renderLearningSub(); break;
+    case 'settings': renderSettingsSub(); break;
+    case 'notify': renderNotifySub(); break;
+    case 'logs': renderLogsSub(); break;
+  }
+}
+
+async function renderLearningSub() {
+  const container = document.getElementById('manageSubContent');
+  allStudents = await dbSelect('students', { order: ['created_at', false] });
+  const allCohorts = allStudents.flatMap(s => (s.cohort || '').split(',').map(c => c.trim()).filter(Boolean));
+  const cohorts = [...new Set(allCohorts)];
+  const cohortOpts = cohorts.map(c => `<option value="${escHtml(c)}" ${learningCohort===c?'selected':''}>${escHtml(c)}</option>`).join('');
+  const _today = new Date(); const today = `${_today.getFullYear()}-${String(_today.getMonth()+1).padStart(2,'0')}-${String(_today.getDate()).padStart(2,'0')}`;
+  if (!learningDate) learningDate = today;
+  
+  container.innerHTML = `
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <select class="input" id="learningCohort" onchange="learningCohort=this.value;_pg.learning=1;loadLearningData()">
+          <option value="">全部班级</option>${cohortOpts}
+        </select>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-sm ${learningMode==='day'?'btn-primary':'btn-outline'}" id="lmDay" onclick="switchLearningMode('day')">按日</button>
+          <button class="btn btn-sm ${learningMode==='week'?'btn-primary':'btn-outline'}" id="lmWeek" onclick="switchLearningMode('week')">按周</button>
+          <button class="btn btn-sm ${learningMode==='month'?'btn-primary':'btn-outline'}" id="lmMonth" onclick="switchLearningMode('month')">按月</button>
+        </div>
+        <input class="input" id="learningDate" type="date" value="${learningDate}" onchange="learningDate=this.value;_pg.learning=1;loadLearningData()">
+      </div>
+    </div>
+    <div id="learningResults"></div>
+  `;
+  loadLearningData();
+}
+
+function renderSettingsSub() {
+  const container = document.getElementById('manageSubContent');
+  container.innerHTML = `
+    <div class="card" style="margin-bottom:12px">
+      <div class="card-title">🎨 显示设置</div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="darkModeAdmin" ${localStorage.getItem('darkMode')==='1'?'checked':''} onchange="localStorage.setItem('darkMode',this.checked?'1':'0');location.reload()">
+          <span>🌙 暗色模式</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="bigFontAdmin" ${localStorage.getItem('bigFont')==='1'?'checked':''} onchange="localStorage.setItem('bigFont',this.checked?'1':'0');location.reload()">
+          <span>🔤 大字版</span>
+        </label>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:12px">
+      <div class="card-title">🔐 账号安全</div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <button class="btn btn-outline btn-full" onclick="openChangePassword()">🔑 修改密码</button>
+      </div>
+    </div>
+    ${currentUser && currentUser.is_master ? `
+    <div class="card" style="margin-bottom:12px">
+      <div class="card-title">👑 管理员管理</div>
+      <div id="adminList"></div>
+      <button class="btn btn-outline btn-full" style="margin-top:10px" onclick="openAddAdmin()">➕ 添加管理员</button>
+    </div>
+    ` : ''}
+  `;
+  if (currentUser && currentUser.is_master) loadAdminList();
+}
+
+async function renderNotifySub() {
+  const container = document.getElementById('manageSubContent');
+  allStudents = await dbSelect('students', { order: ['created_at', false] });
+  const allCohorts = allStudents.flatMap(s => (s.cohort || '').split(',').map(c => c.trim()).filter(Boolean));
+  const cohorts = [...new Set(allCohorts)];
+  const cohortOpts = cohorts.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('');
+  const levelOpts = LEVELS.map(l => `<option value="${l}">${LEVEL_ICONS[l]} ${l}</option>`).join('');
+  
+  container.innerHTML = `
+    <div class="card" style="margin-bottom:12px">
+      <div class="card-title">📢 发送通知</div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <input class="input" id="notifyTitle" placeholder="通知标题">
+        <textarea class="input" id="notifyContent" placeholder="通知内容" rows="3"></textarea>
+        <select class="input" id="notifyTarget">
+          <option value="all">全员</option>
+          <optgroup label="按级别">${levelOpts}</optgroup>
+        </select>
+        <button class="btn btn-primary btn-full" onclick="sendNotificationToStudents()">📤 发送通知</button>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:12px">
+      <div class="card-title">📊 学习报告推送</div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <select class="input" id="reportLevel">${levelOpts}</select>
+        <select class="input" id="reportWeek">
+          <option value="0">本周</option>
+          <option value="1">上周</option>
+          <option value="2">两周前</option>
+        </select>
+        <button class="btn btn-outline btn-full" onclick="previewAndPushReport()">📊 预览并推送报告</button>
+      </div>
+    </div>
+  `;
+}
+
+async function renderLogsSub() {
+  const container = document.getElementById('manageSubContent');
+  const result = await fetch('/api/log/list?page=1&limit=20');
+  const data = await result.json();
+  const list = (data.list || []).map(log => `
+    <div class="card" style="margin-bottom:8px;padding:10px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span class="tag tag-${log.user_type==='admin'?'blue':'green'}">${log.user_type==='admin'?'管理员':'学生'}</span>
+        <span style="font-size:0.75rem;color:var(--text3)">${fmtLocalShort(log.created_at)}</span>
+      </div>
+      <div style="font-size:0.9rem">${escHtml(log.username || log.user_id)} - ${escHtml(log.action)}</div>
+    </div>
+  `).join('') || '<div class="empty-state"><p>暂无日志</p></div>';
+  
+  container.innerHTML = `
+    <div class="card" style="margin-bottom:12px">
+      <div class="card-title">📋 操作日志</div>
+      ${list}
+    </div>
+  `;
+}
+
 async function renderLearning() {
   allStudents = await dbSelect('students', { order: ['created_at', false] });
   // 拆分合并的期次为独立选项
@@ -5080,11 +5377,6 @@ async function renderAdminSettings() {
         <div style="font-size:0.75rem;color:var(--text2)">当前账号: ${escHtml(currentAdmin ? currentAdmin.nickname : '')}</div>
       </div>
       
-      <div class="card" style="margin-top:12px">
-        <div class="card-title">📖 帮助文档</div>
-        <button class="btn btn-outline" style="width:100%" onclick="reopenHelp()">查看操作指南</button>
-      </div>
-
       <div class="card" style="margin-top:12px">
         <div class="card-title">🗄️ 数据维护</div>
         <div style="display:flex;flex-direction:column;gap:10px">
@@ -6675,7 +6967,7 @@ async function startMockExam() {
 }
 
 // ===== 考试Tab（含子Tab：正式考试/模拟考试）=====
-let _examSubTab = 'formal'; // 'formal' 或 'mock'
+let _studentExamSubTab = 'formal'; // 'formal' 或 'mock'
 let _filteredStudentExams = [];
 let _takenExamIds = new Set();
 
@@ -6684,14 +6976,14 @@ async function renderExamTab() {
     { key: 'formal', label: '正式考试', icon: '📋' },
     { key: 'mock', label: '模拟考试', icon: '🎯' }
   ];
-  const subBtns = subTabs.map(s => `<button class="mode-btn ${_examSubTab===s.key?'active':''}" onclick="switchExamSubTab('${s.key}')">${s.icon} ${s.label}</button>`).join('');
+  const subBtns = subTabs.map(s => `<button class="mode-btn ${_studentExamSubTab===s.key?'active':''}" onclick="switchExamSubTab('${s.key}')">${s.icon} ${s.label}</button>`).join('');
   
   document.getElementById('studentContent').innerHTML = `
     <div class="practice-modes" style="margin-bottom:8px">${subBtns}</div>
     <div id="examSubContent"></div>
   `;
   
-  if (_examSubTab === 'mock') {
+  if (_studentExamSubTab === 'mock') {
     document.getElementById('examSubContent').innerHTML = renderMockSettingsUI();
   } else {
     await renderFormalExamSub();
@@ -6699,7 +6991,7 @@ async function renderExamTab() {
 }
 
 function switchExamSubTab(sub) {
-  _examSubTab = sub;
+  _studentExamSubTab = sub;
   renderExamTab();
 }
 
@@ -6761,7 +7053,7 @@ function renderFormalExamList(container) {
 
 // ===== 原考试函数（保留兼容）=====
 async function renderStudentExam() {
-  _examSubTab = 'formal';
+  _studentExamSubTab = 'formal';
   await renderExamTab();
 }
 function renderStudentExamPage() {
