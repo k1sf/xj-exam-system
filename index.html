@@ -1306,11 +1306,10 @@ bufferFavUpdate = function(id, isFav) {
 // ===== Manual Sync Button in Header =====
 function renderSyncButton() {
   if (!currentUser) return '';
-    🔄 <span id="syncStatus"></span>
-  </button>`;
+  return `<button class="header-btn" onclick="manualSync()" title="同步数据">🔄 <span id="syncStatus"></span></button>`;
 }
 
-  const btn = document.getElementById('syncStatus');
+async function manualSync() {
   if (btn) btn.textContent = '同步中...';
   await syncImmediately();
   if (btn) {
@@ -5315,7 +5314,6 @@ function renderDailyTaskPanel() {
   }
   
   if (!panel) return;
-  ].filter(Boolean).length;
   
   const weekDays = _weeklyStats?.days || [];
   const today = new Date().getDay();
@@ -6214,7 +6212,8 @@ async function renderWrongBookSub() {
     _pg.wrongBook = 1;
     
     // 直接渲染到container
-    renderWrongBookPageTo(container);
+    container.id = 'practiceSubContent';
+    renderWrongBookPageTo('practiceSubContent');
   } catch (e) {
     container.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>加载错题失败</p></div>';
   }
