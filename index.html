@@ -6619,7 +6619,7 @@ async function renderPracticeSub() {
     practiceMode = 'all';
     practiceIndex = 0;
     
-    // 预加载收藏状态
+    // 预加载收藏状态（统一使用字符串键）
     const latestRecordByQ = {};
     records.forEach(r => {
       if (!latestRecordByQ[r.question_id] || new Date(r.created_at) > new Date(latestRecordByQ[r.question_id].created_at)) {
@@ -6627,10 +6627,11 @@ async function renderPracticeSub() {
       }
     });
     Object.entries(latestRecordByQ).forEach(([qId, r]) => {
-      // 收藏状态
+      // 收藏状态 - 统一使用字符串键
       if (r.is_fav) {
-        practiceAnswered[qId] = practiceAnswered[qId] || {};
-        practiceAnswered[qId].isFav = true;
+        const key = String(qId);
+        practiceAnswered[key] = practiceAnswered[key] || {};
+        practiceAnswered[key].isFav = true;
       }
     });
   }
@@ -6716,7 +6717,8 @@ function renderPracticeCard() {
 
   const q = practiceQuestions[practiceIndex];
   // 确保 ID 存在（兼容错题数据中的 question_id 字段）
-  const qId = q.id || q.question_id;
+  // 统一使用字符串键确保收藏状态一致性
+  const qId = String(q.id || q.question_id);
   const answered = practiceAnswered[qId];
   const progress = ((practiceIndex + 1) / practiceQuestions.length * 100).toFixed(1);
 
@@ -6751,14 +6753,14 @@ function renderPracticeCard() {
     } else if (isMulti && multiSel[opt.letter]) {
       cls += ' selected';
     }
-    return `<button class="${cls}" data-idx="${oi}" data-letter="${opt.letter}" onclick="answerPractice(${qId},'${opt.letter}')">${icon}<span>${opt.letter}. ${escHtml(opt.text)}</span></button>`;
+    return `<button class="${cls}" data-idx="${oi}" data-letter="${opt.letter}" onclick="answerPractice('${qId}','${opt.letter}')">${icon}<span>${opt.letter}. ${escHtml(opt.text)}</span></button>`;
   }).join('');
 
   const favActive = answered?.isFav ? 'active' : '';
   const analysisHtml = isAnswered && q.analysis ? `
     <div class="analysis-box"><span class="analysis-icon">💡</span>${escHtml(q.analysis)}</div>
   ` : '';
-  const multiConfirmHtml = isMulti && !isAnswered ? `<div class="confirm-submit-bar"><button class="multi-confirm-btn" onclick="confirmMultiAnswer(${qId})">确认提交</button></div>` : '';
+  const multiConfirmHtml = isMulti && !isAnswered ? `<div class="confirm-submit-bar"><button class="multi-confirm-btn" onclick="confirmMultiAnswer('${qId}')">确认提交</button></div>` : '';
 
   area.innerHTML = `
     <div class="practice-card">
@@ -6771,7 +6773,7 @@ function renderPracticeCard() {
       ${analysisHtml}
       <div class="practice-actions">
         <button class="btn btn-outline" onclick="practicePrev()" ${practiceIndex===0?'disabled':''}>上一题</button>
-        <button class="btn fav-btn ${favActive}" onclick="toggleFav(${qId})" aria-label="收藏">${answered?.isFav?'⭐':'☆'}</button>
+        <button class="btn fav-btn ${favActive}" onclick="toggleFav('${qId}')" aria-label="收藏">${answered?.isFav?'⭐':'☆'}</button>
         <button class="btn btn-primary" onclick="practiceNext()">下一题</button>
       </div>
     </div>
@@ -6793,8 +6795,8 @@ function answerPractice(qId, letter) {
   const q = practiceQuestions.find(x => x.id == qId || x.question_id == qId);
   if (!q) return;
   
-  // 使用统一的 ID（优先使用 id，其次使用 question_id）
-  const actualQId = q.id || q.question_id;
+  // 使用统一的字符串键（优先使用 id，其次使用 question_id）
+  const actualQId = String(q.id || q.question_id);
 
   if (q.type === 'multiple') {
     // Multi-select: toggle selection - update DOM locally, no full re-render
@@ -6834,7 +6836,7 @@ function confirmMultiAnswer(qId) {
   // 兼容 question_id 和 id 两种格式，使用 == 进行类型宽松比较
   const q = practiceQuestions.find(x => x.id == qId || x.question_id == qId);
   if (!q) return;
-  const actualQId = q.id || q.question_id;
+  const actualQId = String(q.id || q.question_id);
   
   const sel = practiceMultiSelected[actualQId] || {};
   const answer = Object.keys(sel).filter(k => sel[k]).sort().join(',');
@@ -6852,13 +6854,15 @@ function confirmMultiAnswer(qId) {
 }
 
 async function toggleFav(qId) {
+  // 统一使用字符串键
+  const qIdStr = String(qId);
   // Check local buffer first, then DB
-  const bufferedRecord = _recordBuffer.find(r => r.question_id === qId);
+  const bufferedRecord = _recordBuffer.find(r => String(r.question_id) === qIdStr);
   let records = [];
   if (bufferedRecord) {
     records = [bufferedRecord];
   } else {
-    records = await dbSelect('records', { eq: { student_id: currentUser.username, question_id: qId }, cacheBypass: true });
+    records = await dbSelect('records', { eq: { student_id: currentUser.username, question_id: qIdStr }, cacheBypass: true });
   }
   if (records.length > 0) {
     const latest = records.reduce((a, b) => new Date(a.created_at || 0) > new Date(b.created_at || 0) ? a : b);
@@ -6870,17 +6874,17 @@ async function toggleFav(qId) {
       // Record is in buffer, update it locally
       latest.is_fav = isFav;
     }
-    if (!practiceAnswered[qId]) practiceAnswered[qId] = {};
-    practiceAnswered[qId].isFav = isFav;
+    if (!practiceAnswered[qIdStr]) practiceAnswered[qIdStr] = {};
+    practiceAnswered[qIdStr].isFav = isFav;
     if (isFav) addXp(XP_REWARDS.fav, '收藏');
     // 立即刷新卡片以更新收藏按钮状态
     renderPracticeCard();
   } else {
     // 新建收藏记录，进入缓冲区统一处理
-    const newRecord = { student_id: currentUser.username, question_id: qId, is_correct: false, user_answer: '', is_fav: true };
+    const newRecord = { student_id: currentUser.username, question_id: qIdStr, is_correct: false, user_answer: '', is_fav: true };
     _recordBuffer.push(newRecord);
-    if (!practiceAnswered[qId]) practiceAnswered[qId] = {};
-    practiceAnswered[qId].isFav = true;
+    if (!practiceAnswered[qIdStr]) practiceAnswered[qIdStr] = {};
+    practiceAnswered[qIdStr].isFav = true;
     addXp(XP_REWARDS.fav, '收藏');
     // 立即刷新卡片以更新收藏按钮状态
     renderPracticeCard();
