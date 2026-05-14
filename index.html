@@ -1415,10 +1415,21 @@ window.addEventListener('beforeunload', () => {
       navigator.sendBeacon && navigator.sendBeacon(beaconUrl('/update'), body);
     }
   }
+  // XP sendBeacon: 使用增量模式，避免重复累加
   if (_pendingXp > 0 && currentUser) {
-    // XP 更新通过 sendBeacon
-    const body = JSON.stringify({ table: 'students', data: { xp: (currentUser.xp || 0) + _pendingXp }, match: { id: currentUser.id } });
-    navigator.sendBeacon && navigator.sendBeacon(beaconUrl('/update'), body);
+    // 标记 XP 已发送，防止 cloudSync 成功后再次发送
+    const xpToSend = _pendingXp;
+    // XP 更新通过 sendBeacon（使用增量值，服务端需要支持或用绝对值）
+    const body = JSON.stringify({ 
+      table: 'students', 
+      data: { xp: (currentUser.xp || 0) + xpToSend }, 
+      match: { id: currentUser.id } 
+    });
+    const sent = navigator.sendBeacon && navigator.sendBeacon(beaconUrl('/update'), body);
+    if (sent) {
+      // sendBeacon 成功加入队列，清除待发送 XP
+      _pendingXp = 0;
+    }
   }
 });
 
@@ -7318,6 +7329,22 @@ async function submitWrongAnswer() {
   
   const correctAnswer = q.answer || '';
   const isCorrect = userAnswer === correctAnswer;
+  
+  // 记录答题记录到缓冲区（同步到records表）
+  bufferRecord({
+    student_id: currentUser.id,
+    question_id: q.id,
+    is_correct: isCorrect,
+    user_answer: userAnswer,
+    is_fav: false
+  });
+  
+  // 添加经验值
+  if (isCorrect) {
+    addXp(10); // 答对+10 XP
+  } else {
+    addXp(3);  // 答错+3 XP
+  }
   
   // 提交到后端更新掌握度
   try {
