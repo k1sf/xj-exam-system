@@ -5741,12 +5741,13 @@ async function renderAdminSettings() {
         <div class="card-title">🔐 超级管理员</div>
         <div style="display:flex;flex-direction:column;gap:10px">
           <button class="btn btn-warning" style="width:100%" onclick="openSuperAdminLogin()">🔑 数据库导出/导入</button>
-          <div style="font-size:0.75rem;color:var(--text2)">导出或导入数据库备份，需要超级管理员密码。</div>
+          ${isMaster ? `<button class="btn btn-outline" style="width:100%" onclick="sendSuperPasswordToEmail()">📧 发送超级密码到邮箱</button>` : ''}
+          <div style="font-size:0.75rem;color:var(--text2)">导出或导入数据库备份需要超级管理员密码。主管理员可通过邮箱获取新密码。</div>
         </div>
       </div>
       
       ${adminSection}
-    </div>`;
+    </div}`;
 }
 
 // ===== Admin Tab6: Admins (now inside Settings) =====
@@ -9580,9 +9581,7 @@ async function loadAutoBackupStatus() {
 }
 
 async function sendBackupEmailNow() {
-  // 弹出密码输入框
-  const password = prompt('请输入超级管理员密码以发送备份邮件：');
-  if (!password) return;
+  if (!confirm('确定要立即发送备份邮件到 1027424321@qq.com 吗？')) return;
   
   showToast('正在生成备份并发送邮件...', 'info');
   
@@ -9590,12 +9589,36 @@ async function sendBackupEmailNow() {
     const res = await fetch('/api/backup-send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-      body: JSON.stringify({ password })
+      body: JSON.stringify({})
     });
     const data = await res.json();
     
     if (data.success) {
       showToast('备份邮件发送成功！请查收邮箱', 'success');
+    } else {
+      showToast('发送失败: ' + (data.error || '未知错误'), 'error');
+    }
+  } catch (e) {
+    showToast('发送失败: ' + e.message, 'error');
+  }
+}
+
+// 发送超级管理员密码到邮箱
+async function sendSuperPasswordToEmail() {
+  if (!confirm('确定要生成新的超级管理员密码并发送到邮箱吗？\n\n注意：生成新密码后，旧的超级密码将失效。')) return;
+  
+  showToast('正在生成并发送超级密码...', 'info');
+  
+  try {
+    const res = await fetch('/api/send-super-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
+      body: JSON.stringify({ admin_id: currentAdmin ? currentAdmin.id : '' })
+    });
+    const data = await res.json();
+    
+    if (data.success) {
+      showToast('超级密码已发送到邮箱，请查收', 'success');
     } else {
       showToast('发送失败: ' + (data.error || '未知错误'), 'error');
     }

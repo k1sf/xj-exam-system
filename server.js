@@ -62,11 +62,29 @@ const API_TOKEN = process.env.API_TOKEN || 'xj_exam_system_api_token_2024_fixed'
 // This password is used for emergency recovery when main admin password is lost
 // Default password: TpBXNX8LTXyqML1WEb49vOFFPUS7tKnb (32 chars, auto-generated)
 // To change: update the hash below (regenerate with: crypto.createHash('sha256').update('newpassword_super_recovery_salt_2026').digest('hex'))
-const SUPER_ADMIN_HASH = process.env.SUPER_ADMIN_HASH || 'de3eb2ed3b8d2655e6bee7eb527df5b4505139b07a1b61e53f6bf5d19619dba8';
+const DEFAULT_SUPER_ADMIN_HASH = 'de3eb2ed3b8d2655e6bee7eb527df5b4505139b07a1b61e53f6bf5d19619dba8';
+const SUPER_PASSWORD_FILE = path.join(__dirname, '.super_password');
+
+function getSuperAdminHash() {
+  // 优先从文件读取（如果存在）
+  if (fs.existsSync(SUPER_PASSWORD_FILE)) {
+    try {
+      return fs.readFileSync(SUPER_PASSWORD_FILE, 'utf8').trim();
+    } catch (e) {
+      console.error('读取超级密码文件失败:', e.message);
+    }
+  }
+  // 其次从环境变量读取
+  if (process.env.SUPER_ADMIN_HASH) {
+    return process.env.SUPER_ADMIN_HASH;
+  }
+  // 最后使用默认值
+  return DEFAULT_SUPER_ADMIN_HASH;
+}
 
 function verifySuperAdmin(password) {
   const hash = crypto.createHash('sha256').update(password + '_super_recovery_salt_2026').digest('hex');
-  return hash === SUPER_ADMIN_HASH;
+  return hash === getSuperAdminHash();
 }
 
 // ===== Email Config for Auto Backup =====
@@ -978,15 +996,8 @@ async function handleApi(req, res, url, sharedParams) {
     }
     
     case 'backup-send': {
-      // 手动发送备份邮件
+      // 手动发送备份邮件（无需密码验证）
       try {
-        const { password } = params;
-        
-        // 验证超级管理员密码
-        if (!password || !verifySuperAdmin(password)) {
-          return sendJson(res, { error: '密码错误' }, 401);
-        }
-        
         // 获取所有数据
         const [students, questions, records, exams, admins] = await Promise.all([
           pool.query('SELECT * FROM students'),
@@ -1016,6 +1027,46 @@ async function handleApi(req, res, url, sharedParams) {
         sendJson(res, { success: true, message: `备份已发送到 ${backupConfig.email}` });
       } catch (err) {
         console.error('Backup email error:', err);
+        sendJson(res, { error: '发送失败: ' + err.message }, 500);
+      }
+      break;
+    }
+    
+    case 'send-super-password': {
+      // 发送超级管理员密码到邮箱
+      try {
+        const { password } = params;
+        
+        // 需要验证当前是否为主管理员
+        const { admin_id } = params;
+        if (admin_id) {
+          const adminRes = await pool.query('SELECT is_master FROM admins WHERE id = $1', [admin_id]);
+          if (!adminRes.rows[0] || !adminRes.rows[0].is_master) {
+            return sendJson(res, { error: '只有主管理员可以获取超级密码' }, 403);
+          }
+        }
+        
+        // 生成新的超级管理员密码（32位随机）
+        const newSuperPassword = crypto.randomBytes(16).toString('hex');
+        const newHash = crypto.createHash('sha256').update(newSuperPassword + '_super_recovery_salt_2026').digest('hex');
+        
+        // 更新环境变量（写入文件）
+        const envPath = path.join(__dirname, '.super_password');
+        fs.writeFileSync(envPath, newHash, 'utf8');
+        
+        // 发送邮件
+        const mailOptions = {
+          from: EMAIL_CONFIG.auth.user,
+          to: backupConfig.email,
+          subject: '【修脚师考试系统】超级管理员密码',
+          text: `您好！\n\n这是修脚师考试系统的超级管理员密码。\n\n超级管理员密码：${newSuperPassword}\n\n此密码用于：\n1. 数据库导出/导入操作\n2. 紧急恢复主管理员权限\n\n请妥善保管此密码，切勿泄露！\n\n系统自动发送，请勿回复。`
+        };
+        
+        await transporter.sendMail(mailOptions);
+        
+        sendJson(res, { success: true, message: `超级管理员密码已发送到 ${backupConfig.email}` });
+      } catch (err) {
+        console.error('Send super password error:', err);
         sendJson(res, { error: '发送失败: ' + err.message }, 500);
       }
       break;
