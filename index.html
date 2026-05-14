@@ -2667,6 +2667,7 @@ async function renderStudentListSub() {
           <option value="">全部班级</option>${cohortOpts}
         </select>
         <div class="dropdown" style="position:relative">
+        <button class="btn btn-sm btn-outline" onclick="exportStudentsCsv()">📥 导出CSV</button>
           <button class="btn btn-sm btn-outline" onclick="toggleDropdown('batchMenu')">批量操作</button>
           <div id="batchMenu" class="dropdown-menu" style="display:none;position:absolute;right:0;top:100%;z-index:100;min-width:120px;background:var(--card);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15)">
             <a href="javascript:void(0)" onclick="batchRenewStudents();toggleDropdown('batchMenu')" style="display:block;padding:10px 16px;color:var(--text);text-decoration:none;border-bottom:1px solid var(--border)">续期</a>
@@ -5605,6 +5606,24 @@ function exportLearningCSV() {
     `${i+1},"${s.nickname}","${s.cohort||''}","${s.level||''}",${s.total},${s.correct},${s.total > 0 ? Math.round(s.correct/s.total*100) : 0}%,${s.streak}`
   ).join('\n');
   downloadCSV(header + rows, `学情排行_${learningDate || 'export'}.csv`);
+}
+
+// ===== Export Students CSV =====
+async function exportStudentsCsv() {
+  requireAdmin();
+  const students = await dbSelect({ table: 'students', order: 'created_at.desc' });
+  if (!students || students.length === 0) { showToast('暂无学生数据', 'error'); return; }
+  
+  const header = '序号,用户名(手机号),昵称,班级,级别,状态,到期时间,经验值,学习等级,创建时间\n';
+  const rows = students.map((s, i) => {
+    const statusText = s.status === 'active' ? '正常' : (s.status === 'disabled' ? '禁用' : '已过期');
+    const expiresAt = s.expires_at ? new Date(s.expires_at).toLocaleDateString('zh-CN') : '';
+    const createdAt = s.created_at ? new Date(s.created_at).toLocaleDateString('zh-CN') : '';
+    return `${i+1},"${s.username}","${s.nickname||''}","${s.cohort||''}","${s.level||''}","${statusText}","${expiresAt}",${s.xp||0},${s.study_level||1},"${createdAt}"`;
+  }).join('\n');
+  
+  downloadCSV(header + rows, `学生列表_${new Date().toLocaleDateString('zh-CN').replace(/\//g,'-')}.csv`);
+  showToast('导出成功', 'success');
 }
 
 // ===== QR Code Modal =====
@@ -11063,18 +11082,14 @@ async function superAdminResetAdminPwd() {
 
 // ===== 数据库导出功能 =====
 function openDatabaseExport() {
-  if (!_superAdminSession) {
-    showToast('请先验证超级管理员', 'error');
-    openSuperAdminLogin();
-    return;
-  }
+  // 普通管理员也可备份数据
   openModal('📤 导出数据库', `
     <div style="padding:8px 0">
       <div style="background:#f1f5f9;border-radius:8px;padding:16px;margin-bottom:20px">
         <div style="font-size:0.85rem;font-weight:600;margin-bottom:12px">📋 导出说明</div>
         <div style="font-size:0.82rem;color:var(--text2);line-height:1.8">
           • 导出的数据为 JSON 格式，包含所有表结构<br>
-          • 题库、学生、答题记录、考试、管理员账号<br>
+          • 题库、学生、答题记录、考试<br>
           • 可用于数据备份或迁移到其他系统
         </div>
       </div>
