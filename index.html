@@ -1142,6 +1142,40 @@ let _practiceSyncTimer = null; // 练习模式定时同步器
 // ===== Local Persistence (localStorage) =====
 // 本地持久化：防止用户直接关闭浏览器导致数据丢失
 const LOCAL_DATA_KEY = 'practice_local_data';
+const LOCAL_STORAGE_WARNING_THRESHOLD = 0.8; // 80%时警告
+
+// 获取localStorage使用情况
+function getLocalStorageUsage() {
+  let totalSize = 0;
+  for (let key in localStorage) {
+    if (localStorage.hasOwnProperty(key)) {
+      totalSize += localStorage[key].length * 2; // UTF-16编码，每字符2字节
+    }
+  }
+  // localStorage一般5MB限制
+  const maxSize = 5 * 1024 * 1024;
+  return {
+    used: totalSize,
+    max: maxSize,
+    percent: totalSize / maxSize,
+    usedMB: (totalSize / 1024 / 1024).toFixed(2),
+    maxMB: (maxSize / 1024 / 1024).toFixed(0)
+  };
+}
+
+// 检查并警告localStorage空间不足
+function checkLocalStorageSpace() {
+  const usage = getLocalStorageUsage();
+  if (usage.percent >= LOCAL_STORAGE_WARNING_THRESHOLD) {
+    console.warn(`[LocalStorage] 空间使用率: ${(usage.percent * 100).toFixed(1)}% (${usage.usedMB}MB / ${usage.maxMB}MB)`);
+    // 显示警告（仅在有未同步数据时）
+    const localData = loadLocalData();
+    if (localData && (localData.records?.length > 0 || localData.pendingXp > 0)) {
+      showToast(`存储空间不足(${(usage.percent * 100).toFixed(0)}%)，建议手动同步数据`, 'warning');
+    }
+  }
+  return usage;
+}
 
 // 保存本地数据（每次答题/收藏/XP变化后调用）
 function saveLocalData() {
@@ -1156,8 +1190,15 @@ function saveLocalData() {
       savedAt: Date.now()
     };
     localStorage.setItem(LOCAL_DATA_KEY, JSON.stringify(data));
+    
+    // 检查空间使用情况
+    checkLocalStorageSpace();
   } catch(e) {
     console.warn('saveLocalData error:', e);
+    // 空间不足时尝试清理旧数据
+    if (e.name === 'QuotaExceededError' || e.code === 22) {
+      showToast('存储空间已满，请手动同步数据后清理', 'error');
+    }
   }
 }
 
@@ -1167,8 +1208,9 @@ function loadLocalData() {
     const raw = localStorage.getItem(LOCAL_DATA_KEY);
     if (!raw) return null;
     const data = JSON.parse(raw);
-    // 检查数据是否过期（24小时）
-    if (Date.now() - data.savedAt > 24 * 60 * 60 * 1000) {
+    // 永久保留：不再检查过期时间，直到同步成功才清除
+    // 验证数据有效性
+    if (!data.username || !data.savedAt) {
       localStorage.removeItem(LOCAL_DATA_KEY);
       return null;
     }
@@ -1190,6 +1232,12 @@ function clearLocalData() {
 function mergeLocalData(localData) {
   if (!localData) return;
   
+  // 检查数据是否属于当前用户
+  if (localData.username !== currentUser.username) {
+    console.warn('[LocalData] 数据属于其他用户，跳过恢复');
+    return;
+  }
+  
   // 合并答题记录（去重）
   const existingQIds = new Set(_recordBuffer.map(r => r.question_id));
   for (const r of localData.records || []) {
@@ -1201,10 +1249,11 @@ function mergeLocalData(localData) {
   // 合并收藏更新
   Object.assign(_favBuffer, localData.favUpdates || {});
   
-  // 合并XP
+  // 合并XP：本地保存的是增量，直接累加
+  // cloudSync时会与云端最新值比较取最大，避免跨设备数据丢失
   _pendingXp += localData.pendingXp || 0;
   
-  console.log(`[LocalData] 恢复本地数据: ${localData.records?.length || 0}条记录, ${Object.keys(localData.favUpdates || {}).length}个收藏更新, ${localData.pendingXp || 0}XP`);
+  console.log(`[LocalData] 恢复本地数据: ${localData.records?.length || 0}条记录, ${Object.keys(localData.favUpdates || {}).length}个收藏更新, +${localData.pendingXp || 0}XP`);
 }
 
 function bufferFavUpdate(id, isFav, questionId) {
@@ -1281,14 +1330,35 @@ async function cloudSync() {
   // 同步收藏更新
   await flushFavBuffer();
   
-  // 同步XP
+  // 同步XP（增强：先获取云端最新XP，取最大值避免跨设备数据丢失）
   if (_pendingXp > 0) {
     try {
-      // currentUser.xp 已经在 addXp 中更新了，这里只需要同步到数据库
-      const newXp = currentUser.xp || 0;
-      const newLv = currentUser.study_level || 1;
-      await dbUpdate('students', { xp: newXp, study_level: newLv }, { id: currentUser.id });
+      // 先从云端获取最新的XP值
+      const cloudData = await dbSelect('students', { 
+        select: ['xp', 'study_level'], 
+        eq: { id: currentUser.id },
+        cacheBypass: true 
+      });
+      const cloudXp = cloudData[0]?.xp || 0;
+      const cloudLv = cloudData[0]?.study_level || 1;
+      
+      // 本地XP = currentUser.xp（内存中的值）
+      const localXp = currentUser.xp || 0;
+      
+      // 取最大值：如果云端更新则用云端，否则用本地
+      const maxXp = Math.max(cloudXp, localXp);
+      const maxLv = Math.max(cloudLv, currentUser.study_level || 1);
+      
+      // 同步到数据库
+      await dbUpdate('students', { xp: maxXp, study_level: maxLv }, { id: currentUser.id });
+      
+      // 更新本地currentUser
+      currentUser.xp = maxXp;
+      currentUser.study_level = maxLv;
+      saveLogin('student', currentUser);
+      
       _pendingXp = 0;
+      console.log(`[CloudSync] XP同步完成: 云端${cloudXp}, 本地${localXp}, 最终${maxXp}`);
     } catch(e) {
       console.warn('cloudSync xp error:', e);
     }
