@@ -8743,33 +8743,25 @@ async function showNotificationCenter() {
   }
   
   const html = `
-    <div class="modal-overlay" onclick="closeModal()">
-      <div class="modal-content" style="max-width:380px;max-height:80vh;overflow-y:auto" onclick="event.stopPropagation()">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-          <h3 style="margin:0;font-size:1.1rem">📢 消息通知</h3>
-          <button onclick="closeModal()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text3)">&times;</button>
-        </div>
-        <div id="notificationList">
-          ${notifications.length === 0 ? 
-            '<div style="text-align:center;color:var(--text3);padding:30px">暂无通知</div>' :
-            notifications.map(n => `
-              <div class="notification-item ${n.is_read ? '' : 'unread'}" 
-                   style="padding:12px;border-bottom:1px solid var(--border);background:${n.is_read ? 'transparent' : 'var(--card-hover)'};cursor:pointer"
-                   onclick="markNotificationRead(${n.id})">
-                <div style="display:flex;justify-content:space-between;align-items:start">
-                  <div style="font-weight:${n.is_read ? 'normal' : 'bold'};font-size:.9rem;color:var(--text1)">${escHtml(n.title)}</div>
-                  ${!n.is_read ? '<span style="background:var(--primary);color:#fff;font-size:.7rem;padding:2px 6px;border-radius:10px">新</span>' : ''}
-                </div>
-                ${n.content ? `<div style="font-size:.85rem;color:var(--text2);margin-top:6px">${escHtml(n.content)}</div>` : ''}
-                <div style="font-size:.75rem;color:var(--text3);margin-top:6px">${fmtLocal(n.created_at)}</div>
-              </div>
-            `).join('')
-          }
-        </div>
-      </div>
+    <div id="notificationList" style="max-height:60vh;overflow-y:auto">
+      ${notifications.length === 0 ? 
+        '<div style="text-align:center;color:var(--text3);padding:30px">暂无通知</div>' :
+        notifications.map(n => `
+          <div class="notification-item ${n.is_read ? '' : 'unread'}" 
+               style="padding:12px;border-bottom:1px solid var(--border);background:${n.is_read ? 'transparent' : 'var(--card-hover)'};cursor:pointer"
+               onclick="markNotificationRead(${n.id})">
+            <div style="display:flex;justify-content:space-between;align-items:start">
+              <div style="font-weight:${n.is_read ? 'normal' : 'bold'};font-size:.9rem;color:var(--text1)">${escHtml(n.title)}</div>
+              ${!n.is_read ? '<span style="background:var(--primary);color:#fff;font-size:.7rem;padding:2px 6px;border-radius:10px">新</span>' : ''}
+            </div>
+            ${n.content ? `<div style="font-size:.85rem;color:var(--text2);margin-top:6px">${escHtml(n.content)}</div>` : ''}
+            <div style="font-size:.75rem;color:var(--text3);margin-top:6px">${fmtLocal(n.created_at)}</div>
+          </div>
+        `).join('')
+      }
     </div>
   `;
-  document.getElementById('modalContainer').innerHTML = html;
+  openModal('📢 消息通知', html);
 }
 
 async function markNotificationRead(id) {
