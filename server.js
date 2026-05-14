@@ -48,7 +48,7 @@ const MIMES = {
 };
 
 // ===== Security: table whitelist =====
-const ALLOWED_TABLES = ['students', 'questions', 'records', 'exams', 'admins', 'enroll_configs', 'enrollments', 'notifications', 'operation_logs'];
+const ALLOWED_TABLES = ['students', 'questions', 'records', 'exams', 'admins', 'enroll_configs', 'enrollments', 'notifications', 'operation_logs', 'wrong_question_mastery', 'wrong_training_sessions'];
 function validateTable(table) {
   if (!ALLOWED_TABLES.includes(table)) throw new Error('Invalid table: ' + table);
   return table;
@@ -350,6 +350,11 @@ const server = http.createServer(async (req, res) => {
       // Handle report API separately
       if (url.pathname.startsWith('/api/report')) {
         await handleReportApi(req, res, url, params);
+        return;
+      }
+      // Handle wrong training API separately
+      if (url.pathname.startsWith('/api/wrong')) {
+        await handleWrongTrainingApi(req, res, url, params);
         return;
       }
       // Handle operation log API and other extended APIs separately
@@ -1111,6 +1116,323 @@ async function handleApi(req, res, url, sharedParams) {
         console.error('Send super password error:', err);
         sendJson(res, { error: '发送失败: ' + err.message }, 500);
       }
+      break;
+    }
+    
+    // ========== 错题强化训练 API ==========
+    case 'wrong-stats': {
+      // 获取错题统计
+      const { student_id } = allParams;
+      if (!student_id) {
+        sendJson(res, { error: '缺少学生ID' }, 400);
+        return;
+      }
+      
+      // 获取错题总数和已掌握数
+      const statsResult = await pool.query(`
+        SELECT 
+          COUNT(*) as total_wrong,
+          COUNT(*) FILTER (WHERE is_mastered = TRUE) as mastered,
+          COUNT(*) FILTER (WHERE is_mastered = FALSE AND consecutive_correct = 0) as new_wrong,
+          COUNT(*) FILTER (WHERE is_mastered = FALSE AND consecutive_correct > 0) as practicing
+        FROM wrong_question_mastery
+        WHERE student_id = $1
+      `, [student_id]);
+      
+      // 获取今日待复习数
+      const todayReview = await pool.query(`
+        SELECT COUNT(*) as count
+        FROM wrong_question_mastery
+        WHERE student_id = $1 
+          AND is_mastered = FALSE 
+          AND (next_review_at IS NULL OR next_review_at <= NOW())
+      `, [student_id]);
+      
+      // 获取本周训练统计
+      const weekStart = new Date();
+      weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+      weekStart.setHours(0, 0, 0, 0);
+      
+      const weekStats = await pool.query(`
+        SELECT 
+          COUNT(*) as sessions,
+          COALESCE(SUM(correct_count), 0) as total_correct,
+          COALESCE(SUM(total_questions), 0) as total_questions
+        FROM wrong_training_sessions
+        WHERE student_id = $1 AND started_at >= $2
+      `, [student_id, weekStart]);
+      
+      sendJson(res, {
+        stats: statsResult.rows[0],
+        todayReview: parseInt(todayReview.rows[0].count) || 0,
+        weekStats: weekStats.rows[0]
+      });
+      break;
+    }
+    
+    case 'wrong-daily': {
+      // 获取每日特训题目（智能推送10道）
+      const { student_id, level } = allParams;
+      if (!student_id) {
+        sendJson(res, { error: '缺少学生ID' }, 400);
+        return;
+      }
+      
+      // 优先级：1.今天到期复习 2.新错题 3.即将到期
+      const questionsResult = await pool.query(`
+        SELECT q.*, 
+               m.wrong_count, m.correct_count, m.consecutive_correct, m.mastery_level,
+               m.last_practice_at
+        FROM wrong_question_mastery m
+        JOIN questions q ON q.id = m.question_id
+        WHERE m.student_id = $1 
+          AND m.is_mastered = FALSE
+          AND ($2::text IS NULL OR q.level = $2)
+        ORDER BY 
+          CASE WHEN m.next_review_at IS NULL OR m.next_review_at <= NOW() THEN 0 ELSE 1 END,
+          m.consecutive_correct ASC,
+          m.wrong_count DESC
+        LIMIT 10
+      `, [student_id, level || null]);
+      
+      // 如果错题不足10道，从records中补充新错题
+      let questions = questionsResult.rows;
+      if (questions.length < 10) {
+        const existingIds = questions.map(q => q.id);
+        const additionalResult = await pool.query(`
+          SELECT q.*, 
+                 0 as wrong_count, 0 as correct_count, 0 as consecutive_correct, 0 as mastery_level,
+                 r.created_at as last_practice_at
+          FROM records r
+          JOIN questions q ON q.id = r.question_id
+          WHERE r.student_id = $1 
+            AND r.is_correct = FALSE
+            AND ($2::text IS NULL OR q.level = $2)
+            AND r.question_id NOT IN (SELECT question_id FROM wrong_question_mastery WHERE student_id = $1)
+            ${existingIds.length > 0 ? `AND q.id NOT IN (${existingIds.join(',')})` : ''}
+          ORDER BY r.created_at DESC
+          LIMIT $3
+        `, [student_id, level || null, 10 - questions.length]);
+        questions = [...questions, ...additionalResult.rows];
+      }
+      
+      sendJson(res, { questions });
+      break;
+    }
+    
+    case 'wrong-submit': {
+      // 提交错题训练结果
+      const { student_id, question_id, is_correct, mode } = allParams;
+      if (!student_id || !question_id || is_correct === undefined) {
+        sendJson(res, { error: '缺少必要参数' }, 400);
+        return;
+      }
+      
+      // 获取或创建掌握度记录
+      const existingResult = await pool.query(`
+        SELECT * FROM wrong_question_mastery 
+        WHERE student_id = $1 AND question_id = $2
+      `, [student_id, question_id]);
+      
+      const now = new Date();
+      let nextReview;
+      
+      if (existingResult.rows.length === 0) {
+        // 新记录
+        const wrongCount = is_correct ? 0 : 1;
+        const correctCount = is_correct ? 1 : 0;
+        const consecutiveCorrect = is_correct ? 1 : 0;
+        const masteryLevel = is_correct ? 1 : 0;
+        nextReview = is_correct ? new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000) : now; // 做对3天后复习，做错明天
+        
+        await pool.query(`
+          INSERT INTO wrong_question_mastery 
+          (student_id, question_id, wrong_count, correct_count, consecutive_correct, 
+           mastery_level, last_practice_at, next_review_at, is_mastered)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `, [student_id, question_id, wrongCount, correctCount, consecutiveCorrect, 
+            masteryLevel, now, nextReview, consecutiveCorrect >= 3]);
+      } else {
+        // 更新记录
+        const existing = existingResult.rows[0];
+        const wrongCount = existing.wrong_count + (is_correct ? 0 : 1);
+        const correctCount = existing.correct_count + (is_correct ? 1 : 0);
+        const consecutiveCorrect = is_correct ? existing.consecutive_correct + 1 : 0;
+        const masteryLevel = Math.min(5, Math.floor(correctCount / 2));
+        
+        // 计算下次复习时间：连续正确次数越多，间隔越长
+        if (consecutiveCorrect === 0) {
+          nextReview = now; // 做错，明天继续
+        } else if (consecutiveCorrect === 1) {
+          nextReview = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000); // 3天
+        } else if (consecutiveCorrect === 2) {
+          nextReview = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7天
+        } else {
+          nextReview = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000); // 14天
+        }
+        
+        await pool.query(`
+          UPDATE wrong_question_mastery 
+          SET wrong_count = $3, correct_count = $4, consecutive_correct = $5,
+              mastery_level = $6, last_practice_at = $7, next_review_at = $8,
+              is_mastered = $9
+          WHERE student_id = $1 AND question_id = $2
+        `, [student_id, question_id, wrongCount, correctCount, consecutiveCorrect,
+            masteryLevel, now, nextReview, consecutiveCorrect >= 3]);
+      }
+      
+      sendJson(res, { 
+        success: true, 
+        next_review: nextReview,
+        mastered: (existingResult.rows.length === 0 && is_correct) || 
+                  (existingResult.rows.length > 0 && is_correct && existingResult.rows[0].consecutive_correct >= 2)
+      });
+      break;
+    }
+    
+    case 'wrong-topics': {
+      // 获取错题按知识点分布
+      const { student_id, level } = allParams;
+      if (!student_id) {
+        sendJson(res, { error: '缺少学生ID' }, 400);
+        return;
+      }
+      
+      const result = await pool.query(`
+        SELECT 
+          unnest(tags) as tag,
+          COUNT(*) as count,
+          COUNT(*) FILTER (WHERE is_mastered = TRUE) as mastered,
+          COUNT(*) FILTER (WHERE is_mastered = FALSE) as pending
+        FROM wrong_question_mastery m
+        JOIN questions q ON q.id = m.question_id
+        WHERE m.student_id = $1 AND ($2::text IS NULL OR q.level = $2)
+        GROUP BY unnest(tags)
+        ORDER BY pending DESC, count DESC
+      `, [student_id, level || null]);
+      
+      sendJson(res, { topics: result.rows });
+      break;
+    }
+    
+    case 'wrong-topic-questions': {
+      // 获取某知识点的错题
+      const { student_id, tag, level } = allParams;
+      if (!student_id || !tag) {
+        sendJson(res, { error: '缺少必要参数' }, 400);
+        return;
+      }
+      
+      const result = await pool.query(`
+        SELECT q.*, 
+               m.wrong_count, m.correct_count, m.consecutive_correct, m.mastery_level,
+               m.is_mastered
+        FROM wrong_question_mastery m
+        JOIN questions q ON q.id = m.question_id
+        WHERE m.student_id = $1 
+          AND $2 = ANY(q.tags)
+          AND ($3::text IS NULL OR q.level = $3)
+          AND m.is_mastered = FALSE
+        ORDER BY m.wrong_count DESC, m.last_practice_at ASC NULLS FIRST
+      `, [student_id, tag, level || null]);
+      
+      sendJson(res, { questions: result.rows });
+      break;
+    }
+    
+    case 'wrong-exam': {
+      // 生成错题模拟考试
+      const { student_id, level, count } = allParams;
+      if (!student_id) {
+        sendJson(res, { error: '缺少学生ID' }, 400);
+        return;
+      }
+      
+      const examCount = parseInt(count) || 20;
+      
+      const result = await pool.query(`
+        SELECT q.*
+        FROM wrong_question_mastery m
+        JOIN questions q ON q.id = m.question_id
+        WHERE m.student_id = $1 
+          AND m.is_mastered = FALSE
+          AND ($2::text IS NULL OR q.level = $2)
+        ORDER BY RANDOM()
+        LIMIT $3
+      `, [student_id, level || null, examCount]);
+      
+      sendJson(res, { questions: result.rows });
+      break;
+    }
+    
+    case 'wrong-session-start': {
+      // 开始训练会话
+      const { student_id, mode, question_ids } = allParams;
+      if (!student_id || !mode || !question_ids) {
+        sendJson(res, { error: '缺少必要参数' }, 400);
+        return;
+      }
+      
+      const result = await pool.query(`
+        INSERT INTO wrong_training_sessions 
+        (student_id, mode, question_ids, total_questions, started_at)
+        VALUES ($1, $2, $3, $4, NOW())
+        RETURNING id
+      `, [student_id, mode, question_ids, question_ids.length]);
+      
+      sendJson(res, { session_id: result.rows[0].id });
+      break;
+    }
+    
+    case 'wrong-session-finish': {
+      // 结束训练会话
+      const { session_id, correct_count, duration_seconds } = allParams;
+      if (!session_id) {
+        sendJson(res, { error: '缺少会话ID' }, 400);
+        return;
+      }
+      
+      await pool.query(`
+        UPDATE wrong_training_sessions 
+        SET finished_at = NOW(), 
+            correct_count = $2, 
+            duration_seconds = $3
+        WHERE id = $1
+      `, [session_id, correct_count || 0, duration_seconds || 0]);
+      
+      sendJson(res, { success: true });
+      break;
+    }
+    
+    case 'wrong-history': {
+      // 获取训练历史
+      const { student_id, limit, offset } = allParams;
+      if (!student_id) {
+        sendJson(res, { error: '缺少学生ID' }, 400);
+        return;
+      }
+      
+      const lim = parseInt(limit) || 20;
+      const off = parseInt(offset) || 0;
+      
+      const result = await pool.query(`
+        SELECT id, mode, total_questions, correct_count, 
+               started_at, finished_at, duration_seconds,
+               ROUND(correct_count * 100.0 / NULLIF(total_questions, 0)) as accuracy
+        FROM wrong_training_sessions
+        WHERE student_id = $1
+        ORDER BY started_at DESC
+        LIMIT $2 OFFSET $3
+      `, [student_id, lim, off]);
+      
+      const countResult = await pool.query(`
+        SELECT COUNT(*) as total FROM wrong_training_sessions WHERE student_id = $1
+      `, [student_id]);
+      
+      sendJson(res, { 
+        sessions: result.rows,
+        total: parseInt(countResult.rows[0].total)
+      });
       break;
     }
     
@@ -2514,3 +2836,355 @@ async function handleLogApi(req, res, url, params) {
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
 });
+
+// ===== Wrong Training API Handler =====
+async function handleWrongTrainingApi(req, res, url, params) {
+  const route = url.pathname.replace('/api/wrong-', '').replace('/api/wrong', '');
+  
+  // 解析参数
+  const queryParams = {};
+  url.searchParams.forEach((value, key) => { queryParams[key] = value; });
+  const allParams = { ...params, ...queryParams };
+  
+  switch (route) {
+    case 'stats': {
+      // 获取错题统计数据
+      const studentId = allParams.student_id;
+      const level = allParams.level || '';
+      
+      if (!studentId) {
+        sendJson(res, { error: '缺少学生ID' }, 400);
+        return;
+      }
+      
+      try {
+        // 统计错题
+        const statsResult = await pool.query(`
+          SELECT 
+            COUNT(*) as total_wrong,
+            SUM(CASE WHEN is_mastered THEN 1 ELSE 0 END) as mastered,
+            SUM(CASE WHEN NOT is_mastered AND consecutive_correct = 0 THEN 1 ELSE 0 END) as new_wrong,
+            SUM(CASE WHEN NOT is_mastered AND consecutive_correct > 0 THEN 1 ELSE 0 END) as practicing
+          FROM wrong_question_mastery
+          WHERE student_id = $1
+        `, [studentId]);
+        
+        const stats = statsResult.rows[0];
+        
+        // 今日待复习
+        const today = new Date().toISOString().split('T')[0];
+        const reviewResult = await pool.query(`
+          SELECT COUNT(*) as count
+          FROM wrong_question_mastery
+          WHERE student_id = $1 
+            AND is_mastered = FALSE
+            AND (next_review_at IS NULL OR DATE(next_review_at) <= $2)
+        `, [studentId, today]);
+        
+        // 本周训练统计
+        const weekStart = new Date();
+        weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+        const weekStartStr = weekStart.toISOString().split('T')[0];
+        
+        const weekResult = await pool.query(`
+          SELECT 
+            COUNT(*) as sessions,
+            SUM(total_questions) as total_questions,
+            SUM(correct_count) as total_correct
+          FROM wrong_training_sessions
+          WHERE student_id = $1 AND DATE(started_at) >= $2
+        `, [studentId, weekStartStr]);
+        
+        const weekStats = weekResult.rows[0];
+        
+        sendJson(res, {
+          stats: {
+            total_wrong: parseInt(stats.total_wrong) || 0,
+            mastered: parseInt(stats.mastered) || 0,
+            new_wrong: parseInt(stats.new_wrong) || 0,
+            practicing: parseInt(stats.practicing) || 0
+          },
+          todayReview: parseInt(reviewResult.rows[0].count) || 0,
+          weekStats: {
+            sessions: parseInt(weekStats.sessions) || 0,
+            total_questions: parseInt(weekStats.total_questions) || 0,
+            total_correct: parseInt(weekStats.total_correct) || 0
+          }
+        });
+      } catch (e) {
+        console.error('Wrong stats error:', e);
+        sendJson(res, { error: '获取统计数据失败' }, 500);
+      }
+      break;
+    }
+    
+    case 'daily': {
+      // 获取每日特训错题
+      const studentId = allParams.student_id;
+      const level = allParams.level || '';
+      const limit = parseInt(allParams.limit) || 10;
+      
+      if (!studentId) {
+        sendJson(res, { error: '缺少学生ID' }, 400);
+        return;
+      }
+      
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        
+        // 获取待复习的错题
+        const result = await pool.query(`
+          SELECT q.*, w.wrong_count, w.consecutive_correct, w.mastery_level
+          FROM wrong_question_mastery w
+          JOIN questions q ON q.id = w.question_id
+          WHERE w.student_id = $1 
+            AND w.is_mastered = FALSE
+            AND (w.next_review_at IS NULL OR DATE(w.next_review_at) <= $2)
+            AND ($3 = '' OR q.level = $3)
+          ORDER BY w.mastery_level ASC, w.wrong_count DESC, w.last_practice_at ASC NULLS FIRST
+          LIMIT $4
+        `, [studentId, today, level, limit]);
+        
+        sendJson(res, { questions: result.rows });
+      } catch (e) {
+        console.error('Wrong daily error:', e);
+        sendJson(res, { error: '获取错题失败' }, 500);
+      }
+      break;
+    }
+    
+    case 'topics': {
+      // 获取错题知识点分布
+      const studentId = allParams.student_id;
+      const level = allParams.level || '';
+      
+      if (!studentId) {
+        sendJson(res, { error: '缺少学生ID' }, 400);
+        return;
+      }
+      
+      try {
+        const result = await pool.query(`
+          SELECT 
+            unnest(tags) as tag,
+            COUNT(*) as count,
+            SUM(CASE WHEN w.is_mastered THEN 1 ELSE 0 END) as mastered,
+            SUM(CASE WHEN NOT w.is_mastered THEN 1 ELSE 0 END) as pending
+          FROM wrong_question_mastery w
+          JOIN questions q ON q.id = w.question_id
+          WHERE w.student_id = $1 AND ($2 = '' OR q.level = $2)
+          GROUP BY unnest(tags)
+          HAVING SUM(CASE WHEN NOT w.is_mastered THEN 1 ELSE 0 END) > 0
+          ORDER BY pending DESC, count DESC
+        `, [studentId, level]);
+        
+        sendJson(res, { topics: result.rows });
+      } catch (e) {
+        console.error('Wrong topics error:', e);
+        sendJson(res, { error: '获取知识点失败' }, 500);
+      }
+      break;
+    }
+    
+    case 'topic-questions': {
+      // 获取指定知识点的错题
+      const studentId = allParams.student_id;
+      const tag = allParams.tag || '';
+      const level = allParams.level || '';
+      
+      if (!studentId) {
+        sendJson(res, { error: '缺少学生ID' }, 400);
+        return;
+      }
+      
+      try {
+        const result = await pool.query(`
+          SELECT q.*, w.wrong_count, w.consecutive_correct
+          FROM wrong_question_mastery w
+          JOIN questions q ON q.id = w.question_id
+          WHERE w.student_id = $1 
+            AND w.is_mastered = FALSE
+            AND $2 = ANY(q.tags)
+            AND ($3 = '' OR q.level = $3)
+          ORDER BY w.wrong_count DESC, w.last_practice_at ASC NULLS FIRST
+          LIMIT 20
+        `, [studentId, tag, level]);
+        
+        sendJson(res, { questions: result.rows });
+      } catch (e) {
+        console.error('Topic questions error:', e);
+        sendJson(res, { error: '获取错题失败' }, 500);
+      }
+      break;
+    }
+    
+    case 'exam': {
+      // 获取错题考试题目
+      const studentId = allParams.student_id;
+      const level = allParams.level || '';
+      const count = parseInt(allParams.count) || 20;
+      
+      if (!studentId) {
+        sendJson(res, { error: '缺少学生ID' }, 400);
+        return;
+      }
+      
+      try {
+        const result = await pool.query(`
+          SELECT q.*, w.wrong_count, w.consecutive_correct
+          FROM wrong_question_mastery w
+          JOIN questions q ON q.id = w.question_id
+          WHERE w.student_id = $1 
+            AND w.is_mastered = FALSE
+            AND ($2 = '' OR q.level = $2)
+          ORDER BY RANDOM()
+          LIMIT $3
+        `, [studentId, level, count]);
+        
+        sendJson(res, { questions: result.rows });
+      } catch (e) {
+        console.error('Wrong exam error:', e);
+        sendJson(res, { error: '获取错题失败' }, 500);
+      }
+      break;
+    }
+    
+    case 'submit': {
+      // 提交答题结果
+      if (req.method !== 'POST') {
+        sendJson(res, { error: 'Method not allowed' }, 405);
+        return;
+      }
+      
+      const { student_id, question_id, is_correct, mode } = params;
+      
+      if (!student_id || !question_id) {
+        sendJson(res, { error: '缺少参数' }, 400);
+        return;
+      }
+      
+      try {
+        // 获取当前状态
+        const currentResult = await pool.query(`
+          SELECT wrong_count, correct_count, consecutive_correct, mastery_level
+          FROM wrong_question_mastery
+          WHERE student_id = $1 AND question_id = $2
+        `, [student_id, question_id]);
+        
+        const current = currentResult.rows[0] || { wrong_count: 0, correct_count: 0, consecutive_correct: 0, mastery_level: 0 };
+        
+        let newWrongCount = parseInt(current.wrong_count) || 0;
+        let newCorrectCount = parseInt(current.correct_count) || 0;
+        let newConsecutive = parseInt(current.consecutive_correct) || 0;
+        let newMasteryLevel = parseInt(current.mastery_level) || 0;
+        let isMastered = false;
+        let nextReview = null;
+        
+        if (is_correct) {
+          newCorrectCount++;
+          newConsecutive++;
+          newMasteryLevel = Math.min(3, newMasteryLevel + 1);
+          
+          // 连续正确次数决定下次复习时间和是否掌握
+          if (newConsecutive >= 3) {
+            isMastered = true;
+          } else if (newConsecutive === 2) {
+            // 7天后复习
+            nextReview = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+          } else {
+            // 3天后复习
+            nextReview = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+          }
+        } else {
+          newWrongCount++;
+          newConsecutive = 0;
+          newMasteryLevel = Math.max(0, newMasteryLevel - 1);
+          // 做错明天继续
+          nextReview = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        }
+        
+        // 更新或插入
+        await pool.query(`
+          INSERT INTO wrong_question_mastery (student_id, question_id, wrong_count, correct_count, consecutive_correct, mastery_level, is_mastered, next_review_at, last_practice_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+          ON CONFLICT (student_id, question_id)
+          DO UPDATE SET
+            wrong_count = $3,
+            correct_count = $4,
+            consecutive_correct = $5,
+            mastery_level = $6,
+            is_mastered = $7,
+            next_review_at = $8,
+            last_practice_at = NOW()
+        `, [student_id, question_id, newWrongCount, newCorrectCount, newConsecutive, newMasteryLevel, isMastered, nextReview]);
+        
+        sendJson(res, { success: true, is_mastered: isMastered });
+      } catch (e) {
+        console.error('Wrong submit error:', e);
+        sendJson(res, { error: '提交失败' }, 500);
+      }
+      break;
+    }
+    
+    case 'session-start': {
+      // 创建训练会话
+      if (req.method !== 'POST') {
+        sendJson(res, { error: 'Method not allowed' }, 405);
+        return;
+      }
+      
+      const { student_id, mode, question_ids } = params;
+      
+      if (!student_id || !question_ids) {
+        sendJson(res, { error: '缺少参数' }, 400);
+        return;
+      }
+      
+      try {
+        const result = await pool.query(`
+          INSERT INTO wrong_training_sessions (student_id, mode, question_ids, total_questions)
+          VALUES ($1, $2, $3, $4)
+          RETURNING id
+        `, [student_id, mode || 'daily', JSON.stringify(question_ids), question_ids.length]);
+        
+        sendJson(res, { session_id: result.rows[0].id });
+      } catch (e) {
+        console.error('Session start error:', e);
+        sendJson(res, { error: '创建会话失败' }, 500);
+      }
+      break;
+    }
+    
+    case 'session-finish': {
+      // 完成训练会话
+      if (req.method !== 'POST') {
+        sendJson(res, { error: 'Method not allowed' }, 405);
+        return;
+      }
+      
+      const { session_id, correct_count, duration_seconds } = params;
+      
+      if (!session_id) {
+        sendJson(res, { error: '缺少会话ID' }, 400);
+        return;
+      }
+      
+      try {
+        await pool.query(`
+          UPDATE wrong_training_sessions
+          SET correct_count = $1, duration_seconds = $2, finished_at = NOW()
+          WHERE id = $3
+        `, [correct_count || 0, duration_seconds || 0, session_id]);
+        
+        sendJson(res, { success: true });
+      } catch (e) {
+        console.error('Session finish error:', e);
+        sendJson(res, { error: '更新会话失败' }, 500);
+      }
+      break;
+    }
+    
+    default:
+      sendJson(res, { error: 'Unknown wrong training route: ' + route }, 404);
+  }
+}

@@ -6767,6 +6767,7 @@ function renderStudent() {
       <div class="student-content" id="studentContent"></div>
       <div class="student-tabbar">
         <button class="student-tab active" data-tab="practice" onclick="switchStudentTab('practice')"><span class="tab-icon">📝</span><span>练习</span></button>
+        <button class="student-tab" data-tab="wrong" onclick="switchStudentTab('wrong')"><span class="tab-icon">🎯</span><span>错题</span></button>
         <button class="student-tab" data-tab="exam" onclick="switchStudentTab('exam')"><span class="tab-icon">📋</span><span>考试</span></button>
         <button class="student-tab" data-tab="profile" onclick="switchStudentTab('profile')"><span class="tab-icon">👤</span><span>我的</span></button>
       </div>
@@ -6807,10 +6808,551 @@ function switchStudentTab(tab) {
   document.querySelectorAll('.student-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   switch(tab) {
     case 'practice': renderPractice(); break;
+    case 'wrong': renderWrongTraining(); break;
     case 'exam': renderExamTab(); break;
     case 'profile': renderProfile(); break;
   }
 }
+
+
+// ===== 错题强化训练 Tab =====
+let _wrongStats = null;
+let _wrongQuestions = [];
+let _wrongTrainingMode = 'daily'; // daily, topic, exam
+let _wrongTrainingSession = null;
+let _wrongTrainingIndex = 0;
+let _wrongTrainingAnswers = {};
+let _wrongTrainingStartTime = null;
+let _wrongTopics = [];
+
+async function renderWrongTraining() {
+  const container = document.getElementById('studentContent');
+  if (!container) return;
+  
+  container.innerHTML = `<div style="text-align:center;padding:40px"><div class="spinner-lg" style="margin:0 auto"></div><div style="margin-top:12px;color:var(--text2)">加载错题数据...</div></div>`;
+  
+  // 加载统计数据
+  try {
+    const res = await fetch(`${API_BASE}/wrong-stats?student_id=${currentUser.id}&level=${encodeURIComponent(currentLevel)}`);
+    _wrongStats = await res.json();
+  } catch (e) {
+    console.error('加载错题统计失败:', e);
+    _wrongStats = { stats: { total_wrong: 0, mastered: 0, new_wrong: 0, practicing: 0 }, todayReview: 0, weekStats: {} };
+  }
+  
+  const stats = _wrongStats.stats || {};
+  const totalWrong = parseInt(stats.total_wrong) || 0;
+  const mastered = parseInt(stats.mastered) || 0;
+  const pending = totalWrong - mastered;
+  const todayReview = _wrongStats.todayReview || 0;
+  const weekStats = _wrongStats.weekStats || {};
+  
+  container.innerHTML = `
+    <div style="padding:16px">
+      <!-- 错题统计卡片 -->
+      <div class="card" style="background:linear-gradient(135deg,#ef4444,#f97316);color:#fff;margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <span style="font-size:1.1rem;font-weight:600">📊 错题概览</span>
+          <span style="font-size:0.8rem;opacity:0.9">${pending > 0 ? '继续加油！' : '太棒了，错题已清零！'}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;text-align:center">
+          <div>
+            <div style="font-size:1.8rem;font-weight:700">${pending}</div>
+            <div style="font-size:0.75rem;opacity:0.9">待攻克</div>
+          </div>
+          <div>
+            <div style="font-size:1.8rem;font-weight:700">${mastered}</div>
+            <div style="font-size:0.75rem;opacity:0.9">已掌握</div>
+          </div>
+          <div>
+            <div style="font-size:1.8rem;font-weight:700">${todayReview}</div>
+            <div style="font-size:0.75rem;opacity:0.9">今日待复习</div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 快捷训练按钮 -->
+      <div class="card" style="margin-bottom:16px">
+        <div style="font-size:0.95rem;font-weight:600;margin-bottom:12px;color:var(--text1)">🚀 快速开始</div>
+        <button class="btn btn-primary btn-full" style="padding:14px;font-size:1rem;${pending === 0 ? 'opacity:0.5;pointer-events:none' : ''}" onclick="startWrongDaily()">
+          🎯 每日特训 ${todayReview > 0 ? '(' + todayReview + '题待复习)' : ''}
+        </button>
+        <p style="font-size:0.8rem;color:var(--text3);margin-top:8px;text-align:center">
+          智能推送10道错题，做错的明天继续推送
+        </p>
+      </div>
+      
+      <!-- 训练模式选择 -->
+      <div class="card" style="margin-bottom:16px">
+        <div style="font-size:0.95rem;font-weight:600;margin-bottom:12px;color:var(--text1)">📚 更多训练模式</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <button class="btn btn-outline" style="padding:12px;text-align:left" onclick="loadWrongTopics()">
+            <div style="font-size:0.9rem;font-weight:600">📖 专项突破</div>
+            <div style="font-size:0.75rem;color:var(--text3);margin-top:4px">按知识点强化</div>
+          </button>
+          <button class="btn btn-outline" style="padding:12px;text-align:left" onclick="startWrongExam()">
+            <div style="font-size:0.9rem;font-weight:600">🏆 错题考试</div>
+            <div style="font-size:0.75rem;color:var(--text3);margin-top:4px">错题模拟试卷</div>
+          </button>
+        </div>
+      </div>
+      
+      <!-- 本周训练统计 -->
+      ${weekStats.sessions > 0 ? `
+      <div class="card">
+        <div style="font-size:0.95rem;font-weight:600;margin-bottom:12px;color:var(--text1)">📈 本周训练</div>
+        <div style="display:flex;justify-content:space-around;text-align:center">
+          <div>
+            <div style="font-size:1.2rem;font-weight:700;color:var(--primary)">${weekStats.sessions || 0}</div>
+            <div style="font-size:0.75rem;color:var(--text3)">训练次数</div>
+          </div>
+          <div>
+            <div style="font-size:1.2rem;font-weight:700;color:var(--primary)">${weekStats.total_questions || 0}</div>
+            <div style="font-size:0.75rem;color:var(--text3)">做题数</div>
+          </div>
+          <div>
+            <div style="font-size:1.2rem;font-weight:700;color:var(--success)">${weekStats.total_questions > 0 ? Math.round((weekStats.total_correct || 0) * 100 / weekStats.total_questions) : 0}%</div>
+            <div style="font-size:0.75rem;color:var(--text3)">正确率</div>
+          </div>
+        </div>
+      </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+// 开始每日特训
+async function startWrongDaily() {
+  if (!currentUser) return;
+  
+  showLoading('加载错题...');
+  
+  try {
+    const res = await fetch(`${API_BASE}/wrong-daily?student_id=${currentUser.id}&level=${encodeURIComponent(currentLevel)}`);
+    const data = await res.json();
+    _wrongQuestions = data.questions || [];
+    
+    if (_wrongQuestions.length === 0) {
+      hideLoading();
+      alert('太棒了！暂无错题，继续保持！');
+      return;
+    }
+    
+    _wrongTrainingMode = 'daily';
+    _wrongTrainingIndex = 0;
+    _wrongTrainingAnswers = {};
+    _wrongTrainingStartTime = Date.now();
+    
+    // 创建训练会话
+    const sessionRes = await fetch(`${API_BASE}/wrong-session-start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        student_id: currentUser.id,
+        mode: 'daily',
+        question_ids: _wrongQuestions.map(q => q.id)
+      })
+    });
+    const sessionData = await sessionRes.json();
+    _wrongTrainingSession = sessionData.session_id;
+    
+    hideLoading();
+    renderWrongQuestion();
+  } catch (e) {
+    hideLoading();
+    console.error('加载错题失败:', e);
+    alert('加载错题失败，请重试');
+  }
+}
+
+// 加载错题知识点分布
+async function loadWrongTopics() {
+  if (!currentUser) return;
+  
+  showLoading('加载知识点...');
+  
+  try {
+    const res = await fetch(`${API_BASE}/wrong-topics?student_id=${currentUser.id}&level=${encodeURIComponent(currentLevel)}`);
+    const data = await res.json();
+    _wrongTopics = data.topics || [];
+    
+    hideLoading();
+    
+    if (_wrongTopics.length === 0) {
+      alert('暂无错题知识点数据');
+      return;
+    }
+    
+    renderWrongTopicsList();
+  } catch (e) {
+    hideLoading();
+    console.error('加载知识点失败:', e);
+    alert('加载知识点失败');
+  }
+}
+
+// 渲染知识点列表
+function renderWrongTopicsList() {
+  const container = document.getElementById('studentContent');
+  if (!container) return;
+  
+  let html = `
+    <div style="padding:16px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+        <button onclick="renderWrongTraining()" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:var(--text2)">←</button>
+        <span style="font-size:1rem;font-weight:600">📖 专项突破</span>
+      </div>
+      <p style="font-size:0.85rem;color:var(--text3);margin-bottom:12px">选择知识点进行针对性强化训练</p>
+  `;
+  
+  _wrongTopics.forEach(topic => {
+    const pending = parseInt(topic.pending) || 0;
+    const mastered = parseInt(topic.mastered) || 0;
+    const total = parseInt(topic.count) || 0;
+    const progress = total > 0 ? Math.round(mastered * 100 / total) : 0;
+    
+    html += `
+      <div class="card" style="cursor:pointer" onclick="startTopicTraining('${escHtml(topic.tag)}')">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-weight:500">${escHtml(topic.tag)}</span>
+          <span style="font-size:0.8rem;color:var(--text3)">${pending}题待攻克</span>
+        </div>
+        <div style="margin-top:8px;background:var(--border);border-radius:4px;height:6px;overflow:hidden">
+          <div style="width:${progress}%;height:100%;background:var(--primary);transition:width 0.3s"></div>
+        </div>
+      </div>
+    `;
+  });
+  
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+// 开始知识点专项训练
+async function startTopicTraining(tag) {
+  if (!currentUser) return;
+  
+  showLoading('加载错题...');
+  
+  try {
+    const res = await fetch(`${API_BASE}/wrong-topic-questions?student_id=${currentUser.id}&tag=${encodeURIComponent(tag)}&level=${encodeURIComponent(currentLevel)}`);
+    const data = await res.json();
+    _wrongQuestions = data.questions || [];
+    
+    if (_wrongQuestions.length === 0) {
+      hideLoading();
+      alert('该知识点暂无待攻克错题');
+      return;
+    }
+    
+    _wrongTrainingMode = 'topic';
+    _wrongTrainingIndex = 0;
+    _wrongTrainingAnswers = {};
+    _wrongTrainingStartTime = Date.now();
+    
+    // 创建训练会话
+    const sessionRes = await fetch(`${API_BASE}/wrong-session-start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        student_id: currentUser.id,
+        mode: 'topic',
+        question_ids: _wrongQuestions.map(q => q.id)
+      })
+    });
+    const sessionData = await sessionRes.json();
+    _wrongTrainingSession = sessionData.session_id;
+    
+    hideLoading();
+    renderWrongQuestion();
+  } catch (e) {
+    hideLoading();
+    console.error('加载错题失败:', e);
+    alert('加载错题失败');
+  }
+}
+
+// 开始错题考试
+async function startWrongExam() {
+  if (!currentUser) return;
+  
+  showLoading('生成试卷...');
+  
+  try {
+    const res = await fetch(`${API_BASE}/wrong-exam?student_id=${currentUser.id}&level=${encodeURIComponent(currentLevel)}&count=20`);
+    const data = await res.json();
+    _wrongQuestions = data.questions || [];
+    
+    if (_wrongQuestions.length === 0) {
+      hideLoading();
+      alert('暂无错题可组成试卷');
+      return;
+    }
+    
+    _wrongTrainingMode = 'exam';
+    _wrongTrainingIndex = 0;
+    _wrongTrainingAnswers = {};
+    _wrongTrainingStartTime = Date.now();
+    
+    // 创建训练会话
+    const sessionRes = await fetch(`${API_BASE}/wrong-session-start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        student_id: currentUser.id,
+        mode: 'exam',
+        question_ids: _wrongQuestions.map(q => q.id)
+      })
+    });
+    const sessionData = await sessionRes.json();
+    _wrongTrainingSession = sessionData.session_id;
+    
+    hideLoading();
+    renderWrongQuestion();
+  } catch (e) {
+    hideLoading();
+    console.error('生成试卷失败:', e);
+    alert('生成试卷失败');
+  }
+}
+
+// 渲染当前错题
+function renderWrongQuestion() {
+  const container = document.getElementById('studentContent');
+  if (!container) return;
+  
+  if (_wrongTrainingIndex >= _wrongQuestions.length) {
+    finishWrongTraining();
+    return;
+  }
+  
+  const q = _wrongQuestions[_wrongTrainingIndex];
+  const total = _wrongQuestions.length;
+  const current = _wrongTrainingIndex + 1;
+  const answered = Object.keys(_wrongTrainingAnswers).length;
+  const progress = Math.round(answered * 100 / total);
+  
+  // 处理选项格式
+  let options = q.options;
+  if (typeof options === 'string') {
+    try { options = JSON.parse(options); } catch(e) { options = []; }
+  }
+  if (!Array.isArray(options)) options = [];
+  
+  container.innerHTML = `
+    <div style="padding:0">
+      <!-- 进度条 -->
+      <div style="background:var(--card);padding:12px 16px;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span style="font-size:0.9rem;font-weight:600">🎯 错题训练</span>
+          <span style="font-size:0.85rem;color:var(--text2)">${current}/${total}</span>
+        </div>
+        <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden">
+          <div style="width:${progress}%;height:100%;background:linear-gradient(90deg,var(--primary),#8b5cf6);transition:width 0.3s"></div>
+        </div>
+      </div>
+      
+      <!-- 题目内容 -->
+      <div style="padding:16px">
+        <div style="font-size:0.8rem;color:var(--primary);margin-bottom:8px">
+          ${q.type === 'single' ? '单选题' : q.type === 'multi' ? '多选题' : '判断题'}
+          ${q.wrong_count > 0 ? `· 已错${q.wrong_count}次` : ''}
+        </div>
+        <div style="font-size:1rem;line-height:1.6;margin-bottom:20px;color:var(--text)">${escHtml(q.content)}</div>
+        
+        <div style="display:flex;flex-direction:column;gap:10px" id="wrongOptions">
+          ${options.map((opt, idx) => `
+            <button class="homework-option ${_wrongTrainingAnswers[q.id] === opt.key ? 'selected' : ''}" 
+                    onclick="selectWrongOption(${q.id}, '${opt.key}')"
+                    style="text-align:left;padding:12px 16px;border-radius:8px;border:1px solid var(--border);background:var(--card);cursor:pointer;transition:all 0.2s">
+              <span style="display:inline-block;width:24px;height:24px;border-radius:50%;background:var(--bg);text-align:center;line-height:24px;margin-right:8px;font-size:0.85rem">${opt.key}</span>
+              <span style="color:var(--text)">${escHtml(opt.value)}</span>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+    
+    <!-- 底部按钮 -->
+    <div style="position:fixed;bottom:70px;left:50%;transform:translateX(-50%);width:100%;max-width:480px;padding:12px 16px;background:var(--card);border-top:1px solid var(--border)">
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-ghost" style="flex:1" onclick="exitWrongTraining()">退出</button>
+        <button class="btn btn-primary" style="flex:2" ${_wrongTrainingAnswers[q.id] ? '' : 'disabled style="opacity:0.5"'} onclick="submitWrongAnswer()">确认提交</button>
+      </div>
+    </div>
+  `;
+}
+
+// 选择答案
+function selectWrongOption(questionId, key) {
+  const q = _wrongQuestions.find(q => q.id === questionId);
+  if (!q) return;
+  
+  // 单选/判断直接选中，多选切换
+  if (q.type === 'multi') {
+    const current = _wrongTrainingAnswers[questionId] || '';
+    const keys = current.split('').filter(k => k);
+    if (keys.includes(key)) {
+      _wrongTrainingAnswers[questionId] = keys.filter(k => k !== key).join('');
+    } else {
+      keys.push(key);
+      keys.sort();
+      _wrongTrainingAnswers[questionId] = keys.join('');
+    }
+  } else {
+    _wrongTrainingAnswers[questionId] = key;
+  }
+  
+  renderWrongQuestion();
+}
+
+// 提交答案
+async function submitWrongAnswer() {
+  const q = _wrongQuestions[_wrongTrainingIndex];
+  if (!q) return;
+  
+  const userAnswer = _wrongTrainingAnswers[q.id];
+  if (!userAnswer) {
+    alert('请选择答案');
+    return;
+  }
+  
+  const correctAnswer = q.answer || '';
+  const isCorrect = userAnswer === correctAnswer;
+  
+  // 提交到后端更新掌握度
+  try {
+    await fetch(`${API_BASE}/wrong-submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        student_id: currentUser.id,
+        question_id: q.id,
+        is_correct: isCorrect,
+        mode: _wrongTrainingMode
+      })
+    });
+  } catch (e) {
+    console.error('提交结果失败:', e);
+  }
+  
+  // 显示结果
+  showWrongAnswerResult(q, userAnswer, correctAnswer, isCorrect);
+}
+
+// 显示答题结果
+function showWrongAnswerResult(q, userAnswer, correctAnswer, isCorrect) {
+  let options = q.options;
+  if (typeof options === 'string') {
+    try { options = JSON.parse(options); } catch(e) { options = []; }
+  }
+  
+  const container = document.getElementById('studentContent');
+  container.innerHTML = `
+    <div style="padding:16px">
+      <div style="text-align:center;padding:20px 0">
+        <div style="font-size:3rem">${isCorrect ? '✅' : '❌'}</div>
+        <div style="font-size:1.2rem;font-weight:600;margin-top:12px;color:${isCorrect ? 'var(--success)' : 'var(--error)'}">${isCorrect ? '回答正确！' : '回答错误'}</div>
+        ${!isCorrect ? `<div style="font-size:0.9rem;color:var(--text2);margin-top:4px">正确答案：${correctAnswer}</div>` : ''}
+      </div>
+      
+      <div class="card">
+        <div style="font-size:0.9rem;font-weight:600;margin-bottom:8px">题目解析</div>
+        <div style="font-size:0.85rem;color:var(--text);line-height:1.6">${q.analysis || '暂无解析'}</div>
+      </div>
+      
+      <button class="btn btn-primary btn-full" style="margin-top:20px" onclick="nextWrongQuestion()">
+        ${_wrongTrainingIndex + 1 >= _wrongQuestions.length ? '查看结果' : '下一题 →'}
+      </button>
+    </div>
+  `;
+}
+
+// 下一题
+function nextWrongQuestion() {
+  _wrongTrainingIndex++;
+  renderWrongQuestion();
+}
+
+// 完成训练
+async function finishWrongTraining() {
+  if (!currentUser || !_wrongTrainingSession) return;
+  
+  const duration = Math.floor((Date.now() - _wrongTrainingStartTime) / 1000);
+  const correctCount = Object.keys(_wrongTrainingAnswers).filter(qid => {
+    const q = _wrongQuestions.find(q => q.id == qid);
+    return q && _wrongTrainingAnswers[qid] === q.answer;
+  }).length;
+  
+  // 更新会话
+  try {
+    await fetch(`${API_BASE}/wrong-session-finish`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session_id: _wrongTrainingSession,
+        correct_count: correctCount,
+        duration_seconds: duration
+      })
+    });
+  } catch (e) {
+    console.error('更新会话失败:', e);
+  }
+  
+  const total = _wrongQuestions.length;
+  const accuracy = Math.round(correctCount * 100 / total);
+  
+  const container = document.getElementById('studentContent');
+  container.innerHTML = `
+    <div style="padding:16px;text-align:center">
+      <div style="font-size:4rem;margin-bottom:16px">🏆</div>
+      <div style="font-size:1.3rem;font-weight:600;margin-bottom:8px">训练完成！</div>
+      <div style="font-size:0.95rem;color:var(--text2)">本次共练习 ${total} 道错题</div>
+      
+      <div class="card" style="margin:20px 0">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;text-align:center">
+          <div>
+            <div style="font-size:1.5rem;font-weight:700;color:var(--success)">${correctCount}</div>
+            <div style="font-size:0.75rem;color:var(--text3)">答对</div>
+          </div>
+          <div>
+            <div style="font-size:1.5rem;font-weight:700;color:var(--error)">${total - correctCount}</div>
+            <div style="font-size:0.75rem;color:var(--text3)">答错</div>
+          </div>
+          <div>
+            <div style="font-size:1.5rem;font-weight:700;color:var(--primary)">${accuracy}%</div>
+            <div style="font-size:0.75rem;color:var(--text3)">正确率</div>
+          </div>
+        </div>
+      </div>
+      
+      <div style="font-size:0.85rem;color:var(--text3);margin-bottom:20px">
+        用时：${Math.floor(duration / 60)}分${duration % 60}秒
+      </div>
+      
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-outline" style="flex:1" onclick="renderWrongTraining()">返回错题</button>
+        <button class="btn btn-primary" style="flex:1" onclick="startWrongDaily()">继续训练</button>
+      </div>
+    </div>
+  `;
+  
+  // 重置状态
+  _wrongTrainingSession = null;
+  _wrongQuestions = [];
+  _wrongTrainingAnswers = {};
+}
+
+// 退出训练
+function exitWrongTraining() {
+  if (confirm('确定要退出训练吗？当前进度将不会保存。')) {
+    _wrongTrainingSession = null;
+    _wrongQuestions = [];
+    _wrongTrainingAnswers = {};
+    renderWrongTraining();
+  }
+}
+
 
 // ===== 练习Tab =====
 let _practiceSubTab = 'all';
