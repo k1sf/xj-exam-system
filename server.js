@@ -3099,8 +3099,8 @@ async function handleWrongTrainingApi(req, res, url, params) {
           newWrongCount++;
           newConsecutive = 0;
           newMasteryLevel = Math.max(0, newMasteryLevel - 1);
-          // 做错明天继续
-          nextReview = new Date(Date.now() + 24 * 60 * 60 * 1000);
+          // 做错立即可以复习（设为当前时间）
+          nextReview = new Date();
         }
         
         // 更新或插入

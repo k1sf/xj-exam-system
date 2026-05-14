@@ -7672,6 +7672,9 @@ function answerPractice(qId, letter) {
   const currentFav = practiceAnswered[actualQId]?.isFav || false;
   bufferRecord({ student_id: currentUser.username, question_id: actualQId, is_correct: isCorrect, user_answer: letter, is_fav: currentFav });
   
+  // 更新错题掌握度
+  updateWrongMastery(actualQId, isCorrect);
+  
   addXp(isCorrect ? XP_REWARDS.correct : XP_REWARDS.wrong, isCorrect ? '答对' : '答题');
   // 记录答题日志（节流，每10题记录一次）
   if (Object.keys(practiceAnswered).length % 10 === 0) {
@@ -7697,6 +7700,9 @@ function confirmMultiAnswer(qId) {
   // 保存答题记录（保留现有收藏状态）
   const currentFav = practiceAnswered[actualQId]?.isFav || false;
   bufferRecord({ student_id: currentUser.username, question_id: actualQId, is_correct: isCorrect, user_answer: answer, is_fav: currentFav });
+  
+  // 更新错题掌握度
+  updateWrongMastery(actualQId, isCorrect);
   
   addXp(isCorrect ? XP_REWARDS.correct : XP_REWARDS.wrong, isCorrect ? '答对' : '答题');
   renderPracticeCard();
@@ -8632,6 +8638,14 @@ async function submitExamAnswers() {
     records.push(rec);
   });
   await dbInsert('records', records);
+  
+  // 更新错题掌握度（非快捷考试访客）
+  if (!currentExamIsQuick && currentUser) {
+    records.forEach(rec => {
+      updateWrongMastery(rec.question_id, rec.is_correct);
+    });
+  }
+  
   // Award XP for completing exam (not for quick exam guests)
   if (!currentExamIsQuick && currentUser) {
     const examXp = currentExamIsMock ? XP_REWARDS.mock_exam : XP_REWARDS.real_exam;
