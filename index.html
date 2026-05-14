@@ -8270,8 +8270,7 @@ async function renderProfile() {
     <div style="display:flex;gap:4px;margin:12px;padding:4px;background:var(--card);border-radius:10px;overflow-x:auto">
       <button class="profile-tab ${_profileSubTab === 'task' ? 'active' : ''}" onclick="switchProfileTab('task')">📋 今日任务</button>
       <button class="profile-tab ${_profileSubTab === 'ranking' ? 'active' : ''}" onclick="switchProfileTab('ranking')">🏆 学习排名</button>
-      <button class="profile-tab ${_profileSubTab === 'password' ? 'active' : ''}" onclick="switchProfileTab('password')">🔐 修改密码</button>
-      <button class="profile-tab ${_profileSubTab === 'settings' ? 'active' : ''}" onclick="switchProfileTab('settings')">⚙️ 模式设置</button>
+      <button class="profile-tab ${_profileSubTab === 'settings' ? 'active' : ''}" onclick="switchProfileTab('settings')">⚙️ 设置</button>
     </div>
     
     <!-- 内容区 -->
@@ -8311,7 +8310,6 @@ function switchProfileTab(tab) {
   switch(tab) {
     case 'task': renderProfileTask(container); break;
     case 'ranking': renderProfileRanking(container); break;
-    case 'password': renderProfilePassword(container); break;
     case 'settings': renderProfileSettings(container); break;
   }
 }
@@ -8339,25 +8337,10 @@ function renderProfileRanking(container) {
   loadRanking('today');
 }
 
-function renderProfilePassword(container) {
-  container.innerHTML = `
-    <div class="card">
-      <div class="card-title">🔐 修改密码</div>
-      <div style="display:flex;flex-direction:column;gap:10px">
-        <input class="input" type="password" id="oldPwd" placeholder="当前密码">
-        <input class="input" type="password" id="newPwd" placeholder="新密码（至少6位）">
-        <input class="input" type="password" id="confirmPwd" placeholder="确认新密码">
-        <button class="btn btn-primary btn-full" onclick="changePassword()">修改密码</button>
-      </div>
-    </div>
-  `;
-}
-
 function renderProfileSettings(container) {
   const currentLevel = currentUser?.level || '初级';
   container.innerHTML = `
     <div class="card">
-      <div class="card-title">⚙️ 模式设置</div>
       <div style="display:flex;flex-direction:column;gap:12px">
         ${currentUser.can_change_level ? `
         <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:8px;border-bottom:1px solid var(--border)">
@@ -8376,6 +8359,17 @@ function renderProfileSettings(container) {
           <label class="switch"><input type="checkbox" id="profileLargeFont" onchange="toggleLargeText(this.checked)"><span class="slider"></span></label>
         </div>
         <button class="btn" style="background:var(--bg);border:1px solid var(--border);margin-top:4px" onclick="showHelpModal()">📖 帮助文档</button>
+        
+        <!-- 修改密码区 -->
+        <div style="margin-top:8px;padding-top:12px;border-top:1px solid var(--border)">
+          <div style="font-weight:600;margin-bottom:10px">🔐 修改密码</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <input class="input" type="password" id="oldPwd" placeholder="当前密码">
+            <input class="input" type="password" id="newPwd" placeholder="新密码（至少6位）">
+            <input class="input" type="password" id="confirmPwd" placeholder="确认新密码">
+            <button class="btn btn-primary btn-full" onclick="changePassword()">修改密码</button>
+          </div>
+        </div>
       </div>
     </div>
   `;
