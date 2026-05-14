@@ -7181,11 +7181,11 @@ function renderWrongQuestion() {
         </div>
         <div style="font-size:1rem;line-height:1.6;margin-bottom:20px;color:var(--text)">${escHtml(q.content)}</div>
         
-        <div style="display:flex;flex-direction:column;gap:10px" id="wrongOptions">
+        <div style="display:flex;flex-direction:column;gap:10px;padding-bottom:80px" id="wrongOptions">
           ${options.map((opt, idx) => `
-            <button class="homework-option ${_wrongTrainingAnswers[q.id] === opt.key ? 'selected' : ''}" 
-                    onclick="selectWrongOption(${q.id}, '${opt.key}')"
-                    style="text-align:left;padding:12px 16px;border-radius:8px;border:1px solid var(--border);background:var(--card);cursor:pointer;transition:all 0.2s">
+            <button type="button" class="homework-option ${_wrongTrainingAnswers[q.id] === opt.key ? 'selected' : ''}" 
+                    style="text-align:left;padding:12px 16px;border-radius:8px;border:1px solid var(--border);background:var(--card);cursor:pointer;transition:all 0.2s;width:100%"
+                    onclick="selectWrongOption(${q.id}, '${opt.key}')">
               <span style="display:inline-block;width:24px;height:24px;border-radius:50%;background:var(--bg);text-align:center;line-height:24px;margin-right:8px;font-size:0.85rem">${opt.key}</span>
               <span style="color:var(--text)">${escHtml(opt.value)}</span>
             </button>
@@ -7206,7 +7206,9 @@ function renderWrongQuestion() {
 
 // 选择答案
 function selectWrongOption(questionId, key) {
-  const q = _wrongQuestions.find(q => q.id === questionId);
+  // 确保 questionId 是正确的类型
+  const qid = parseInt(questionId) || questionId;
+  const q = _wrongQuestions.find(q => q.id == qid);
   if (!q) return;
   
   // 单选/判断直接选中，多选切换
