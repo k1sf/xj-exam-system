@@ -21,9 +21,9 @@ html.dark body{background:#0f172a;color:var(--text)}
 html.dark #app{background:var(--bg);box-shadow:0 0 40px rgba(0,0,0,0.3)}
 html.dark .login-page{background:linear-gradient(180deg,#0f172a 0%,#1e2340 100%)}
 html.dark .login-page::before{opacity:0.3}
-html.dark .login-page::after{background:linear-gradient(180deg,rgba(15,23,42,0.85) 0%,rgba(15,23,42,0.95) 100%)}
+html.dark .login-page::after{background:transparent}
 html.dark .login-card{background:rgba(30,41,59,0.95);border-color:var(--border)}
-html.dark .login-title{color:#e2e8f0}
+html.dark .login-title{color:#1a1a2e;background:rgba(255,255,255,0.85)}
 html.dark .admin-topbar{background:var(--card);border-color:var(--border)}
 html.dark .admin-tabs{background:var(--card);border-color:var(--border)}
 html.dark .student-tabbar{background:var(--card);border-color:var(--border)}
@@ -132,15 +132,15 @@ html.large-text .admin-tab{font-size:0.9rem;padding:14px 10px}
 /* ===== Login Page ===== */
 .login-page{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 24px;position:relative;overflow:hidden}
 .login-page::before{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:url('https://code.coze.cn/api/sandbox/coze_coding/file/proxy?expire_time=-1&file_path=assets%2F%E9%99%86%E7%90%B4%E5%AD%A6%E6%A0%A1.png&nonce=0f9a1689-b298-4294-a0d2-6e58a0b382ba&project_id=7638069931338301478&sign=170c61d3cb65cf233459e68ef687e2eb68a66dfdf9da5c5aa43eff6c44ff922d') center center/cover no-repeat;z-index:0}
-.login-page::after{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:linear-gradient(180deg,rgba(255,255,255,0.85) 0%,rgba(255,255,255,0.9) 50%,rgba(255,255,255,0.95) 100%);z-index:1}
+.login-page::after{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:transparent;z-index:1}
 .login-page > *{position:relative;z-index:2}
-.login-brand{}
+.login-brand{padding-top:20px}
 .login-logo{width:90px;height:90px;margin:0 auto 16px;display:flex;align-items:center;justify-content:center}
 .login-logo img{width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 4px 8px rgba(0,0,0,0.1))}
 .login-icon{width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#4a6cf7,#6d8afc);display:flex;align-items:center;justify-content:center;font-size:36px;margin:0 auto 16px;box-shadow:0 8px 24px rgba(74,108,247,0.25)}
-.login-title{font-size:1.5rem;font-weight:700;color:#1a1a2e;text-align:center;line-height:1.4}
-.login-subtitle{font-size:0.85rem;color:var(--text2);letter-spacing:1px;text-align:center;margin-top:8px}
-.login-card{background:rgba(255,255,255,0.95);backdrop-filter:blur(10px);border-radius:20px;box-shadow:0 8px 32px rgba(0,0,0,0.15);padding:30px 24px;width:100%;max-width:360px;margin-top:24px;border:1px solid rgba(255,255,255,0.5)}
+.login-title{font-size:1.6rem;font-weight:700;color:#1a1a2e;text-align:center;line-height:1.5;text-shadow:0 2px 8px rgba(255,255,255,0.8);background:rgba(255,255,255,0.85);padding:16px 24px;border-radius:12px;backdrop-filter:blur(8px)}
+.login-subtitle{font-size:0.9rem;color:#333;letter-spacing:1px;text-align:center;margin-top:8px;text-shadow:0 1px 4px rgba(255,255,255,0.6)}
+.login-card{background:rgba(255,255,255,0.92);backdrop-filter:blur(10px);border-radius:20px;box-shadow:0 8px 32px rgba(0,0,0,0.2);padding:30px 24px;width:100%;max-width:360px;margin-top:24px;border:1px solid rgba(255,255,255,0.5)}
 .login-input-group{display:flex;align-items:center;border-bottom:2px solid #e0e0e0;transition:border-color 0.3s;margin-top:20px;height:48px}
 .login-input-group:focus-within{border-image:linear-gradient(90deg,#4a6cf7,#6d8afc) 1}
 .login-input-group .icon{font-size:18px;color:var(--text2);margin-right:10px;flex-shrink:0}
@@ -2492,10 +2492,6 @@ function renderLogin(errorMsg) {
   document.getElementById('app').innerHTML = `
     <div class="login-page">
       <div class="login-brand">
-        <div class="login-logo">
-          <img src="https://code.coze.cn/api/sandbox/coze_coding/file/proxy?expire_time=-1&file_path=assets%2Flotus_logo_only.png&nonce=3361acaa-38a1-42bd-884a-0b4e36d2ce66&project_id=7638069931338301478&sign=276eee657643575290e5d0ed457ffc820ebac83e3719bafc98f33e266991aafb" alt="陆琴脚艺" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-          <div class="login-icon" style="display:none">🦶</div>
-        </div>
         <div class="login-title">扬州陆琴脚艺培训学校<br>学习考试系统</div>
         <div class="login-subtitle">专业刷题 · 轻松考证</div>
       </div>
