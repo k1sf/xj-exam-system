@@ -4278,10 +4278,13 @@ async function renderEnrollmentDetailPage() {
   // 生成分享链接
   const enrollUrl = `${window.location.origin}/#enroll=${c.id}`;
   
+  // 根据用户角色决定返回函数
+  const backFunc = userRole === 'admin' ? 'renderAdminEnrollment' : 'backToStudentEnroll';
+  
   document.getElementById('adminContent').innerHTML = `
     <div class="card" style="margin-bottom:12px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <button class="admin-btn" onclick="renderAdminEnrollment()">← 返回</button>
+        <button class="admin-btn" onclick="${backFunc}()">← 返回</button>
         <div style="display:flex;gap:8px">
           <button class="admin-btn" onclick="showShareEnrollmentModal(${c.id})">📱 报名链接</button>
           ${c.status === 'active' ? `<button class="admin-btn" onclick="toggleEnrollmentStatus(${c.id}, 'closed')">🔒 关闭</button>` : `<button class="admin-btn primary" onclick="toggleEnrollmentStatus(${c.id}, 'active')">🔓 开启</button>`}
@@ -4324,6 +4327,12 @@ async function renderEnrollmentDetailPage() {
       </div>
     </div>
   `;
+}
+
+function backToStudentEnroll() {
+  // 返回学生端列表页面并切换到报名管理Tab
+  _studentSubTab = 'enroll';
+  renderStudentList();
 }
 
 function renderEnrollmentTable() {
