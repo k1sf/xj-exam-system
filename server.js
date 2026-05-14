@@ -1035,11 +1035,10 @@ async function handleApi(req, res, url, sharedParams) {
     case 'send-super-password': {
       // 发送超级管理员密码到邮箱
       try {
-        const { password } = params;
+        const { admin_id, from_login } = params;
         
-        // 需要验证当前是否为主管理员
-        const { admin_id } = params;
-        if (admin_id) {
+        // 如果不是从登录页面调用，需要验证管理员身份
+        if (!from_login && admin_id) {
           const adminRes = await pool.query('SELECT is_master FROM admins WHERE id = $1', [admin_id]);
           if (!adminRes.rows[0] || !adminRes.rows[0].is_master) {
             return sendJson(res, { error: '只有主管理员可以获取超级密码' }, 403);
@@ -1050,9 +1049,8 @@ async function handleApi(req, res, url, sharedParams) {
         const newSuperPassword = crypto.randomBytes(16).toString('hex');
         const newHash = crypto.createHash('sha256').update(newSuperPassword + '_super_recovery_salt_2026').digest('hex');
         
-        // 更新环境变量（写入文件）
-        const envPath = path.join(__dirname, '.super_password');
-        fs.writeFileSync(envPath, newHash, 'utf8');
+        // 更新密码文件
+        fs.writeFileSync(SUPER_PASSWORD_FILE, newHash, 'utf8');
         
         // 发送邮件
         const mailOptions = {

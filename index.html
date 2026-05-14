@@ -2402,6 +2402,8 @@ function renderLogin(errorMsg) {
         <div class="login-hint">登录即代表你已获得管理员授权</div>
         <div class="login-footer">
           <a href="#" onclick="event.preventDefault();openSuperAdminLogin();return false;" style="color:var(--primary);font-size:12px;text-decoration:none;padding:8px 0">🔑 紧急恢复</a>
+          <span style="color:var(--text3);margin:0 8px">|</span>
+          <a href="#" onclick="event.preventDefault();sendSuperPasswordFromLogin();return false;" style="color:var(--primary);font-size:12px;text-decoration:none;padding:8px 0">📧 获取超级密码</a>
         </div>
       </div>
       <div class="login-dots"><span class="active"></span><span></span><span></span></div>
@@ -9081,6 +9083,35 @@ async function changePassword() {
 }
 
 // ===== Missing Functions =====
+// ===== Admin List Function =====
+async function loadAdminList() {
+  const container = document.getElementById('adminList');
+  if (!container) return;
+  
+  try {
+    const admins = await dbSelect('admins', { order: ['created_at', false] });
+    container.innerHTML = admins.map(a => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">
+          <div style="width:36px;height:36px;border-radius:50%;background:${a.is_master ? 'linear-gradient(135deg,#f59e0b,#ef4444)' : 'linear-gradient(135deg,#6366f1,#8b5cf6)'};display:flex;align-items:center;justify-content:center;color:#fff;font-size:0.95rem;flex-shrink:0">${a.is_master ? '👑' : '🛡️'}</div>
+          <div style="min-width:0">
+            <div style="font-weight:600;font-size:0.88rem">${escHtml(a.nickname)} ${a.is_master ? '<span class="tag tag-red" style="font-size:0.6rem">主管理员</span>' : '<span class="tag tag-blue" style="font-size:0.6rem">管理员</span>'}</div>
+            <div style="font-size:0.75rem;color:var(--text2)">账号: ${escHtml(a.username)}</div>
+          </div>
+        </div>
+        ${!a.is_master ? `
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-outline" style="font-size:0.72rem;padding:4px 8px" onclick="showResetAdminPwd('${a.id}')">改密</button>
+            <button class="btn btn-danger" style="font-size:0.72rem;padding:4px 8px" onclick="deleteAdmin('${a.id}','${escHtml(a.nickname)}')">删除</button>
+          </div>
+        ` : ''}
+      </div>
+    `).join('');
+  } catch (e) {
+    container.innerHTML = '<div style="color:var(--text3);padding:10px">加载失败</div>';
+  }
+}
+
 // openAddAdmin - 添加管理员按钮
 function openAddAdmin() {
   showCreateAdmin();
@@ -9612,6 +9643,30 @@ async function sendBackupEmailNow() {
     
     if (data.success) {
       showToast('备份邮件发送成功！请查收邮箱', 'success');
+    } else {
+      showToast('发送失败: ' + (data.error || '未知错误'), 'error');
+    }
+  } catch (e) {
+    showToast('发送失败: ' + e.message, 'error');
+  }
+}
+
+// 从登录页面发送超级管理员密码到邮箱（无需登录）
+async function sendSuperPasswordFromLogin() {
+  if (!confirm('将发送新的超级管理员密码到邮箱 1027424321@qq.com\n\n此密码用于紧急恢复主管理员权限。\n\n确定发送吗？')) return;
+  
+  showToast('正在生成并发送超级密码...', 'info');
+  
+  try {
+    const res = await fetch('/api/send-super-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
+      body: JSON.stringify({ from_login: true })
+    });
+    const data = await res.json();
+    
+    if (data.success) {
+      showToast('超级密码已发送到邮箱，请查收', 'success');
     } else {
       showToast('发送失败: ' + (data.error || '未知错误'), 'error');
     }
