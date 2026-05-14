@@ -161,9 +161,11 @@ html.dark .answer-level{background:var(--bg);color:var(--text2)}
 .login-page::before{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:url('https://code.coze.cn/api/sandbox/coze_coding/file/proxy?expire_time=-1&file_path=assets%2F%E9%99%86%E7%90%B4%E5%AD%A6%E6%A0%A1.png&nonce=0f9a1689-b298-4294-a0d2-6e58a0b382ba&project_id=7638069931338301478&sign=170c61d3cb65cf233459e68ef687e2eb68a66dfdf9da5c5aa43eff6c44ff922d') center center/cover no-repeat;z-index:0}
 .login-page::after{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:linear-gradient(to top,rgba(0,0,0,0.7) 0%,rgba(0,0,0,0.4) 40%,rgba(0,0,0,0.1) 70%,transparent 100%);z-index:1}
 .login-page > *{position:relative;z-index:2}
-/* 星星动画 */
-.stars-container{position:absolute;top:0;left:0;width:100%;height:50%;z-index:1;overflow:visible;pointer-events:none}
-.star{position:absolute;top:25%;left:50%;--orbit-radius:100px;--duration:15s;--delay:0s;--direction:normal;background:radial-gradient(circle at 30% 30%,#fff 0%,#ffd700 30%,#ffb347 70%,#ff8c00 100%);border-radius:50%;box-shadow:0 0 10px 2px rgba(255,215,0,0.8),0 0 20px 4px rgba(255,215,0,0.4);animation:orbit var(--duration) linear var(--delay) infinite var(--direction),twinkle 1.5s ease-in-out infinite alternate}
+/* 星星动画 - 围绕顶部圆形照片旋转 */
+.stars-container{position:absolute;top:0;left:0;width:100%;height:35%;z-index:1;overflow:visible;pointer-events:none}
+/* 旋转中心位于圆形照片中心（页面顶部约18%位置） */
+.star{position:absolute;top:55%;left:50%;--orbit-radius:100px;--duration:15s;--delay:0s;--direction:normal;background:radial-gradient(circle at 30% 30%,#fff 0%,#ffd700 30%,#ffb347 70%,#ff8c00 100%);border-radius:50%;box-shadow:0 0 10px 2px rgba(255,215,0,0.8),0 0 20px 4px rgba(255,215,0,0.4);animation:orbit var(--duration) linear var(--delay) infinite var(--direction),twinkle 1.5s ease-in-out infinite alternate}
+/* 大引领星 - 沿圆形照片边框外旋转 */
 .star-leader{background:radial-gradient(circle at 30% 30%,#fff 0%,#ffd700 20%,#ffec8b 50%,#ffd700 80%,#daa520 100%);box-shadow:0 0 15px 4px rgba(255,215,0,1),0 0 30px 8px rgba(255,215,0,0.6),0 0 45px 12px rgba(255,215,0,0.3);z-index:10;animation:orbit-leader var(--duration) linear infinite,twinkle 1s ease-in-out infinite alternate}
 .star:nth-child(3n){background:radial-gradient(circle at 30% 30%,#fff 0%,#87ceeb 30%,#4169e1 70%,#1e3a8a 100%);box-shadow:0 0 10px 2px rgba(135,206,235,0.8),0 0 20px 4px rgba(135,206,235,0.4)}
 .star:nth-child(5n){background:radial-gradient(circle at 30% 30%,#fff 0%,#98fb98 30%,#32cd32 70%,#228b22 100%);box-shadow:0 0 10px 2px rgba(152,251,152,0.8),0 0 20px 4px rgba(152,251,152,0.4)}
@@ -2586,28 +2588,29 @@ function showConfetti() { /* animation removed */ }
 // ===== Login =====
 function renderLogin(errorMsg) {
   // 生成星星HTML - 一颗大星引领，众小星跟随，全部顺时针旋转
+  // 圆形老师照片位于页面顶部中间，半径约70px
   let starsHtml = '';
   
-  // 第一颗最大的引领星 - 在相框内旋转
-  const leaderSize = 26;
-  const leaderOrbit = 55; // 相框内圈，半径较小
-  const leaderDuration = 18; // 最慢，稳重引领
+  // 第一颗最大的引领星 - 沿圆形照片边框外旋转（刚好贴着边框）
+  const leaderSize = 24;
+  const leaderOrbit = 75; // 圆形照片半径+一点间距，刚好在边框外
+  const leaderDuration = 16; // 较慢，稳重引领
   starsHtml += `<div class="star star-leader" style="width:${leaderSize}px;height:${leaderSize}px;--orbit-radius:${leaderOrbit}px;--duration:${leaderDuration}s;--delay:0s;--direction:normal"></div>`;
   
-  // 其余跟随的星星 - 全部在相框外旋转
-  // 相框半径约70-80px，所以其他星星轨道从100px开始
-  for (let i = 2; i <= 35; i++) {
-    // 大小：随机分布，5-14px
-    const size = 5 + Math.random() * 9;
+  // 其余跟随的星星 - 在圆形照片外围旋转，不进入照片区域
+  // 圆形照片半径约70px，所以其他星星轨道从90px开始，确保不进入照片
+  for (let i = 2; i <= 30; i++) {
+    // 大小：随机分布，4-12px
+    const size = 4 + Math.random() * 8;
     
-    // 轨道半径：全部在相框外，从100px到200px
-    const orbitRadius = 100 + Math.random() * 100;
+    // 轨道半径：全部在圆形照片外，从90px到160px
+    const orbitRadius = 90 + Math.random() * 70;
     
-    // 速度：越快越有活力
-    const duration = 6 + Math.random() * 8;
+    // 速度：外围稍慢，更有层次感
+    const duration = 8 + Math.random() * 6;
     
     // 随机起始位置
-    const delay = Math.random() * -15;
+    const delay = Math.random() * -12;
     
     // 全部顺时针旋转
     starsHtml += `<div class="star star-${i}" style="width:${size}px;height:${size}px;--orbit-radius:${orbitRadius}px;--duration:${duration}s;--delay:${delay}s;--direction:normal"></div>`;
