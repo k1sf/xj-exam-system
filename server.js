@@ -105,8 +105,9 @@ const transporter = nodemailer.createTransport(EMAIL_CONFIG);
 let backupConfig = {
   enabled: true,
   email: '1027424321@qq.com',  // 默认发送到同一邮箱
-  schedule: 'weekly',  // weekly, daily
-  lastBackupTime: null
+  schedule: 'monthly',  // monthly: 每月1日
+  lastBackupTime: null,
+  backupHistory: []  // 保存最近3份备份记录
 };
 
 // 发送备份邮件
@@ -164,7 +165,19 @@ async function performBackup() {
     await sendBackupEmail(jsonStr, filename);
     
     // 更新备份时间
-    backupConfig.lastBackupTime = new Date().toISOString();
+    const backupTime = new Date().toISOString();
+    backupConfig.lastBackupTime = backupTime;
+    
+    // 记录备份历史，保留最近3份
+    backupConfig.backupHistory.push({
+      time: backupTime,
+      filename: filename,
+      size: jsonStr.length
+    });
+    // 只保留最近3份
+    if (backupConfig.backupHistory.length > 3) {
+      backupConfig.backupHistory = backupConfig.backupHistory.slice(-3);
+    }
     
     console.log('数据库备份完成，邮件已发送');
     return { success: true, message: '备份成功，邮件已发送' };
@@ -174,30 +187,30 @@ async function performBackup() {
   }
 }
 
-// 定时备份（每周一凌晨3点执行）
+// 定时备份（每月1日凌晨3点执行）
 let backupTimer = null;
 
 function startBackupScheduler() {
   // 每小时检查一次是否需要备份
   backupTimer = setInterval(async () => {
     const now = new Date();
-    const day = now.getDay(); // 0=周日, 1=周一
+    const date = now.getDate(); // 日期（1-31）
     const hour = now.getHours();
     
-    // 周一凌晨3点执行备份
-    if (day === 1 && hour === 3 && backupConfig.enabled) {
+    // 每月1日凌晨3点执行备份
+    if (date === 1 && hour === 3 && backupConfig.enabled) {
       const lastBackup = backupConfig.lastBackupTime ? new Date(backupConfig.lastBackupTime) : null;
       const hoursSinceLastBackup = lastBackup ? (now - lastBackup) / (1000 * 60 * 60) : 100;
       
       // 确保不会重复备份（距离上次备份超过12小时）
       if (hoursSinceLastBackup > 12) {
-        console.log('定时备份触发...');
+        console.log('每月定时备份触发...');
         await performBackup();
       }
     }
   }, 60 * 60 * 1000); // 每小时检查一次
   
-  console.log('备份定时器已启动');
+  console.log('备份定时器已启动（每月1日凌晨3点）');
 }
 
 // 启动时启动备份定时器
@@ -995,7 +1008,9 @@ async function handleApi(req, res, url, sharedParams) {
       // 获取备份配置
       sendJson(res, {
         email: EMAIL_CONFIG.receiver,
-        schedule: '每周一凌晨3点自动备份'
+        schedule: '每月1日凌晨3点自动备份',
+        lastBackupTime: backupConfig.lastBackupTime,
+        backupHistory: backupConfig.backupHistory
       });
       break;
     }
