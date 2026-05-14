@@ -8400,8 +8400,8 @@ function renderProfileSettings(container) {
   // 初始化开关状态
   const darkModeSwitch = document.getElementById('profileDarkMode');
   const largeFontSwitch = document.getElementById('profileLargeFont');
-  if (darkModeSwitch) darkModeSwitch.checked = localStorage.getItem('xjDarkMode') === 'true';
-  if (largeFontSwitch) largeFontSwitch.checked = localStorage.getItem('xjLargeFont') === 'true';
+  if (darkModeSwitch) darkModeSwitch.checked = localStorage.getItem('xjDarkMode') === '1';
+  if (largeFontSwitch) largeFontSwitch.checked = localStorage.getItem('xjLargeText') === '1';
 }
 
 // 在"我的"页面显示任务进度
