@@ -163,6 +163,8 @@ html.dark .answer-level{background:var(--bg);color:var(--text2)}
 .login-page > *{position:relative;z-index:2}
 /* 星星动画 */
 .stars-container{position:absolute;top:0;left:0;width:100%;height:50%;z-index:1;overflow:hidden;pointer-events:none}
+.login-logo-circle{position:relative;z-index:2;width:100px;height:100px;margin:0 auto 20px;border-radius:50%;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.3),0 0 40px rgba(255,215,0,0.2);border:3px solid rgba(255,255,255,0.6);flex-shrink:0}
+.login-logo-circle img{width:100%;height:100%;object-fit:cover}
 .star{position:absolute;top:25%;left:50%;--orbit-radius:100px;--duration:15s;--delay:0s;--direction:normal;background:radial-gradient(circle at 30% 30%,#fff 0%,#ffd700 30%,#ffb347 70%,#ff8c00 100%);border-radius:50%;box-shadow:0 0 10px 2px rgba(255,215,0,0.8),0 0 20px 4px rgba(255,215,0,0.4);animation:orbit var(--duration) linear var(--delay) infinite var(--direction),twinkle 1.5s ease-in-out infinite alternate}
 .star-leader{background:radial-gradient(circle at 30% 30%,#fff 0%,#ffd700 20%,#ffec8b 50%,#ffd700 80%,#daa520 100%);box-shadow:0 0 15px 4px rgba(255,215,0,1),0 0 30px 8px rgba(255,215,0,0.6),0 0 45px 12px rgba(255,215,0,0.3);z-index:10;animation:orbit-leader var(--duration) linear infinite,twinkle 1s ease-in-out infinite alternate}
 .star:nth-child(3n){background:radial-gradient(circle at 30% 30%,#fff 0%,#87ceeb 30%,#4169e1 70%,#1e3a8a 100%);box-shadow:0 0 10px 2px rgba(135,206,235,0.8),0 0 20px 4px rgba(135,206,235,0.4)}
@@ -2622,6 +2624,9 @@ function renderLogin(errorMsg) {
   document.getElementById('app').innerHTML = `
     <div class="login-page">
       <div class="stars-container">${starsHtml}</div>
+      <div class="login-logo-circle">
+        <img src="assets/Screenshot_20260514_220604.jpg" alt="陆琴脚艺" onerror="this.style.display='none'">
+      </div>
       <div class="login-brand">
         <div class="login-title">扬州陆琴脚艺培训学校<br>学习考试系统</div>
         <div class="login-subtitle">专业刷题 · 轻松考证</div>
