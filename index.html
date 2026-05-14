@@ -2514,7 +2514,7 @@ function renderLogin(errorMsg) {
   let starsHtml = '';
   for (let i = 1; i <= 35; i++) {
     const size = 4 + Math.random() * 10; // 4-14px
-    const orbitRadius = 60 + Math.random() * 80; // 60-140px 轨道半径
+    const orbitRadius = 80 + Math.random() * 180; // 80-260px 轨道半径（更大范围）
     const duration = 6 + Math.random() * 10; // 6-16秒一圈
     const delay = Math.random() * -16; // 随机起始位置
     const isClockwise = i % 2 === 0;
