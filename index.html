@@ -163,8 +163,8 @@ html.dark .answer-level{background:var(--bg);color:var(--text2)}
 .login-page > *{position:relative;z-index:2}
 /* 繁星围着logo缓缓旋转 */
 .stars-wrapper{position:relative;z-index:2;display:flex;align-items:center;justify-content:center;margin-bottom:20px}
-.stars-container{position:absolute;width:180px;height:180px;z-index:1;pointer-events:none}
-.login-logo-circle{position:relative;z-index:2;width:56px;height:56px;margin:0 auto;border-radius:50%;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.3),0 0 40px rgba(255,215,0,0.2);border:3px solid rgba(255,255,255,0.6);flex-shrink:0}
+.stars-container{position:absolute;width:280px;height:280px;z-index:1;pointer-events:none}
+.login-logo-circle{position:relative;z-index:2;width:70px;height:70px;margin:0 auto;border-radius:50%;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.3),0 0 40px rgba(255,215,0,0.2);border:3px solid rgba(255,255,255,0.6);flex-shrink:0}
 .login-logo-circle img{width:100%;height:100%;object-fit:cover}
 /* 繁星动画 - 围绕中心缓缓旋转 */
 .star{position:absolute;top:50%;left:50%;--orbit-radius:100px;--duration:25s;--delay:0s;--twinkle-duration:3s;--twinkle-delay:0s;background:radial-gradient(circle at 30% 30%,#fff 0%,#ffeaa7 50%,#fdcb6e 100%);border-radius:50%;box-shadow:0 0 6px 1px rgba(255,255,255,0.6);animation:orbit var(--duration) linear var(--delay) infinite,twinkle var(--twinkle-duration) ease-in-out var(--twinkle-delay) infinite alternate;opacity:0.6}
@@ -182,15 +182,15 @@ html.dark .answer-level{background:var(--bg);color:var(--text2)}
 .login-logo{width:90px;height:90px;margin:0 auto 16px;display:flex;align-items:center;justify-content:center}
 .login-logo img{width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 4px 8px rgba(0,0,0,0.1))}
 .login-icon{width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#4a6cf7,#6d8afc);display:flex;align-items:center;justify-content:center;font-size:36px;margin:0 auto 16px;box-shadow:0 8px 24px rgba(74,108,247,0.25)}
-.login-title{font-size:0.9rem;font-weight:700;color:#fff;text-align:center;line-height:1.3;text-shadow:0 2px 12px rgba(0,0,0,0.5);padding:0 10px;margin-bottom:2px}
-.login-subtitle{font-size:0.65rem;color:rgba(255,255,255,0.9);letter-spacing:2px;text-align:center;margin-bottom:10px;text-shadow:0 1px 4px rgba(0,0,0,0.5)}
-.login-card{background:rgba(255,255,255,0.015);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);border-radius:18px;box-shadow:0 4px 16px rgba(0,0,0,0.1),inset 0 1px 1px rgba(255,255,255,0.05);padding:16px 16px;width:100%;max-width:280px;border:1px solid rgba(255,255,255,0.08)}
-.login-input-group{display:flex;align-items:center;border:1px solid rgba(255,255,255,0.3);transition:all 0.3s;margin-top:10px;height:38px;background:rgba(255,255,255,0.9);padding:0 12px;border-radius:8px}
+.login-title{font-size:1.3rem;font-weight:700;color:#fff;text-align:center;line-height:1.5;text-shadow:0 2px 12px rgba(0,0,0,0.5);padding:0 12px;margin-bottom:4px}
+.login-subtitle{font-size:0.75rem;color:rgba(255,255,255,0.9);letter-spacing:2px;text-align:center;margin-bottom:16px;text-shadow:0 1px 4px rgba(0,0,0,0.5)}
+.login-card{background:rgba(255,255,255,0.015);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);border-radius:20px;box-shadow:0 4px 16px rgba(0,0,0,0.1),inset 0 1px 1px rgba(255,255,255,0.05);padding:20px 20px;width:100%;max-width:340px;border:1px solid rgba(255,255,255,0.08)}
+.login-input-group{display:flex;align-items:center;border:1px solid rgba(255,255,255,0.3);transition:all 0.3s;margin-top:12px;height:44px;background:rgba(255,255,255,0.9);padding:0 14px;border-radius:10px}
 .login-input-group:focus-within{border-color:#4a6cf7;box-shadow:0 0 0 3px rgba(74,108,247,0.2);background:#fff}
 .login-input-group .icon{font-size:20px;color:#666;margin-right:12px;flex-shrink:0}
 .login-input-group input{flex:1;border:none;outline:none;font-size:1rem;background:transparent;color:#333;min-width:0}
 .login-input-group input::placeholder{color:#999}
-.login-btn{width:100%;height:40px;border-radius:10px;border:none;background:linear-gradient(135deg,#4a6cf7 0%,#357abd 100%);color:#fff;font-size:0.95rem;font-weight:600;letter-spacing:4px;cursor:pointer;margin-top:14px;box-shadow:0 4px 16px rgba(74,108,247,0.4);transition:all 0.3s}
+.login-btn{width:100%;height:44px;border-radius:10px;border:none;background:linear-gradient(135deg,#4a6cf7 0%,#357abd 100%);color:#fff;font-size:1rem;font-weight:600;letter-spacing:4px;cursor:pointer;margin-top:18px;box-shadow:0 4px 16px rgba(74,108,247,0.4);transition:all 0.3s}
 .login-btn:hover{transform:translateY(-2px);box-shadow:0 6px 24px rgba(74,108,247,0.5)}
 .login-btn:active{transform:translateY(0);box-shadow:0 2px 8px rgba(74,108,247,0.3)}
 .login-btn:disabled{opacity:0.7;cursor:not-allowed;transform:none}
@@ -213,7 +213,7 @@ html.dark .answer-level{background:var(--bg);color:var(--text2)}
 .login-title{font-size:1.15rem;margin-bottom:4px}
 .login-subtitle{font-size:0.75rem;margin-bottom:12px}
 .login-card{padding:20px 16px;border-radius:20px;max-width:320px}
-.login-input-group{height:38px;margin-top:10px}
+.login-input-group{height:46px;margin-top:12px}
 .login-input-group .icon{font-size:18px}
 .login-input-group input{font-size:0.95rem}
 .login-btn{height:46px;font-size:1rem;margin-top:18px;letter-spacing:2px}
@@ -2596,20 +2596,20 @@ function renderLogin(errorMsg) {
   // 生成繁星HTML - 围绕logo缓缓旋转
   let starsHtml = '';
   
-  // 引领星 - 最亮最大的一颗，紧贴logo边框（logo半径28px+边框）
-  const leaderSize = 12;
-  const leaderOrbit = 34; // 紧贴logo边框外侧
-  const leaderDuration = 30; // 缓缓旋转
+  // 引领星 - 最亮最大的一颗，紧贴logo边框
+  const leaderSize = 16;
+  const leaderOrbit = 55;
+  const leaderDuration = 25; // 缓缓旋转
   starsHtml += `<div class="star star-leader" style="width:${leaderSize}px;height:${leaderSize}px;--orbit-radius:${leaderOrbit}px;--duration:${leaderDuration}s;--delay:0s"></div>`;
   
   // 繁星：80颗小星星，分布在多个轨道
   const totalStars = 80;
   for (let i = 2; i <= totalStars; i++) {
-    // 轨道层级：从内到外分布（更紧凑）
-    const orbitLevel = Math.floor((i - 2) / 15) + 1; // 1-6层
-    const orbitBase = 38 + orbitLevel * 10; // 38, 48, 58, 68, 78, 88
-    const orbitVariation = Math.random() * 8;
-    const orbitRadius = Math.min(95, orbitBase + orbitVariation);
+    // 轨道层级：从内到外分布
+    const orbitLevel = Math.floor((i - 2) / 12) + 1; // 1-7层
+    const orbitBase = 65 + orbitLevel * 20; // 65, 85, 105, 125, 145, 165, 185
+    const orbitVariation = Math.random() * 15;
+    const orbitRadius = Math.min(180, orbitBase + orbitVariation);
     
     // 大小：大部分很小(2-6px)，少数稍大(6-10px)
     const isBright = Math.random() < 0.15; // 15%稍亮的星
