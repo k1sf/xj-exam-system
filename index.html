@@ -9668,12 +9668,12 @@ async function sendSuperPasswordFromLogin() {
     const data = await res.json();
     
     if (data.success) {
-      showToast('超级密码已发送到邮箱，请查收', 'success');
+      alert('✅ 超级密码已发送到邮箱 1027424321@qq.com\n\n请查收邮件获取超级密码。');
     } else {
-      showToast('发送失败: ' + (data.error || '未知错误'), 'error');
+      alert('❌ 发送失败: ' + (data.error || '未知错误'));
     }
   } catch (e) {
-    showToast('发送失败: ' + e.message, 'error');
+    alert('❌ 发送失败: ' + e.message);
   }
 }
 
