@@ -2,6 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const nodemailer = require('nodemailer');
 
 const PORT = process.env.DEPLOY_RUN_PORT || 5000;
 
@@ -67,6 +68,122 @@ function verifySuperAdmin(password) {
   const hash = crypto.createHash('sha256').update(password + '_super_recovery_salt_2026').digest('hex');
   return hash === SUPER_ADMIN_HASH;
 }
+
+// ===== Email Config for Auto Backup =====
+const EMAIL_CONFIG = {
+  host: 'smtp.qq.com',
+  port: 465,
+  secure: true,
+  auth: {
+    user: '1027424321@qq.com',
+    pass: 'ljamomjdkkocbegf'
+  }
+};
+
+// 创建邮件传输器
+const transporter = nodemailer.createTransport(EMAIL_CONFIG);
+
+// 备份配置（存储在内存中，可从数据库读取）
+let backupConfig = {
+  enabled: true,
+  email: '1027424321@qq.com',  // 默认发送到同一邮箱
+  schedule: 'weekly',  // weekly, daily
+  lastBackupTime: null
+};
+
+// 发送备份邮件
+async function sendBackupEmail(backupData, filename) {
+  const mailOptions = {
+    from: EMAIL_CONFIG.auth.user,
+    to: backupConfig.email,
+    subject: `【修脚师考试系统】数据库备份 - ${new Date().toLocaleDateString('zh-CN')}`,
+    text: `您好！\n\n这是修脚师考试系统的自动备份数据。\n\n备份时间：${new Date().toLocaleString('zh-CN')}\n备份文件：${filename}\n\n请妥善保管此备份文件。\n\n系统自动发送，请勿回复。`,
+    attachments: [
+      {
+        filename: filename,
+        content: backupData
+      }
+    ]
+  };
+  
+  return new Promise((resolve, reject) => {
+    transporter.sendMail(mailOptions, (error, info) => {
+      if (error) {
+        console.error('发送备份邮件失败:', error);
+        reject(error);
+      } else {
+        console.log('备份邮件发送成功:', info.response);
+        resolve(info);
+      }
+    });
+  });
+}
+
+// 执行数据库备份
+async function performBackup() {
+  try {
+    console.log('开始执行数据库备份...');
+    
+    // 导出所有表数据
+    const tables = ['students', 'questions', 'records', 'exams', 'admins'];
+    const backupData = {};
+    
+    for (const table of tables) {
+      const result = await pool.query(`SELECT * FROM "${table}"`);
+      backupData[table] = result.rows;
+    }
+    
+    // 添加元数据
+    backupData._meta = {
+      backupTime: new Date().toISOString(),
+      version: '1.0'
+    };
+    
+    const jsonStr = JSON.stringify(backupData, null, 2);
+    const filename = `backup_${new Date().toISOString().slice(0,10)}.json`;
+    
+    // 发送邮件
+    await sendBackupEmail(jsonStr, filename);
+    
+    // 更新备份时间
+    backupConfig.lastBackupTime = new Date().toISOString();
+    
+    console.log('数据库备份完成，邮件已发送');
+    return { success: true, message: '备份成功，邮件已发送' };
+  } catch (error) {
+    console.error('数据库备份失败:', error);
+    return { success: false, message: error.message };
+  }
+}
+
+// 定时备份（每周一凌晨3点执行）
+let backupTimer = null;
+
+function startBackupScheduler() {
+  // 每小时检查一次是否需要备份
+  backupTimer = setInterval(async () => {
+    const now = new Date();
+    const day = now.getDay(); // 0=周日, 1=周一
+    const hour = now.getHours();
+    
+    // 周一凌晨3点执行备份
+    if (day === 1 && hour === 3 && backupConfig.enabled) {
+      const lastBackup = backupConfig.lastBackupTime ? new Date(backupConfig.lastBackupTime) : null;
+      const hoursSinceLastBackup = lastBackup ? (now - lastBackup) / (1000 * 60 * 60) : 100;
+      
+      // 确保不会重复备份（距离上次备份超过12小时）
+      if (hoursSinceLastBackup > 12) {
+        console.log('定时备份触发...');
+        await performBackup();
+      }
+    }
+  }, 60 * 60 * 1000); // 每小时检查一次
+  
+  console.log('备份定时器已启动');
+}
+
+// 启动时启动备份定时器
+startBackupScheduler();
 
 // ===== Security: select whitelist =====
 // Only allow simple column names (alphanumeric + underscore), no expressions
@@ -851,6 +968,57 @@ async function handleApi(req, res, url, sharedParams) {
       sendJson(res, { total: parseInt(result.rows[0].total) });
       break;
     }
+    case 'backup-config': {
+      // 获取备份配置
+      sendJson(res, {
+        email: EMAIL_CONFIG.receiver,
+        schedule: '每周一凌晨3点自动备份'
+      });
+      break;
+    }
+    
+    case 'backup-send': {
+      // 手动发送备份邮件
+      try {
+        const { password } = allParams;
+        
+        // 验证超级管理员密码
+        if (!password || createHash(password) !== SUPER_ADMIN_HASH) {
+          return sendJson(res, { error: '密码错误' }, 401);
+        }
+        
+        // 获取所有数据
+        const [students, questions, records, exams, admins] = await Promise.all([
+          pool.query('SELECT * FROM students'),
+          pool.query('SELECT * FROM questions'),
+          pool.query('SELECT * FROM records'),
+          pool.query('SELECT * FROM exams'),
+          pool.query('SELECT id, username, nickname, is_master, created_at FROM admins')
+        ]);
+        
+        const backupData = {
+          version: '1.0',
+          timestamp: new Date().toISOString(),
+          data: {
+            students: students.rows,
+            questions: questions.rows,
+            records: records.rows,
+            exams: exams.rows,
+            admins: admins.rows
+          }
+        };
+        
+        // 发送邮件
+        await sendBackupEmail(backupData);
+        
+        sendJson(res, { success: true, message: `备份已发送到 ${EMAIL_CONFIG.receiver}` });
+      } catch (err) {
+        console.error('Backup email error:', err);
+        sendJson(res, { error: '发送失败: ' + err.message }, 500);
+      }
+      break;
+    }
+    
     default:
       sendJson(res, { error: 'Unknown route: ' + route }, 404);
   }

@@ -5709,6 +5709,18 @@ async function renderAdminSettings() {
       </div>
       
       <div class="card" style="margin-top:12px">
+        <div class="card-title">📧 邮件备份</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+            <div><div style="font-weight:600;font-size:0.85rem">🔄 自动备份</div><div style="font-size:0.75rem;color:var(--text2)">每周一凌晨3点自动发送备份</div></div>
+            <label class="toggle-switch"><input type="checkbox" id="autoBackupToggle" onchange="toggleAutoBackup(this.checked)"><span class="toggle-slider"></span></label>
+          </div>
+          <button class="btn btn-outline" style="width:100%" onclick="sendBackupEmailNow()">📨 立即发送备份邮件</button>
+          <div style="font-size:0.75rem;color:var(--text2)">备份将发送至: 1027424321@qq.com</div>
+        </div>
+      </div>
+      
+      <div class="card" style="margin-top:12px">
         <div class="card-title">📢 消息推送</div>
         <div style="display:flex;flex-direction:column;gap:10px">
           <button class="btn btn-outline" style="width:100%" onclick="showSendNotification()">✉️ 发送通知</button>
@@ -9543,6 +9555,51 @@ function showQuickExamEnd() {
         <p style="color:var(--text2);margin-top:8px;line-height:1.6">感谢您的参与！<br>成绩已提交，请联系管理员查看结果。</p>
       </div>
     </div>`;
+}
+
+// === Email Backup functions ===
+async function toggleAutoBackup(enabled) {
+  try {
+    await dbUpdate('system_settings', { value: enabled ? '1' : '0' }, { key: 'auto_backup_enabled' });
+    showToast(enabled ? '已开启自动备份' : '已关闭自动备份', 'success');
+  } catch (e) {
+    showToast('设置失败: ' + e.message, 'error');
+    document.getElementById('autoBackupToggle').checked = !enabled;
+  }
+}
+
+async function loadAutoBackupStatus() {
+  try {
+    const result = await dbSelect('system_settings', { eq: { key: 'auto_backup_enabled' }, limit: 1 });
+    const enabled = result && result[0] && result[0].value === '1';
+    const toggle = document.getElementById('autoBackupToggle');
+    if (toggle) toggle.checked = enabled;
+  } catch (e) {
+    console.warn('加载自动备份状态失败:', e);
+  }
+}
+
+async function sendBackupEmailNow() {
+  if (!confirm('确定要立即发送备份邮件到 1027424321@qq.com 吗？')) return;
+  
+  showToast('正在生成备份并发送邮件...', 'info');
+  
+  try {
+    const res = await fetch('/api/backup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
+      body: JSON.stringify({ action: 'send_email' })
+    });
+    const data = await res.json();
+    
+    if (data.success) {
+      showToast('备份邮件发送成功！请查收邮箱', 'success');
+    } else {
+      showToast('发送失败: ' + (data.error || '未知错误'), 'error');
+    }
+  } catch (e) {
+    showToast('发送失败: ' + e.message, 'error');
+  }
 }
 
 // === Archive functions ===
