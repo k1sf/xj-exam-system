@@ -1186,8 +1186,8 @@ function mergeLocalData(localData) {
   console.log(`[LocalData] 恢复本地数据: ${localData.records?.length || 0}条记录, ${Object.keys(localData.favUpdates || {}).length}个收藏更新, ${localData.pendingXp || 0}XP`);
 }
 
-function bufferFavUpdate(id, isFav) {
-  _favBuffer[id] = { id, is_fav: isFav };
+function bufferFavUpdate(id, isFav, questionId) {
+  _favBuffer[id] = { id, is_fav: isFav, question_id: questionId };
   // 不再定时同步，仅保存到本地持久化
   saveLocalData();
 }
@@ -7106,20 +7106,52 @@ function confirmMultiAnswer(qId) {
 async function toggleFav(qId) {
   // 统一使用字符串键
   const qIdStr = String(qId);
-  // Check local buffer first, then DB
+  
+  // 先检查收藏缓冲区，合并最新状态
+  let currentFavStatus = null;
+  for (const [recordId, update] of Object.entries(_favBuffer)) {
+    if (String(update.question_id) === qIdStr) {
+      currentFavStatus = update.is_fav;
+      break;
+    }
+  }
+  
+  // 优先使用全局收藏状态缓存（避免数据库查询导致的转圈）
+  if (currentFavStatus === null && _favStatusByQId[qIdStr] !== undefined) {
+    currentFavStatus = _favStatusByQId[qIdStr];
+  }
+  
+  // 再检查 practiceAnswered 缓存
+  if (currentFavStatus === null && practiceAnswered[qIdStr] && practiceAnswered[qIdStr].isFav !== undefined) {
+    currentFavStatus = practiceAnswered[qIdStr].isFav;
+  }
+  
+  // Check local buffer first
   const bufferedRecord = _recordBuffer.find(r => String(r.question_id) === qIdStr);
   let records = [];
   if (bufferedRecord) {
     records = [bufferedRecord];
+  } else if (currentFavStatus !== null) {
+    // 有缓存状态，不需要查询数据库，直接使用缓存
+    records = [{ question_id: qIdStr, is_fav: currentFavStatus }];
   } else {
-    records = await dbSelect('records', { eq: { student_id: currentUser.username, question_id: qIdStr }, cacheBypass: true });
+    // 无缓存，查询数据库（使用 cacheOnly 避免显示 loading）
+    records = await dbSelect('records', { eq: { student_id: currentUser.username, question_id: qIdStr }, cacheOnly: true }) || [];
+    // 如果缓存也没有，尝试不带 cacheOnly 查询
+    if (records.length === 0) {
+      records = await dbSelect('records', { eq: { student_id: currentUser.username, question_id: qIdStr } });
+    }
   }
+  
   if (records.length > 0) {
     const latest = records.reduce((a, b) => new Date(a.created_at || 0) > new Date(b.created_at || 0) ? a : b);
-    const isFav = !latest.is_fav;
+    // 使用缓冲区中的最新收藏状态，而不是数据库中的旧值
+    const baseIsFav = currentFavStatus !== null ? currentFavStatus : (latest.is_fav || false);
+    const isFav = !baseIsFav;
+    
     if (latest.id) {
       // 使用缓冲机制，与其他操作一起批量同步
-      bufferFavUpdate(latest.id, isFav);
+      bufferFavUpdate(latest.id, isFav, qIdStr);
     } else {
       // Record is in buffer, update it locally
       latest.is_fav = isFav;
