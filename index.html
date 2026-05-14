@@ -122,6 +122,26 @@ html.large-text .student-tab .tab-icon{font-size:22px}
 html.large-text .student-tab{font-size:12px}
 html.large-text .admin-tab{font-size:0.9rem;padding:14px 10px}
 
+/* 答案快查样式 */
+.answer-lookup-page{padding-bottom:20px}
+.answer-item{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px;cursor:pointer;transition:all .2s}
+.answer-item:hover{border-color:var(--primary);box-shadow:0 2px 8px rgba(0,0,0,0.1)}
+.answer-header{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.answer-type{font-size:0.75rem;background:var(--primary-light);color:var(--primary);padding:2px 8px;border-radius:4px}
+.answer-level{font-size:0.75rem;background:var(--bg);color:var(--text2);padding:2px 8px;border-radius:4px}
+.answer-id{font-size:0.7rem;color:var(--text3);margin-left:auto}
+.answer-content{font-size:0.9rem;color:var(--text);line-height:1.5}
+.answer-reveal{margin-top:12px;padding:12px;background:linear-gradient(135deg,#e8f5e9,#c8e6c9);border-radius:8px;border-left:4px solid #4caf50}
+.answer-label{font-size:0.8rem;color:#2e7d32;font-weight:600;margin-bottom:4px}
+.answer-value{font-size:1rem;color:#1b5e20;font-weight:700}
+html.dark .answer-item{background:var(--card);border-color:var(--border)}
+html.dark .answer-item:hover{border-color:var(--primary)}
+html.dark .answer-reveal{background:linear-gradient(135deg,#1b3a1b,#2a4a2a);border-color:#4caf50}
+html.dark .answer-label{color:#81c784}
+html.dark .answer-value{color:#a5d6a7}
+html.dark .answer-type{background:rgba(99,102,241,0.2);color:#818cf8}
+html.dark .answer-level{background:var(--bg);color:var(--text2)}
+
 /* Settings toggle bar */
 .settings-bar{display:flex;align-items:center;gap:12px;padding:8px 16px;background:rgba(255,255,255,0.6);border-bottom:1px solid rgba(255,255,255,0.3);font-size:0.82rem;border-radius:12px;backdrop-filter:blur(4px)}
 .settings-bar .toggle-group{display:flex;align-items:center;gap:6px}
@@ -5437,6 +5457,16 @@ function renderSettingsSub() {
       </div>
     </div>
     <div class="card" style="margin-bottom:12px">
+      <div class="card-title">⚙️ 功能开关</div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="answerLookupEnabled" onchange="toggleAnswerLookup(this.checked)">
+          <span>📖 答案快查功能</span>
+        </label>
+        <div style="font-size:0.75rem;color:var(--text2)">开启后学生端显示"答案快查"入口，方便线下做题时快速对答案。</div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:12px">
       <div class="card-title">🔐 账号安全</div>
       <div style="display:flex;flex-direction:column;gap:10px">
         <button class="btn btn-outline btn-full" onclick="openChangePassword()">🔑 修改密码</button>
@@ -5466,6 +5496,7 @@ function renderSettingsSub() {
     ` : ''}
   `;
   if (isMaster) loadAdminList();
+  initSettingsCheckbox();
 }
 
 async function renderNotifySub() {
@@ -6919,7 +6950,7 @@ function clearHomeworkProgress(homeworkId) {
   localStorage.removeItem(`homework_progress_${homeworkId}`);
 }
 
-function renderStudent() {
+async function renderStudent() {
   // Daily login XP bonus
   const lastLoginDate = localStorage.getItem('xjLastLoginDate');
   const today = new Date().toDateString();
@@ -6930,6 +6961,14 @@ function renderStudent() {
   
   // 启动练习模式定时同步（10分钟）
   startPracticeSyncTimer();
+  
+  // 获取答案快查功能开关
+  try {
+    const settings = await dbSelect('system_settings', { eq: { key: 'answer_lookup_enabled' }, cacheBypass: true });
+    _answerLookupEnabled = settings.length > 0 ? settings[0].value === 'true' : true;
+  } catch(e) {
+    _answerLookupEnabled = true; // 默认开启
+  }
   
   // 检查并恢复本地未同步数据
   const localData = loadLocalData();
@@ -6964,6 +7003,7 @@ function renderStudent() {
         <button class="student-tab active" data-tab="practice" onclick="switchStudentTab('practice')"><span class="tab-icon">📝</span><span>练习</span></button>
         <button class="student-tab" data-tab="wrong" onclick="switchStudentTab('wrong')"><span class="tab-icon">🎯</span><span>错题</span></button>
         <button class="student-tab" data-tab="exam" onclick="switchStudentTab('exam')"><span class="tab-icon">📋</span><span>考试</span></button>
+        ${_answerLookupEnabled ? '<button class="student-tab" data-tab="answer" onclick="switchStudentTab(\'answer\')"><span class="tab-icon">🔍</span><span>答案</span></button>' : ''}
         <button class="student-tab" data-tab="profile" onclick="switchStudentTab('profile')"><span class="tab-icon">👤</span><span>我的</span></button>
       </div>
     </div>
@@ -7005,6 +7045,7 @@ function switchStudentTab(tab) {
     case 'practice': renderPractice(); break;
     case 'wrong': renderWrongTraining(); break;
     case 'exam': renderExamTab(); break;
+    case 'answer': renderAnswerLookup(); break;
     case 'profile': renderProfile(); break;
   }
 }
@@ -7018,6 +7059,12 @@ let _wrongTrainingSession = null;
 let _wrongTrainingIndex = 0;
 let _wrongTrainingAnswers = {};
 let _wrongTrainingStartTime = null;
+
+// 答案快查功能
+let _answerLookupEnabled = true; // 默认开启
+let _answerLookupQuestions = [];
+let _answerLookupFilter = { level: '', keyword: '' };
+let _answerLookupPage = 1;
 let _wrongTopics = [];
 
 async function renderWrongTraining() {
@@ -9051,6 +9098,168 @@ async function viewExamResult(examId) {
   `;
 }
 
+// ===== 答案快查功能 =====
+async function renderAnswerLookup() {
+  const container = document.getElementById('studentContent');
+  if (!container) return;
+  
+  // 检查功能是否开启
+  if (!_answerLookupEnabled) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon">🔒</div><p>答案快查功能已关闭</p></div>';
+    return;
+  }
+  
+  // 加载题目（如果还没加载）
+  if (_answerLookupQuestions.length === 0) {
+    await loadAnswerLookupQuestions();
+  }
+  
+  // 获取所有级别
+  const levels = ['全部', ...LEVELS];
+  
+  container.innerHTML = `
+    <div class="answer-lookup-page">
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-title">🔍 答案快查</div>
+        <p style="font-size:0.8rem;color:var(--text2);margin-bottom:12px">线下做题时快速对答案，支持按级别和关键词筛选</p>
+        
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          <select id="answerLevelFilter" onchange="filterAnswerLookup()" style="flex:1;min-width:100px">
+            ${levels.map(l => `<option value="${l === '全部' ? '' : l}" ${_answerLookupFilter.level === (l === '全部' ? '' : l) ? 'selected' : ''}>${l}</option>`).join('')}
+          </select>
+          <input type="text" id="answerKeywordFilter" placeholder="搜索题目关键词..." value="${escHtml(_answerLookupFilter.keyword)}" onkeyup="if(event.key===\'Enter\')filterAnswerLookup()" style="flex:2;min-width:150px">
+          <button class="btn btn-primary" onclick="filterAnswerLookup()">搜索</button>
+        </div>
+      </div>
+      
+      <div id="answerLookupList"></div>
+    </div>
+  `;
+  
+  renderAnswerLookupList();
+}
+
+async function loadAnswerLookupQuestions() {
+  try {
+    _answerLookupQuestions = await dbSelect('questions', { 
+      select: ['id', 'type', 'content', 'options', 'answer', 'level', 'tags'],
+      order: ['id', true]
+    });
+  } catch(e) {
+    console.error('加载题目失败:', e);
+    _answerLookupQuestions = [];
+  }
+}
+
+function filterAnswerLookup() {
+  const levelEl = document.getElementById('answerLevelFilter');
+  const keywordEl = document.getElementById('answerKeywordFilter');
+  
+  _answerLookupFilter.level = levelEl ? levelEl.value : '';
+  _answerLookupFilter.keyword = keywordEl ? keywordEl.value.trim() : '';
+  _answerLookupPage = 1;
+  
+  renderAnswerLookupList();
+}
+
+function renderAnswerLookupList() {
+  const container = document.getElementById('answerLookupList');
+  if (!container) return;
+  
+  // 过滤题目
+  let filtered = _answerLookupQuestions;
+  if (_answerLookupFilter.level) {
+    filtered = filtered.filter(q => q.level === _answerLookupFilter.level);
+  }
+  if (_answerLookupFilter.keyword) {
+    const kw = _answerLookupFilter.keyword.toLowerCase();
+    filtered = filtered.filter(q => 
+      (q.content || '').toLowerCase().includes(kw) ||
+      (q.tags || []).some(t => (t || '').toLowerCase().includes(kw))
+    );
+  }
+  
+  // 分页
+  const pageSize = 20;
+  const totalPages = Math.ceil(filtered.length / pageSize);
+  const start = (_answerLookupPage - 1) * pageSize;
+  const pageItems = filtered.slice(start, start + pageSize);
+  
+  if (pageItems.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>暂无匹配题目</p></div>';
+    return;
+  }
+  
+  const list = pageItems.map(q => {
+    const typeIcon = { '单选': '⭕', '多选': '☑️', '判断': '✅' }[q.type] || '📝';
+    const answer = q.answer || '';
+    const options = q.options || [];
+    
+    // 解析答案
+    let answerText = answer;
+    if (q.type === '判断') {
+      answerText = answer === 'A' || answer === '对' ? '✓ 正确' : '✗ 错误';
+    } else if (Array.isArray(options) && options.length > 0) {
+      // 尝试匹配选项内容
+      const answerKeys = answer.split('').filter(c => /[A-Z]/.test(c));
+      if (answerKeys.length > 0) {
+        const answerContents = answerKeys.map(key => {
+          const opt = options.find(o => (o.key || o.label || '') === key);
+          return opt ? `${key}. ${opt.value || opt.text || ''}` : key;
+        });
+        answerText = answerContents.join('；');
+      }
+    }
+    
+    return `
+      <div class="answer-item" onclick="toggleAnswerDetail(this)">
+        <div class="answer-header">
+          <span class="answer-type">${typeIcon} ${q.type || '单选'}</span>
+          <span class="answer-level">${q.level || '未分类'}</span>
+          <span class="answer-id">#${q.id}</span>
+        </div>
+        <div class="answer-content">${escHtml((q.content || '').substring(0, 100))}${(q.content || '').length > 100 ? '...' : ''}</div>
+        <div class="answer-reveal" style="display:none">
+          <div class="answer-label">参考答案：</div>
+          <div class="answer-value">${escHtml(answerText)}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  
+  // 分页控件
+  let pagination = '';
+  if (totalPages > 1) {
+    pagination = `
+      <div class="pagination" style="margin-top:12px">
+        <button class="page-btn" ${_answerLookupPage <= 1 ? 'disabled' : ''} onclick="goAnswerPage(${_answerLookupPage - 1})">上一页</button>
+        <span style="padding:0 12px">${_answerLookupPage}/${totalPages}</span>
+        <button class="page-btn" ${_answerLookupPage >= totalPages ? 'disabled' : ''} onclick="goAnswerPage(${_answerLookupPage + 1})">下一页</button>
+      </div>
+    `;
+  }
+  
+  container.innerHTML = `
+    <div style="font-size:0.8rem;color:var(--text2);margin-bottom:8px">共 ${filtered.length} 题，点击题目查看答案</div>
+    ${list}
+    ${pagination}
+  `;
+}
+
+function toggleAnswerDetail(el) {
+  const reveal = el.querySelector('.answer-reveal');
+  if (reveal) {
+    reveal.style.display = reveal.style.display === 'none' ? 'block' : 'none';
+  }
+}
+
+function goAnswerPage(page) {
+  _answerLookupPage = page;
+  renderAnswerLookupList();
+  // 滚动到顶部
+  document.getElementById('answerLookupList')?.scrollIntoView({ behavior: 'smooth' });
+}
+
 let _profileSubTab = 'task';  // 默认显示今日任务
 
 async function renderProfile() {
@@ -9853,6 +10062,52 @@ async function changePassword() {
     closeModal();
   } catch(e) {
     showToast('密码修改失败', 'error');
+  }
+}
+
+// ===== System Settings Functions =====
+let _systemSettings = null;
+
+async function loadSystemSettings() {
+  try {
+    const res = await fetch('/api/system-settings-get', {
+      headers: { 'X-API-Token': API_TOKEN }
+    });
+    const data = await res.json();
+    if (data.success) {
+      _systemSettings = data.settings;
+    }
+    return _systemSettings;
+  } catch (e) {
+    console.error('Load system settings error:', e);
+    return {};
+  }
+}
+
+async function toggleAnswerLookup(enabled) {
+  try {
+    const res = await fetch('/api/system-settings-update', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'X-API-Token': API_TOKEN 
+      },
+      body: JSON.stringify({ key: 'answer_lookup_enabled', value: enabled })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(enabled ? '答案快查功能已开启' : '答案快查功能已关闭');
+    }
+  } catch (e) {
+    showToast('设置失败', 'error');
+  }
+}
+
+async function initSettingsCheckbox() {
+  const settings = await loadSystemSettings();
+  const checkbox = document.getElementById('answerLookupEnabled');
+  if (checkbox && settings) {
+    checkbox.checked = settings.answer_lookup_enabled !== false;
   }
 }
 

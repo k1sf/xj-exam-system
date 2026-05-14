@@ -1134,6 +1134,89 @@ async function handleApi(req, res, url, sharedParams) {
       break;
     }
     
+    // ========== 系统设置 API ==========
+    case 'system-settings-get': {
+      // 获取系统设置
+      try {
+        const result = await pool.query(`SELECT key, value FROM system_settings`);
+        const settings = {};
+        for (const row of result.rows) {
+          settings[row.key] = row.value === 'true' ? true : (row.value === 'false' ? false : row.value);
+        }
+        sendJson(res, { success: true, settings });
+      } catch (err) {
+        console.error('Get system settings error:', err);
+        sendJson(res, { error: '获取设置失败' }, 500);
+      }
+      break;
+    }
+    
+    case 'system-settings-update': {
+      // 更新系统设置（仅管理员）
+      const { key, value } = params;
+      if (!key) {
+        sendJson(res, { error: '缺少设置项名称' }, 400);
+        return;
+      }
+      try {
+        await pool.query(`
+          INSERT INTO system_settings (key, value, updated_at)
+          VALUES ($1, $2, NOW())
+          ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()
+        `, [key, String(value)]);
+        sendJson(res, { success: true });
+      } catch (err) {
+        console.error('Update system settings error:', err);
+        sendJson(res, { error: '更新设置失败' }, 500);
+      }
+      break;
+    }
+    
+    case 'answer-lookup': {
+      // 答案快查 - 获取题目和答案列表
+      const { level, keyword, page = 1, limit = 20 } = allParams;
+      try {
+        let whereClause = '1=1';
+        const queryParams = [];
+        let paramIndex = 1;
+        
+        if (level) {
+          whereClause += ` AND level = $${paramIndex}`;
+          queryParams.push(level);
+          paramIndex++;
+        }
+        
+        if (keyword) {
+          whereClause += ` AND (content ILIKE $${paramIndex} OR answer ILIKE $${paramIndex})`;
+          queryParams.push(`%${keyword}%`);
+          paramIndex++;
+        }
+        
+        // 获取总数
+        const countResult = await pool.query(`SELECT COUNT(*) as total FROM questions WHERE ${whereClause}`, queryParams);
+        const total = parseInt(countResult.rows[0].total);
+        
+        // 分页获取题目
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+        const questionsResult = await pool.query(
+          `SELECT id, type, content, options, answer, level, tags FROM questions WHERE ${whereClause} ORDER BY id ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+          [...queryParams, parseInt(limit), offset]
+        );
+        
+        sendJson(res, {
+          success: true,
+          questions: questionsResult.rows,
+          total,
+          page: parseInt(page),
+          totalPages: Math.ceil(total / parseInt(limit))
+        });
+      } catch (err) {
+        console.error('Answer lookup error:', err);
+        sendJson(res, { error: '查询失败' }, 500);
+      }
+      break;
+    }
+    
     // ========== 错题强化训练 API ==========
     case 'wrong-stats': {
       // 获取错题统计
