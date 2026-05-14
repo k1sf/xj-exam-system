@@ -9366,6 +9366,7 @@ async function renderEnrollmentPage(configId) {
             </div>
             ${config.cohort ? `<div class="login-input-group"><span class="icon">🏫</span><input type="text" id="enrollCohort" placeholder="班级/期次（选填）" value="${escHtml(config.cohort)}"></div>` : '<div class="login-input-group"><span class="icon">🏫</span><input type="text" id="enrollCohort" placeholder="班级/期次（选填）"></div>'}
             <button class="login-btn" id="enrollSubmitBtn" onclick="submitEnrollment(${config.id}, ${config.auto_sync})">提交报名</button>
+            <button class="login-btn secondary" style="margin-top:8px;background:var(--bg2);color:var(--text1)" onclick="history.back()">← 返回</button>
             <div class="login-hint">请确保填写信息真实有效</div>
           </div>
         </div>
@@ -9426,7 +9427,7 @@ async function submitEnrollment(configId, autoSync) {
                 <div>密码：123456</div>
               </div>
             </div>
-            <button class="login-btn" style="margin-top:20px" onclick="location.href='/'">3秒后跳转登录页... <span id="countdown">3</span></button>
+            <button class="login-btn" style="margin-top:20px" onclick="history.back()">返回上一页</button>
           </div>
         </div>
       `;
@@ -9437,7 +9438,7 @@ async function submitEnrollment(configId, autoSync) {
         if (el) el.textContent = count;
         if (count <= 0) {
           clearInterval(timer);
-          location.href = '/';
+          history.back();
         }
       }, 1000);
     } else {
@@ -9454,7 +9455,7 @@ async function submitEnrollment(configId, autoSync) {
             <div style="margin-top:16px;padding:12px;background:#fff3cd;border-radius:8px;color:#856404;font-size:0.85rem">
               您的报名信息已提交，<br>请等待管理员审核后即可登录学习。
             </div>
-            <button class="login-btn" style="margin-top:20px" onclick="location.href='/'">返回首页</button>
+            <button class="login-btn" style="margin-top:20px" onclick="history.back()">返回上一页</button>
           </div>
         </div>
       `;
