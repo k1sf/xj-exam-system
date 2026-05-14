@@ -1013,9 +1013,7 @@ const XP_REWARDS = { correct: 10, wrong: 0, fav: 2, mock_exam: 50, real_exam: 10
 const XP_DAILY_LIMIT = 500; // 每日XP上限
 let _dailyXpEarned = 0; // 今日已获得XP
 let _dailyXpDate = ''; // 日期追踪
-// Pending XP to flush to DB
-let _pendingXp = 0;
-let _pendingXpTimer = null;
+
 function addXp(amount, reason) {
   if (!currentUser || userRole !== 'student') return;
   // 检查每日XP上限
@@ -1028,40 +1026,40 @@ function addXp(amount, reason) {
   _pendingXp += actualAmount;
   // Show floating XP indicator on practice card
   showXpFloat(actualAmount, reason);
-  // Flush XP to DB after 5 seconds of inactivity
-  if (_pendingXpTimer) clearTimeout(_pendingXpTimer);
-  _pendingXpTimer = setTimeout(flushXp, 5000);
+  // 更新本地用户数据（实时显示）
+  currentUser.xp = (currentUser.xp || 0) + actualAmount;
+  const newLv = levelFromXp(currentUser.xp);
+  if (newLv > (currentUser.study_level || 1)) {
+    currentUser.study_level = newLv;
+    showLevelUpModal(newLv);
+  }
+  saveLogin('student', currentUser);
+  // 保存到本地持久化（不再定时同步云端）
+  saveLocalData();
 }
+
+// flushXp 保留用于考试模式和手动同步
 async function flushXp() {
   if (_pendingXp <= 0 || !currentUser) return;
   const delta = _pendingXp;
   _pendingXp = 0;
   try {
-    const newXp = (currentUser.xp || 0) + delta;
+    const newXp = (currentUser.xp || 0);
     const newLv = levelFromXp(newXp);
-    const oldLv = currentUser.study_level || 1;
     await dbUpdate('students', { xp: newXp, study_level: newLv }, { id: currentUser.id });
-    const didLevelUp = newLv > oldLv;
-    currentUser.xp = newXp;
-    currentUser.study_level = newLv;
-    saveLogin('student', currentUser);
-    if (didLevelUp) showLevelUpModal(newLv);
   } catch(e) {
-    // Re-queue on failure
     _pendingXp += delta;
   }
 }
+
 function flushXpSync() {
   // Synchronous flush for beforeunload - uses fetch keepalive
   if (_pendingXp <= 0 || !currentUser) return;
   const delta = _pendingXp;
   _pendingXp = 0;
-  const newXp = (currentUser.xp || 0) + delta;
-  const newLv = levelFromXp(newXp);
-  currentUser.xp = newXp;
-  currentUser.study_level = newLv;
-  saveLogin('student', currentUser);
   try {
+    const newXp = (currentUser.xp || 0);
+    const newLv = levelFromXp(newXp);
     const body = { table: 'students', data: { xp: newXp, study_level: newLv }, match: { id: currentUser.id } };
     fetch('/api/update', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify(body), keepalive: true });
   } catch(e) { _pendingXp += delta; }
@@ -1106,24 +1104,94 @@ let btnSaveLoading = false;
 // Accumulates practice records in memory, flushes to DB periodically or on trigger
 const _recordBuffer = [];
 let _recordBufferTimer = null;
-const RECORD_BUFFER_FLUSH_INTERVAL = 60000; // 60 seconds auto-flush (balance between data safety and DB access)
-const RECORD_BUFFER_MAX_SIZE = 10; // Flush when buffer reaches this size
+const RECORD_BUFFER_FLUSH_INTERVAL = 600000; // 10分钟定时同步（减少云端请求）
+const RECORD_BUFFER_MAX_SIZE = 50; // 缓冲区满50条才刷新（减少同步次数）
 let _favBuffer = {}; // { recordId: { id, is_fav } } - deduped fav updates
 let _favBufferTimer = null;
+let _pendingXp = 0; // 待同步XP
+let _pendingXpTimer = null;
+let _practiceSyncTimer = null; // 练习模式定时同步器
 
-function bufferFavUpdate(id, isFav) {
-  _favBuffer[id] = { id, is_fav: isFav };
-  if (!_favBufferTimer) {
-    _favBufferTimer = setTimeout(flushFavBuffer, 5000); // Batch fav updates every 5 seconds
+// ===== Local Persistence (localStorage) =====
+// 本地持久化：防止用户直接关闭浏览器导致数据丢失
+const LOCAL_DATA_KEY = 'practice_local_data';
+
+// 保存本地数据（每次答题/收藏/XP变化后调用）
+function saveLocalData() {
+  if (!currentUser) return;
+  try {
+    const data = {
+      username: currentUser.username,
+      records: [..._recordBuffer],
+      favUpdates: { ..._favBuffer },
+      pendingXp: _pendingXp,
+      lastSyncTime: _lastSyncTime || 0,
+      savedAt: Date.now()
+    };
+    localStorage.setItem(LOCAL_DATA_KEY, JSON.stringify(data));
+  } catch(e) {
+    console.warn('saveLocalData error:', e);
   }
 }
 
-// 立即同步收藏更新到数据库
+// 加载本地数据（页面加载时调用）
+function loadLocalData() {
+  try {
+    const raw = localStorage.getItem(LOCAL_DATA_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    // 检查数据是否过期（24小时）
+    if (Date.now() - data.savedAt > 24 * 60 * 60 * 1000) {
+      localStorage.removeItem(LOCAL_DATA_KEY);
+      return null;
+    }
+    return data;
+  } catch(e) {
+    console.warn('loadLocalData error:', e);
+    return null;
+  }
+}
+
+// 清除本地数据（同步成功后调用）
+function clearLocalData() {
+  try {
+    localStorage.removeItem(LOCAL_DATA_KEY);
+  } catch(e) {}
+}
+
+// 合并本地数据到内存缓冲区
+function mergeLocalData(localData) {
+  if (!localData) return;
+  
+  // 合并答题记录（去重）
+  const existingQIds = new Set(_recordBuffer.map(r => r.question_id));
+  for (const r of localData.records || []) {
+    if (!existingQIds.has(r.question_id)) {
+      _recordBuffer.push(r);
+    }
+  }
+  
+  // 合并收藏更新
+  Object.assign(_favBuffer, localData.favUpdates || {});
+  
+  // 合并XP
+  _pendingXp += localData.pendingXp || 0;
+  
+  console.log(`[LocalData] 恢复本地数据: ${localData.records?.length || 0}条记录, ${Object.keys(localData.favUpdates || {}).length}个收藏更新, ${localData.pendingXp || 0}XP`);
+}
+
+function bufferFavUpdate(id, isFav) {
+  _favBuffer[id] = { id, is_fav: isFav };
+  // 不再定时同步，仅保存到本地持久化
+  saveLocalData();
+}
+
+// 立即同步收藏更新到数据库（已废弃，保留兼容）
 async function flushFavUpdateNow(id, isFav) {
   try {
     await dbUpdate('records', { is_fav: isFav }, { id: id });
     // 清除缓存确保数据一致
-    cacheRemoveAnywhere('records');
+    cacheClearTable('records');
   } catch(e) {
     console.warn('flushFavUpdateNow error:', e);
   }
@@ -1132,6 +1200,7 @@ async function flushFavUpdateNow(id, isFav) {
 async function flushFavBuffer() {
   if (_favBufferTimer) { clearTimeout(_favBufferTimer); _favBufferTimer = null; }
   const updates = Object.values(_favBuffer);
+  if (updates.length === 0) return;
   _favBuffer = {};
   for (const u of updates) {
     try {
@@ -1144,60 +1213,123 @@ function bufferRecord(record) {
   _recordBuffer.push(record);
   // Optimistic update: immediately update local cache so UI stays responsive
   cacheUpsertAnywhere('records', record, r => r.student_id === record.student_id && r.question_id === record.question_id);
+  // 保存到本地持久化（防止关闭浏览器丢失）
+  saveLocalData();
+  // 缓冲区满时才触发云端同步
   if (_recordBuffer.length >= RECORD_BUFFER_MAX_SIZE) {
-    flushRecordBuffer();
-  } else if (!_recordBufferTimer) {
-    _recordBufferTimer = setTimeout(() => { _recordBufferTimer = null; flushRecordBuffer(); }, RECORD_BUFFER_FLUSH_INTERVAL);
+    cloudSync();
   }
 }
 
 async function flushRecordBuffer() {
   if (_recordBufferTimer) { clearTimeout(_recordBufferTimer); _recordBufferTimer = null; }
-  // Also flush fav buffer
-  await flushFavBuffer();
   if (!_recordBuffer.length) return;
   // Take all records from buffer
   const batch = _recordBuffer.splice(0, _recordBuffer.length);
   try {
     await dbInsert('records', batch);
+    saveLocalData(); // 更新本地数据（清空已同步的记录）
   } catch(e) {
     // If failed, put records back (they'll be retried on next flush or via offline queue)
     _recordBuffer.unshift(...batch);
   }
 }
 
-// Flush on page visibility change (user switches tab/app)
+// ===== Cloud Sync (Unified) =====
+// 云端同步：将本地缓冲数据同步到云端
+async function cloudSync() {
+  if (!currentUser) return;
+  
+  // 同步答题记录
+  if (_recordBuffer.length > 0) {
+    const batch = _recordBuffer.splice(0, _recordBuffer.length);
+    try {
+      await dbInsert('records', batch);
+    } catch(e) {
+      _recordBuffer.unshift(...batch);
+      console.warn('cloudSync records error:', e);
+    }
+  }
+  
+  // 同步收藏更新
+  await flushFavBuffer();
+  
+  // 同步XP
+  if (_pendingXp > 0) {
+    try {
+      // currentUser.xp 已经在 addXp 中更新了，这里只需要同步到数据库
+      const newXp = currentUser.xp || 0;
+      const newLv = currentUser.study_level || 1;
+      await dbUpdate('students', { xp: newXp, study_level: newLv }, { id: currentUser.id });
+      _pendingXp = 0;
+    } catch(e) {
+      console.warn('cloudSync xp error:', e);
+    }
+  }
+  
+  // 更新同步时间并清除本地数据
+  _lastSyncTime = Date.now();
+  clearLocalData();
+  console.log('[CloudSync] 同步完成');
+}
+
+// ===== Practice Mode 10-Minute Auto Sync =====
+// 练习模式：每10分钟自动同步一次
+function startPracticeSyncTimer() {
+  stopPracticeSyncTimer();
+  _practiceSyncTimer = setInterval(() => {
+    // 有未同步数据时才同步
+    if (_recordBuffer.length > 0 || Object.keys(_favBuffer).length > 0 || _pendingXp > 0) {
+      cloudSync();
+    }
+  }, 600000); // 10分钟
+}
+
+function stopPracticeSyncTimer() {
+  if (_practiceSyncTimer) {
+    clearInterval(_practiceSyncTimer);
+    _practiceSyncTimer = null;
+  }
+}
+
+// 页面隐藏时保存本地数据（不同步云端，减少请求）
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { flushRecordBuffer(); flushFavBuffer(); flushXp(); }
+  if (document.hidden) {
+    saveLocalData();
+  }
 });
-// Flush before page unload
+
+// 页面关闭时尝试同步（sendBeacon 作为辅助）
 window.addEventListener('beforeunload', () => {
-  // sendBeacon cannot set custom headers, so embed token as query param
+  // 先保存本地数据（确保即使 sendBeacon 失败也有备份）
+  saveLocalData();
+  
+  // 尝试用 sendBeacon 同步（不一定成功）
   const beaconUrl = (endpoint) => `${API_BASE}${endpoint}?token=${encodeURIComponent(API_TOKEN)}`;
   if (_recordBuffer.length) {
-    const batch = _recordBuffer.splice(0, _recordBuffer.length);
+    const batch = [..._recordBuffer];
     const body = JSON.stringify({ table: 'records', rows: batch });
     navigator.sendBeacon && navigator.sendBeacon(beaconUrl('/insert'), body);
   }
-  // Flush fav buffer using sendBeacon
   if (Object.keys(_favBuffer).length) {
     const updates = Object.values(_favBuffer);
-    _favBuffer = {};
     for (const u of updates) {
       const body = JSON.stringify({ table: 'records', data: { is_fav: u.is_fav }, match: { id: u.id } });
       navigator.sendBeacon && navigator.sendBeacon(beaconUrl('/update'), body);
     }
   }
-  if (typeof flushXpSync === 'function') flushXpSync();
+  if (_pendingXp > 0 && currentUser) {
+    // XP 更新通过 sendBeacon
+    const body = JSON.stringify({ table: 'students', data: { xp: (currentUser.xp || 0) + _pendingXp }, match: { id: currentUser.id } });
+    navigator.sendBeacon && navigator.sendBeacon(beaconUrl('/update'), body);
+  }
 });
 
 // ===== Global Sync State & Smart Sync System =====
 // 全局同步状态管理
 let _isExamMode = false; // 是否在考试模式（正式/快捷考试）
 let _isSyncing = false; // 是否正在同步
-let _hasUnsynced = false; // 是否有未同步数据
 let _lastSyncTime = 0; // 上次同步时间
-let _tenMinuteTimer = null; // 10分钟定时器
 let _examSyncTimer = null; // 考试模式定时器
 
 // ===== Unified Sync Function =====
@@ -1205,13 +1337,7 @@ async function syncAll() {
   if (_isSyncing) return { success: false, message: '正在同步中...' };
   _isSyncing = true;
   try {
-    // Flush all buffers
-    await Promise.all([
-      flushRecordBuffer(),
-      flushFavBuffer(),
-      flushXp()
-    ]);
-    _hasUnsynced = false;
+    await cloudSync();
     _lastSyncTime = Date.now();
     console.log('[Sync] All data synced successfully');
     return { success: true, message: '同步成功' };
@@ -1223,10 +1349,10 @@ async function syncAll() {
   }
 }
 
-// 立即同步（用于关键操作）
+// 立即同步（用于手动同步按钮和关键操作）
 async function syncImmediately() {
   await syncAll();
-  // 清除所有相关缓存（使用 cacheClearTable 彻底清除，确保刷新时获取最新数据）
+  // 清除所有相关缓存（确保刷新时获取最新数据）
   cacheClearTable('records');
   cacheClearTable('students');
   cacheClearTable('questions');
@@ -1237,24 +1363,24 @@ async function syncImmediately() {
 function setExamMode(enabled) {
   _isExamMode = enabled;
   if (enabled) {
-    // 考试模式：启动60秒定时器
+    // 考试模式：启动5分钟定时器
     startExamSyncTimer();
+    // 停止练习模式的定时器
+    stopPracticeSyncTimer();
   } else {
-    // 退出考试模式：停止定时器，立即同步
+    // 退出考试模式：停止考试定时器，立即同步，恢复练习定时器
     stopExamSyncTimer();
-    syncAll();
+    cloudSync();
+    startPracticeSyncTimer();
   }
 }
 
 function startExamSyncTimer() {
   stopExamSyncTimer();
-  // 模拟考试使用10分钟定时，正式/快捷考试使用60秒定时
-  const interval = currentExamIsMock ? 600000 : 60000;
+  // 考试模式统一使用5分钟定时同步
   _examSyncTimer = setInterval(() => {
-    if (_hasUnsynced) {
-      syncAll();
-    }
-  }, interval); // 模拟考试10分钟，正式/快捷考试60秒
+    cloudSync();
+  }, 300000); // 5分钟
 }
 
 function stopExamSyncTimer() {
@@ -1264,57 +1390,8 @@ function stopExamSyncTimer() {
   }
 }
 
-// ===== 10 Minute Auto Sync =====
-function startTenMinuteTimer() {
-  stopTenMinuteTimer();
-  _tenMinuteTimer = setInterval(() => {
-    if (_hasUnsynced) {
-      syncAll();
-    }
-  }, 600000); // 10分钟
-}
-
-function stopTenMinuteTimer() {
-  if (_tenMinuteTimer) {
-    clearInterval(_tenMinuteTimer);
-    _tenMinuteTimer = null;
-  }
-}
-
-// 标记有未同步数据
-function markUnsynced() {
-  _hasUnsynced = true;
-}
-
-// ===== Page Visibility & Unload =====
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    // 页面隐藏时同步
-    syncAll();
-  }
-});
-
-window.addEventListener('beforeunload', () => {
-  // 页面离开时立即同步
-  syncAll();
-});
-
-window.addEventListener('pagehide', () => {
-  syncAll();
-});
-
 // ===== Enhanced Buffer Functions =====
-const _originalBufferRecord = bufferRecord;
-bufferRecord = function(record) {
-  markUnsynced();
-  return _originalBufferRecord(record);
-};
-
-const _originalBufferFavUpdate = bufferFavUpdate;
-bufferFavUpdate = function(id, isFav) {
-  markUnsynced();
-  return _originalBufferFavUpdate(id, isFav);
-};
+// 答题和收藏时自动保存到本地（已在各自的buffer函数中处理）
 
 // ===== Manual Sync Button in Header =====
 function renderSyncButton() {
@@ -1386,9 +1463,10 @@ function refreshCurrentView() {
 function updateSyncStatus() {
   const el = document.getElementById('syncStatus');
   if (!el) return;
+  const hasUnsynced = _recordBuffer.length > 0 || Object.keys(_favBuffer).length > 0 || _pendingXp > 0;
   if (_isSyncing) {
     el.textContent = '同步中...';
-  } else if (_hasUnsynced) {
+  } else if (hasUnsynced) {
     el.textContent = '待同步';
   } else {
     el.textContent = '';
@@ -2081,7 +2159,7 @@ dbInsert = async function(...args) {
   if (isAdminMode()) {
     await syncImmediately();
   } else {
-    markUnsynced();
+    saveLocalData();
   }
   return result;
 };
@@ -2092,7 +2170,7 @@ dbUpdate = async function(...args) {
   if (isAdminMode()) {
     await syncImmediately();
   } else {
-    markUnsynced();
+    saveLocalData();
   }
   return result;
 };
@@ -2103,7 +2181,7 @@ dbDelete = async function(...args) {
   if (isAdminMode()) {
     await syncImmediately();
   } else {
-    markUnsynced();
+    saveLocalData();
   }
   return result;
 };
@@ -2429,6 +2507,17 @@ async function handleLogin() {
 }
 
 async function handleLogout() {
+  // 停止定时器
+  stopPracticeSyncTimer();
+  stopExamSyncTimer();
+  
+  // 退出前同步数据
+  if (currentUser && (_recordBuffer.length > 0 || Object.keys(_favBuffer).length > 0 || _pendingXp > 0)) {
+    try {
+      await cloudSync();
+    } catch(e) { /* ignore */ }
+  }
+  
   if (_sessionCheckInterval) clearInterval(_sessionCheckInterval);
   const sessionId = localStorage.getItem('xjSessionId');
   clearLogin();
@@ -6591,6 +6680,25 @@ function renderStudent() {
     localStorage.setItem('xjLastLoginDate', today);
     addXp(XP_REWARDS.daily_login, '每日登录');
   }
+  
+  // 启动练习模式定时同步（10分钟）
+  startPracticeSyncTimer();
+  
+  // 检查并恢复本地未同步数据
+  const localData = loadLocalData();
+  if (localData && localData.username === currentUser.username) {
+    // 有本地数据，显示恢复提示
+    setTimeout(async () => {
+      if (localData.records?.length > 0 || Object.keys(localData.favUpdates || {}).length > 0 || localData.pendingXp > 0) {
+        showToast(`发现未同步数据，正在恢复...`, 'info');
+        mergeLocalData(localData);
+        // 立即同步到云端
+        await cloudSync();
+        showToast('数据已同步', 'success');
+      }
+    }, 500);
+  }
+  
   document.getElementById('app').innerHTML = `
     <div class="student-page">
       <div style="background:linear-gradient(135deg,var(--primary),#7c3aed);color:#fff;padding:8px 16px;font-size:0.82rem;display:flex;align-items:center;justify-content:space-between">
@@ -6763,8 +6871,9 @@ async function switchPracticeMode(mode) {
   // 使用 cacheBypass 确保获取最新的收藏状态
   const records = await dbSelect('records', { eq: { student_id: currentUser.username }, cacheBypass: true });
 
-  // 查看收藏前如有未同步数据则立即同步
-  if (_hasUnsynced) syncImmediately();
+  // 切换模式前如有未同步数据则立即同步
+  const hasUnsynced = _recordBuffer.length > 0 || Object.keys(_favBuffer).length > 0 || _pendingXp > 0;
+  if (hasUnsynced) await cloudSync();
 
   switch(mode) {
     case 'fav': {
