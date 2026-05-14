@@ -1033,15 +1033,54 @@ async function handleApi(req, res, url, sharedParams) {
     }
     
     case 'send-super-password': {
-      // 发送超级管理员密码到邮箱
+      // 发送超级管理员密码到邮箱（带频率限制）
       try {
-        const { admin_id, from_login } = params;
+        const { admin_id, from_login, verify_code } = params;
         
-        // 如果不是从登录页面调用，需要验证管理员身份
+        // ===== 频率限制 =====
+        const now = Date.now();
+        const limitFile = path.join(__dirname, '.super_password_limit');
+        
+        // 读取限制记录
+        let limitData = { count: 0, lastTime: 0, dates: [] };
+        if (fs.existsSync(limitFile)) {
+          try {
+            limitData = JSON.parse(fs.readFileSync(limitFile, 'utf8'));
+          } catch (e) {}
+        }
+        
+        // 清理超过24小时的记录
+        const today = new Date().toISOString().slice(0, 10);
+        limitData.dates = (limitData.dates || []).filter(d => d.date === today);
+        const todayCount = limitData.dates.length;
+        
+        // 检查每日限制（每天最多3次）
+        if (todayCount >= 3 && !admin_id) {
+          return sendJson(res, { error: '今日发送次数已达上限，请明天再试' }, 429);
+        }
+        
+        // 检查间隔限制（至少10分钟）
+        if (limitData.lastTime && (now - limitData.lastTime) < 10 * 60 * 1000 && !admin_id) {
+          const waitMin = Math.ceil((10 * 60 * 1000 - (now - limitData.lastTime)) / 60000);
+          return sendJson(res, { error: `操作过于频繁，请${waitMin}分钟后再试` }, 429);
+        }
+        
+        // 如果不是从登录页面调用，需要验证管理员身份（管理员不受限制）
         if (!from_login && admin_id) {
           const adminRes = await pool.query('SELECT is_master FROM admins WHERE id = $1', [admin_id]);
           if (!adminRes.rows[0] || !adminRes.rows[0].is_master) {
             return sendJson(res, { error: '只有主管理员可以获取超级密码' }, 403);
+          }
+        }
+        
+        // 从登录页调用时，需要验证码（主管理员账号）
+        if (from_login) {
+          const adminRes = await pool.query('SELECT username FROM admins WHERE is_master = true LIMIT 1');
+          if (adminRes.rows[0]) {
+            const masterUsername = adminRes.rows[0].username;
+            if (verify_code !== masterUsername) {
+              return sendJson(res, { error: '验证码错误，请输入主管理员账号' }, 400);
+            }
           }
         }
         
@@ -1051,6 +1090,11 @@ async function handleApi(req, res, url, sharedParams) {
         
         // 更新密码文件
         fs.writeFileSync(SUPER_PASSWORD_FILE, newHash, 'utf8');
+        
+        // 更新限制记录
+        limitData.lastTime = now;
+        limitData.dates.push({ date: today, time: now });
+        fs.writeFileSync(limitFile, JSON.stringify(limitData), 'utf8');
         
         // 发送邮件
         const mailOptions = {

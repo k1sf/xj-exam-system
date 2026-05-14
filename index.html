@@ -9653,15 +9653,17 @@ async function sendBackupEmailNow() {
 
 // 从登录页面发送超级管理员密码到邮箱（无需登录）
 async function sendSuperPasswordFromLogin() {
-  if (!confirm('将发送新的超级管理员密码到邮箱 1027424321@qq.com\n\n此密码用于紧急恢复主管理员权限。\n\n确定发送吗？')) return;
+  // 弹出输入框，要求输入主管理员账号作为验证
+  const verifyCode = prompt('请输入主管理员账号进行验证：');
+  if (!verifyCode) return;
   
-  showToast('正在生成并发送超级密码...', 'info');
+  showToast('正在验证并发送超级密码...', 'info');
   
   try {
     const res = await fetch('/api/send-super-password', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-      body: JSON.stringify({ from_login: true })
+      body: JSON.stringify({ from_login: true, verify_code: verifyCode })
     });
     const data = await res.json();
     
