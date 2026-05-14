@@ -22,12 +22,12 @@ html.dark #app{background:var(--bg);box-shadow:0 0 40px rgba(0,0,0,0.3)}
 html.dark .login-page{background:linear-gradient(180deg,#0f172a 0%,#1e2340 100%)}
 html.dark .login-page::before{opacity:0.3}
 html.dark .login-page::after{background:transparent}
-html.dark .login-card{background:rgba(30,41,59,0.95);border-color:var(--border)}
+html.dark .login-card{background:transparent;border:none}
 html.dark .login-title{color:#1a1a2e;background:rgba(255,255,255,0.85)}
 html.dark .admin-topbar{background:var(--card);border-color:var(--border)}
 html.dark .admin-tabs{background:var(--card);border-color:var(--border)}
 html.dark .student-tabbar{background:var(--card);border-color:var(--border)}
-html.dark .login-input-group{border-color:#475569}
+html.dark .login-input-group{border-color:rgba(255,255,255,0.6);background:rgba(0,0,0,0.3)}
 html.dark .login-input-group input{color:var(--text)}
 html.dark .input{background:#1e293b;color:var(--text);border-color:#475569}
 html.dark select.input{background:#1e293b;color:var(--text)}
@@ -140,8 +140,8 @@ html.large-text .admin-tab{font-size:0.9rem;padding:14px 10px}
 .login-icon{width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#4a6cf7,#6d8afc);display:flex;align-items:center;justify-content:center;font-size:36px;margin:0 auto 16px;box-shadow:0 8px 24px rgba(74,108,247,0.25)}
 .login-title{font-size:1.6rem;font-weight:700;color:#1a1a2e;text-align:center;line-height:1.5;text-shadow:0 2px 8px rgba(255,255,255,0.8);background:rgba(255,255,255,0.85);padding:16px 24px;border-radius:12px;backdrop-filter:blur(8px)}
 .login-subtitle{font-size:0.9rem;color:#333;letter-spacing:1px;text-align:center;margin-top:8px;text-shadow:0 1px 4px rgba(255,255,255,0.6)}
-.login-card{background:rgba(255,255,255,0.92);backdrop-filter:blur(10px);border-radius:20px;box-shadow:0 8px 32px rgba(0,0,0,0.2);padding:30px 24px;width:100%;max-width:360px;margin-top:24px;border:1px solid rgba(255,255,255,0.5)}
-.login-input-group{display:flex;align-items:center;border-bottom:2px solid #e0e0e0;transition:border-color 0.3s;margin-top:20px;height:48px}
+.login-card{background:transparent;backdrop-filter:none;border-radius:20px;box-shadow:none;padding:30px 24px;width:100%;max-width:360px;margin-top:24px;border:none}
+.login-input-group{display:flex;align-items:center;border-bottom:2px solid rgba(255,255,255,0.8);transition:border-color 0.3s;margin-top:20px;height:48px;background:rgba(255,255,255,0.6);padding:0 12px;border-radius:8px}
 .login-input-group:focus-within{border-image:linear-gradient(90deg,#4a6cf7,#6d8afc) 1}
 .login-input-group .icon{font-size:18px;color:var(--text2);margin-right:10px;flex-shrink:0}
 .login-input-group input{flex:1;border:none;outline:none;font-size:1rem;background:transparent;color:var(--text);min-width:0}
