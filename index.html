@@ -162,7 +162,7 @@ html.dark .answer-level{background:var(--bg);color:var(--text2)}
 .login-page::after{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:linear-gradient(to top,rgba(0,0,0,0.7) 0%,rgba(0,0,0,0.4) 40%,rgba(0,0,0,0.1) 70%,transparent 100%);z-index:1}
 .login-page > *{position:relative;z-index:2}
 /* 星星动画 */
-.stars-container{position:absolute;top:0;left:0;width:100%;height:50%;z-index:1;overflow:hidden;pointer-events:none}
+.stars-container{position:absolute;top:0;left:0;width:100%;height:50%;z-index:1;overflow:visible;pointer-events:none}
 .star{position:absolute;top:25%;left:50%;--orbit-radius:100px;--duration:15s;--delay:0s;--direction:normal;background:radial-gradient(circle at 30% 30%,#fff 0%,#ffd700 30%,#ffb347 70%,#ff8c00 100%);border-radius:50%;box-shadow:0 0 10px 2px rgba(255,215,0,0.8),0 0 20px 4px rgba(255,215,0,0.4);animation:orbit var(--duration) linear var(--delay) infinite var(--direction),twinkle 1.5s ease-in-out infinite alternate}
 .star-leader{background:radial-gradient(circle at 30% 30%,#fff 0%,#ffd700 20%,#ffec8b 50%,#ffd700 80%,#daa520 100%);box-shadow:0 0 15px 4px rgba(255,215,0,1),0 0 30px 8px rgba(255,215,0,0.6),0 0 45px 12px rgba(255,215,0,0.3);z-index:10;animation:orbit-leader var(--duration) linear infinite,twinkle 1s ease-in-out infinite alternate}
 .star:nth-child(3n){background:radial-gradient(circle at 30% 30%,#fff 0%,#87ceeb 30%,#4169e1 70%,#1e3a8a 100%);box-shadow:0 0 10px 2px rgba(135,206,235,0.8),0 0 20px 4px rgba(135,206,235,0.4)}
@@ -2588,32 +2588,26 @@ function renderLogin(errorMsg) {
   // 生成星星HTML - 一颗大星引领，众小星跟随，全部顺时针旋转
   let starsHtml = '';
   
-  // 第一颗最大的引领星
-  const leaderSize = 22;
-  const leaderOrbit = 60; // 最内圈
-  const leaderDuration = 20; // 最慢，稳重引领
+  // 第一颗最大的引领星 - 在相框内旋转
+  const leaderSize = 26;
+  const leaderOrbit = 55; // 相框内圈，半径较小
+  const leaderDuration = 18; // 最慢，稳重引领
   starsHtml += `<div class="star star-leader" style="width:${leaderSize}px;height:${leaderSize}px;--orbit-radius:${leaderOrbit}px;--duration:${leaderDuration}s;--delay:0s;--direction:normal"></div>`;
   
-  // 其余跟随的星星，从小到大分布在不同的轨道上
+  // 其余跟随的星星 - 全部在相框外旋转
+  // 相框半径约70-80px，所以其他星星轨道从100px开始
   for (let i = 2; i <= 35; i++) {
-    // 大小：越外圈的星星越小，形成层次感
-    const orbitIndex = (i - 2) % 5; // 5个轨道层级
-    const sizeBase = [14, 10, 8, 6, 5][orbitIndex];
-    const sizeVariation = Math.random() * 3;
-    const size = sizeBase + sizeVariation;
+    // 大小：随机分布，5-14px
+    const size = 5 + Math.random() * 9;
     
-    // 轨道半径：从内到外分布
-    const orbitBase = 80 + Math.floor((i - 2) / 5) * 40; // 每层轨道间隔40px
-    const orbitVariation = Math.random() * 20;
-    const orbitRadius = Math.min(260, orbitBase + orbitVariation);
+    // 轨道半径：全部在相框外，从100px到200px
+    const orbitRadius = 100 + Math.random() * 100;
     
-    // 速度：内圈快，外圈慢，形成跟随效果
-    const durationBase = 8 + Math.floor((i - 2) / 5) * 3;
-    const durationVariation = Math.random() * 4;
-    const duration = durationBase + durationVariation;
+    // 速度：越快越有活力
+    const duration = 6 + Math.random() * 8;
     
-    // 随机起始位置，形成自然的分布
-    const delay = Math.random() * -20;
+    // 随机起始位置
+    const delay = Math.random() * -15;
     
     // 全部顺时针旋转
     starsHtml += `<div class="star star-${i}" style="width:${size}px;height:${size}px;--orbit-radius:${orbitRadius}px;--duration:${duration}s;--delay:${delay}s;--direction:normal"></div>`;
