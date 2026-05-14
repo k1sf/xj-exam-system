@@ -9580,15 +9580,17 @@ async function loadAutoBackupStatus() {
 }
 
 async function sendBackupEmailNow() {
-  if (!confirm('确定要立即发送备份邮件到 1027424321@qq.com 吗？')) return;
+  // 弹出密码输入框
+  const password = prompt('请输入超级管理员密码以发送备份邮件：');
+  if (!password) return;
   
   showToast('正在生成备份并发送邮件...', 'info');
   
   try {
-    const res = await fetch('/api/backup', {
+    const res = await fetch('/api/backup-send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-      body: JSON.stringify({ action: 'send_email' })
+      body: JSON.stringify({ password })
     });
     const data = await res.json();
     
