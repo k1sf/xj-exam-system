@@ -101,7 +101,7 @@ async function sendBackupEmail(backupData, filename) {
     attachments: [
       {
         filename: filename,
-        content: backupData
+        content: JSON.stringify(backupData, null, 2)
       }
     ]
   };
@@ -980,10 +980,10 @@ async function handleApi(req, res, url, sharedParams) {
     case 'backup-send': {
       // 手动发送备份邮件
       try {
-        const { password } = allParams;
+        const { password } = params;
         
         // 验证超级管理员密码
-        if (!password || createHash(password) !== SUPER_ADMIN_HASH) {
+        if (!password || !verifySuperAdmin(password)) {
           return sendJson(res, { error: '密码错误' }, 401);
         }
         
@@ -1008,10 +1008,12 @@ async function handleApi(req, res, url, sharedParams) {
           }
         };
         
-        // 发送邮件
-        await sendBackupEmail(backupData);
+        const filename = `backup_${new Date().toISOString().slice(0,10)}.json`;
         
-        sendJson(res, { success: true, message: `备份已发送到 ${EMAIL_CONFIG.receiver}` });
+        // 发送邮件
+        await sendBackupEmail(backupData, filename);
+        
+        sendJson(res, { success: true, message: `备份已发送到 ${backupConfig.email}` });
       } catch (err) {
         console.error('Backup email error:', err);
         sendJson(res, { error: '发送失败: ' + err.message }, 500);
