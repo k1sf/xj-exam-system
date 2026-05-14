@@ -3094,7 +3094,7 @@ async function renderEnrollSub() {
     if (c.start_time) timeRange.push(fmtLocal(c.start_time));
     if (c.end_time) timeRange.push(fmtLocal(c.end_time));
     return `
-      <div class="card" style="margin-bottom:12px;cursor:pointer" onclick="openEnrollmentDetail(${c.id})">
+      <div class="card" style="margin-bottom:12px;cursor:pointer" onclick="openEnrollmentDetail(${c.id}, 'student')">
         <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
           <span>📋 ${escHtml(c.title)}</span>
           <span style="color:${statusColor};font-size:0.8rem">● ${statusText}${autoSyncBadge}</span>
@@ -3111,7 +3111,7 @@ async function renderEnrollSub() {
   container.innerHTML = `
     <div class="card" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
       <div style="font-weight:600">📋 报名管理</div>
-      <button class="admin-btn primary" onclick="showCreateEnrollmentModal()">+ 创建报名</button>
+      <button class="admin-btn primary" onclick="showCreateEnrollmentModal('student')">+ 创建报名</button>
     </div>
     ${configsHtml || '<div style="text-align:center;padding:40px;color:var(--text2)">暂无报名活动</div>'}
   `;
@@ -4119,6 +4119,7 @@ let _currentEnrollmentConfig = null;
 let _enrollmentList = [];
 let _enrollmentFilter = { level: '', status: '', search: '' };
 let _selectedEnrollments = new Set(); // 存储选中的报名ID
+let _enrollmentDetailSource = 'enrollment'; // 记录报名详情页的来源：'enrollment' 或 'student'
 
 async function renderAdminEnrollment() {
   try {
@@ -4139,7 +4140,7 @@ async function renderAdminEnrollment() {
     if (c.start_time) timeRange.push(fmtLocal(c.start_time));
     if (c.end_time) timeRange.push(fmtLocal(c.end_time));
     return `
-      <div class="card" style="margin-bottom:12px;cursor:pointer" onclick="openEnrollmentDetail(${c.id})">
+      <div class="card" style="margin-bottom:12px;cursor:pointer" onclick="openEnrollmentDetail(${c.id}, 'enrollment')">
         <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
           <span>📋 ${escHtml(c.title)}</span>
           <span style="color:${statusColor};font-size:0.8rem">● ${statusText}${autoSyncBadge}</span>
@@ -4156,13 +4157,14 @@ async function renderAdminEnrollment() {
   document.getElementById('adminContent').innerHTML = `
     <div class="card" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
       <div style="font-weight:600">📋 报名管理</div>
-      <button class="admin-btn primary" onclick="showCreateEnrollmentModal()">+ 创建报名</button>
+      <button class="admin-btn primary" onclick="showCreateEnrollmentModal('enrollment')">+ 创建报名</button>
     </div>
     ${configsHtml || '<div style="text-align:center;padding:40px;color:var(--text2)">暂无报名活动</div>'}
   `;
 }
 
-async function showCreateEnrollmentModal() {
+async function showCreateEnrollmentModal(source = 'enrollment') {
+  _enrollmentDetailSource = source; // 记录来源
   const levelsHtml = LEVELS.map(l => `<label class="checkbox-label"><input type="checkbox" name="enroll_level" value="${escHtml(l)}"> ${LEVEL_ICONS[l]||''} ${escHtml(l)}</label>`).join('');
   
   const modal = document.createElement('div');
@@ -4242,13 +4244,14 @@ async function createEnrollment() {
     if (result.error) { showToast(result.error, 'error'); return; }
     showToast('创建成功', 'success');
     closeEnrollmentModal();
-    renderAdminEnrollment();
+    goBackToEnrollList();
   } catch(e) {
     showToast('创建失败：' + e.message, 'error');
   }
 }
 
-async function openEnrollmentDetail(configId) {
+async function openEnrollmentDetail(configId, source = 'enrollment') {
+  _enrollmentDetailSource = source; // 记录来源
   try {
     const [configRes, listRes] = await Promise.all([
       fetch(`/api/enroll-config/get?id=${configId}`, { headers: { 'X-API-Token': API_TOKEN } }),
@@ -4281,7 +4284,7 @@ async function renderEnrollmentDetailPage() {
   document.getElementById('adminContent').innerHTML = `
     <div class="card" style="margin-bottom:12px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <button class="admin-btn" onclick="renderAdminEnrollment()">← 返回</button>
+        <button class="admin-btn" onclick="goBackToEnrollList()">← 返回</button>
         <div style="display:flex;gap:8px">
           <button class="admin-btn" onclick="showShareEnrollmentModal(${c.id})">📱 报名链接</button>
           ${c.status === 'active' ? `<button class="admin-btn" onclick="toggleEnrollmentStatus(${c.id}, 'closed')">🔒 关闭</button>` : `<button class="admin-btn primary" onclick="toggleEnrollmentStatus(${c.id}, 'active')">🔓 开启</button>`}
@@ -4557,6 +4560,18 @@ async function toggleEnrollmentStatus(configId, status) {
   }
 }
 
+// 返回学生页面的报名管理Tab
+function goBackToEnrollList() {
+  if (_enrollmentDetailSource === 'student') {
+    // 从学生页面进入，返回学生页面的报名管理Tab
+    _studentSubTab = 'enroll';
+    renderAdminStudents();
+  } else {
+    // 从独立报名管理页面进入，返回独立页面
+    renderAdminEnrollment();
+  }
+}
+
 async function deleteEnrollment(configId) {
   if (!confirm('确定删除此报名？报名记录将一并删除！')) return;
   try {
@@ -4568,7 +4583,7 @@ async function deleteEnrollment(configId) {
     const result = await response.json();
     if (result.error) { showToast(result.error, 'error'); return; }
     showToast('删除成功', 'success');
-    renderAdminEnrollment();
+    goBackToEnrollList();
   } catch(e) {
     showToast('删除失败：' + e.message, 'error');
   }
