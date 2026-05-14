@@ -7182,14 +7182,17 @@ function renderWrongQuestion() {
         <div style="font-size:1rem;line-height:1.6;margin-bottom:20px;color:var(--text)">${escHtml(q.content)}</div>
         
         <div style="display:flex;flex-direction:column;gap:10px;padding-bottom:80px" id="wrongOptions">
-          ${options.map((opt, idx) => `
-            <button type="button" class="homework-option ${_wrongTrainingAnswers[String(q.id)] === opt.key ? 'selected' : ''}" 
+          ${options.map((opt, idx) => {
+            const optKey = opt.key || opt.label || String.fromCharCode(65 + idx);
+            const optVal = opt.value || opt.text || opt;
+            return `
+            <button type="button" class="homework-option ${_wrongTrainingAnswers[String(q.id)] === optKey ? 'selected' : ''}" 
                     style="text-align:left;padding:12px 16px;border-radius:8px;border:1px solid var(--border);background:var(--card);cursor:pointer;transition:all 0.2s;width:100%"
-                    onclick="selectWrongOption(${q.id}, '${opt.key}')">
-              <span style="display:inline-block;width:24px;height:24px;border-radius:50%;background:var(--bg);text-align:center;line-height:24px;margin-right:8px;font-size:0.85rem">${opt.key}</span>
-              <span style="color:var(--text)">${escHtml(opt.value)}</span>
+                    onclick="selectWrongOption(${q.id}, '${optKey}')">
+              <span style="display:inline-block;width:24px;height:24px;border-radius:50%;background:var(--bg);text-align:center;line-height:24px;margin-right:8px;font-size:0.85rem">${optKey}</span>
+              <span style="color:var(--text)">${escHtml(optVal)}</span>
             </button>
-          `).join('')}
+          `}).join('')}
         </div>
       </div>
     </div>
