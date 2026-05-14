@@ -6892,11 +6892,8 @@ async function switchPracticeMode(mode) {
     localFavStatus[String(r.question_id)] = r.is_fav;
   });
   
-  // 后台异步同步数据（不阻塞页面渲染）
-  const hasUnsynced = _recordBuffer.length > 0 || Object.keys(_favBuffer).length > 0 || _pendingXp > 0;
-  if (hasUnsynced) {
-    cloudSync().catch(e => console.warn('后台同步失败:', e));
-  }
+  // 切换模式时只在本地同步数据，不触发云端同步
+  // 云端同步只在这些情况触发：10分钟定时、手动同步按钮、缓冲区满50条、考试模式、页面关闭
 
   switch(mode) {
     case 'fav': {
