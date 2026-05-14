@@ -8341,36 +8341,51 @@ function renderProfileRanking(container) {
 function renderProfileSettings(container) {
   const currentLevel = currentUser?.level || '初级';
   container.innerHTML = `
-    <div class="card">
-      <div style="display:flex;flex-direction:column;gap:12px">
+    <!-- 显示设置 -->
+    <div class="card" style="margin-bottom:12px">
+      <div style="font-weight:600;font-size:.9rem;color:var(--text);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)">
+        ⚙️ 显示设置
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
         ${currentUser.can_change_level ? `
-        <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:8px;border-bottom:1px solid var(--border)">
-          <span>📊 级别切换</span>
-          <select class="input" style="width:auto;padding:4px 8px;font-size:.85rem" onchange="switchLevel(this.value)">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0">
+          <span style="font-size:.85rem">📊 级别切换</span>
+          <select class="input" style="width:auto;padding:6px 12px;font-size:.85rem" onchange="switchLevel(this.value)">
             ${['初级','中级','高级','技师','高级技师'].map(l => `<option value="${l}" ${l === currentLevel ? 'selected' : ''}>${LEVEL_ICONS[l]||''} ${l}</option>`).join('')}
           </select>
         </div>
         ` : ''}
-        <div style="display:flex;align-items:center;justify-content:space-between">
-          <span>🌙 暗色模式</span>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0">
+          <span style="font-size:.85rem">🌙 暗色模式</span>
           <label class="switch"><input type="checkbox" id="profileDarkMode" onchange="toggleDarkMode(this.checked)"><span class="slider"></span></label>
         </div>
-        <div style="display:flex;align-items:center;justify-content:space-between">
-          <span>🔤 大字版</span>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0">
+          <span style="font-size:.85rem">🔤 大字版</span>
           <label class="switch"><input type="checkbox" id="profileLargeFont" onchange="toggleLargeText(this.checked)"><span class="slider"></span></label>
         </div>
-        <button class="btn" style="background:var(--bg);border:1px solid var(--border);margin-top:4px" onclick="showHelpModal()">📖 帮助文档</button>
-        
-        <!-- 修改密码区 -->
-        <div style="margin-top:8px;padding-top:12px;border-top:1px solid var(--border)">
-          <div style="font-weight:600;margin-bottom:10px">🔐 修改密码</div>
-          <div style="display:flex;flex-direction:column;gap:8px">
-            <input class="input" type="password" id="oldPwd" placeholder="当前密码">
-            <input class="input" type="password" id="newPwd" placeholder="新密码（至少6位）">
-            <input class="input" type="password" id="confirmPwd" placeholder="确认新密码">
-            <button class="btn btn-primary btn-full" onclick="changePassword()">修改密码</button>
-          </div>
-        </div>
+      </div>
+    </div>
+    
+    <!-- 帮助文档 -->
+    <div class="card" style="margin-bottom:12px">
+      <div style="font-weight:600;font-size:.9rem;color:var(--text);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)">
+        📖 帮助文档
+      </div>
+      <button class="btn btn-full" style="background:var(--bg);border:1px solid var(--border);text-align:left;padding:10px 12px" onclick="showHelpModal()">
+        <span style="margin-right:8px">📄</span>查看使用帮助
+      </button>
+    </div>
+    
+    <!-- 修改密码 -->
+    <div class="card">
+      <div style="font-weight:600;font-size:.9rem;color:var(--text);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)">
+        🔐 修改密码
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <input class="input" type="password" id="oldPwd" placeholder="当前密码">
+        <input class="input" type="password" id="newPwd" placeholder="新密码（至少6位）">
+        <input class="input" type="password" id="confirmPwd" placeholder="确认新密码">
+        <button class="btn btn-primary btn-full" onclick="changePassword()">确认修改</button>
       </div>
     </div>
   `;
