@@ -5294,18 +5294,6 @@ async function renderNotifySub() {
         <button class="btn btn-primary btn-full" onclick="sendNotificationToStudents()">📤 发送通知</button>
       </div>
     </div>
-    <div class="card" style="margin-bottom:12px">
-      <div class="card-title">📊 学习报告推送</div>
-      <div style="display:flex;flex-direction:column;gap:10px">
-        <select class="input" id="reportLevel">${levelOpts}</select>
-        <select class="input" id="reportWeek">
-          <option value="0">本周</option>
-          <option value="1">上周</option>
-          <option value="2">两周前</option>
-        </select>
-        <button class="btn btn-outline btn-full" onclick="previewAndPushReport()">📊 预览并推送报告</button>
-      </div>
-    </div>
   `;
 }
 
@@ -6769,6 +6757,10 @@ function renderStudent() {
         <div style="display:flex;align-items:center;gap:8px">${levelSwitchHtml()}</div>
         <div style="display:flex;align-items:center;gap:8px">
           <button id="syncBtn" onclick="manualSync()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#fff;padding:3px 10px;font-size:0.78rem;cursor:pointer">同步</button>
+          <div style="position:relative;cursor:pointer" onclick="showNotificationCenter()">
+            <span style="font-size:1.1rem">🔔</span>
+            <span id="notificationBadge" style="position:absolute;top:-6px;right:-6px;background:#ef4444;color:#fff;font-size:0.65rem;padding:1px 4px;border-radius:10px;display:none;min-width:16px;text-align:center"></span>
+          </div>
           <button onclick="handleLogout()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#fff;padding:3px 10px;font-size:0.78rem;cursor:pointer">退出</button>
         </div>
       </div>
