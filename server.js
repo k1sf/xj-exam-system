@@ -61,7 +61,7 @@ const API_TOKEN = process.env.API_TOKEN || 'xj_exam_system_api_token_2024_fixed'
 // This password is used for emergency recovery when main admin password is lost
 // Default password: TpBXNX8LTXyqML1WEb49vOFFPUS7tKnb (32 chars, auto-generated)
 // To change: update the hash below (regenerate with: crypto.createHash('sha256').update('newpassword_super_recovery_salt_2026').digest('hex'))
-const SUPER_ADMIN_HASH = process.env.SUPER_ADMIN_HASH || '9e0918d39cbb917b2ad5cec0a0fbb1dd049a9204cf473b4f265ad7909a0331bf';
+const SUPER_ADMIN_HASH = process.env.SUPER_ADMIN_HASH || 'de3eb2ed3b8d2655e6bee7eb527df5b4505139b07a1b61e53f6bf5d19619dba8';
 
 function verifySuperAdmin(password) {
   const hash = crypto.createHash('sha256').update(password + '_super_recovery_salt_2026').digest('hex');
