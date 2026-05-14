@@ -48,7 +48,7 @@ const MIMES = {
 };
 
 // ===== Security: table whitelist =====
-const ALLOWED_TABLES = ['students', 'questions', 'records', 'exams', 'admins', 'enroll_configs', 'enrollments'];
+const ALLOWED_TABLES = ['students', 'questions', 'records', 'exams', 'admins', 'enroll_configs', 'enrollments', 'notifications', 'operation_logs'];
 function validateTable(table) {
   if (!ALLOWED_TABLES.includes(table)) throw new Error('Invalid table: ' + table);
   return table;
@@ -2094,39 +2094,41 @@ async function handleNotificationApi(req, res, url, params) {
 
   switch (route) {
     case 'list': {
-      // 获取通知列表（学生端）
-      const { student_id, level, limit, offset } = allParams;
+      // 获取通知列表（学生端）- 简单版本
+      const { student_id, limit, offset } = allParams;
       const lim = parseInt(limit) || 20;
       const off = parseInt(offset) || 0;
       
-      // 获取该学生可见的通知
       const result = await pool.query(`
-        SELECT n.id, n.title, n.content, n.type, n.created_at,
-               nr.read_at IS NOT NULL as is_read
-        FROM notifications n
-        LEFT JOIN notification_reads nr ON nr.notification_id = n.id AND nr.student_id = $1
-        WHERE n.target_type = 'all'
-           OR n.target_type = 'level' AND n.target_value = $2
-           OR n.target_type = 'student' AND n.target_value = $1
-        ORDER BY n.created_at DESC
-        LIMIT $3 OFFSET $4
-      `, [student_id, level, lim, off]);
+        SELECT id, title, content, type, is_read, created_at
+        FROM notifications
+        WHERE student_id = $1
+        ORDER BY created_at DESC
+        LIMIT $2 OFFSET $3
+      `, [student_id, lim, off]);
       
       // 获取未读数量
       const unreadResult = await pool.query(`
-        SELECT COUNT(*) as count
-        FROM notifications n
-        LEFT JOIN notification_reads nr ON nr.notification_id = n.id AND nr.student_id = $1
-        WHERE (n.target_type = 'all'
-           OR n.target_type = 'level' AND n.target_value = $2
-           OR n.target_type = 'student' AND n.target_value = $1)
-        AND nr.read_at IS NULL
-      `, [student_id, level]);
+        SELECT COUNT(*) as count FROM notifications
+        WHERE student_id = $1 AND is_read = FALSE
+      `, [student_id]);
       
       sendJson(res, {
         notifications: result.rows,
         unread_count: parseInt(unreadResult.rows[0].count) || 0
       });
+      break;
+    }
+    
+    case 'unread': {
+      // 获取未读数量
+      const { student_id } = allParams;
+      const result = await pool.query(`
+        SELECT COUNT(*) as count FROM notifications
+        WHERE student_id = $1 AND is_read = FALSE
+      `, [student_id]);
+      
+      sendJson(res, { count: parseInt(result.rows[0].count) || 0 });
       break;
     }
     
@@ -2139,9 +2141,8 @@ async function handleNotificationApi(req, res, url, params) {
       }
       
       await pool.query(`
-        INSERT INTO notification_reads (notification_id, student_id)
-        VALUES ($1, $2)
-        ON CONFLICT (notification_id, student_id) DO NOTHING
+        UPDATE notifications SET is_read = TRUE
+        WHERE id = $1 AND student_id = $2
       `, [notification_id, student_id]);
       
       sendJson(res, { success: true });
@@ -2150,40 +2151,31 @@ async function handleNotificationApi(req, res, url, params) {
     
     case 'read-all': {
       // 标记所有通知为已读
-      const { student_id, level } = allParams;
+      const { student_id } = allParams;
       if (!student_id) {
         sendJson(res, { error: '缺少student_id' }, 400);
         return;
       }
       
       await pool.query(`
-        INSERT INTO notification_reads (notification_id, student_id)
-        SELECT n.id, $1
-        FROM notifications n
-        LEFT JOIN notification_reads nr ON nr.notification_id = n.id AND nr.student_id = $1
-        WHERE (n.target_type = 'all'
-           OR n.target_type = 'level' AND n.target_value = $2
-           OR n.target_type = 'student' AND n.target_value = $1)
-        AND nr.read_at IS NULL
-        ON CONFLICT (notification_id, student_id) DO NOTHING
-      `, [student_id, level]);
+        UPDATE notifications SET is_read = TRUE
+        WHERE student_id = $1 AND is_read = FALSE
+      `, [student_id]);
       
       sendJson(res, { success: true });
       break;
     }
     
     case 'admin-list': {
-      // 管理员获取所有通知
+      // 管理员获取所有通知（按批次分组显示）
       const { limit, offset } = allParams;
       const lim = parseInt(limit) || 50;
       const off = parseInt(offset) || 0;
       
       const result = await pool.query(`
-        SELECT n.id, n.title, n.content, n.type, n.target_type, n.target_value,
-               n.created_by, n.created_at, n.is_system,
-               (SELECT COUNT(*) FROM notification_reads WHERE notification_id = n.id) as read_count
-        FROM notifications n
-        ORDER BY n.created_at DESC
+        SELECT id, title, content, type, student_id, is_read, created_at
+        FROM notifications
+        ORDER BY created_at DESC
         LIMIT $1 OFFSET $2
       `, [lim, off]);
       
@@ -2191,34 +2183,40 @@ async function handleNotificationApi(req, res, url, params) {
       break;
     }
     
-    case 'create':
     case 'send': {
-      // 创建通知（管理员）
-      const { title, content, type, target_type, target_value, created_by } = allParams;
+      // 发送通知（管理员）- 简单版本：直接插入到每个学生
+      const { title, content, target_type, target_value, created_by } = allParams;
       if (!title) {
         sendJson(res, { error: '标题不能为空' }, 400);
         return;
       }
       
-      // 计算发送人数
-      let sentCount = 0;
-      if (target_type === 'all' || !target_type) {
-        const countResult = await pool.query('SELECT COUNT(*) as count FROM students WHERE status = $1', ['active']);
-        sentCount = parseInt(countResult.rows[0].count) || 0;
-      } else if (target_type === 'level') {
-        const countResult = await pool.query('SELECT COUNT(*) as count FROM students WHERE level = $1 AND status = $2', [target_value, 'active']);
-        sentCount = parseInt(countResult.rows[0].count) || 0;
-      } else if (target_type === 'student') {
-        sentCount = 1;
+      // 获取目标学生
+      let studentQuery = 'SELECT id FROM students WHERE status = $1';
+      let studentValues = ['active'];
+      
+      if (target_type === 'level' && target_value) {
+        studentQuery += ' AND level = $2';
+        studentValues.push(target_value);
+      } else if (target_type === 'student' && target_value) {
+        studentQuery += ' AND id = $2';
+        studentValues.push(target_value);
       }
       
-      const result = await pool.query(`
-        INSERT INTO notifications (title, content, type, target_type, target_value, created_by)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING *
-      `, [title, content || '', type || 'info', target_type || 'all', target_value || null, created_by || null]);
+      const studentsResult = await pool.query(studentQuery, studentValues);
+      const students = studentsResult.rows;
       
-      sendJson(res, { ...result.rows[0], sent_count: sentCount });
+      // 为每个学生插入通知
+      let sentCount = 0;
+      for (const student of students) {
+        await pool.query(`
+          INSERT INTO notifications (student_id, title, content, type, is_read)
+          VALUES ($1, $2, $3, 'info', FALSE)
+        `, [student.id, title, content || '']);
+        sentCount++;
+      }
+      
+      sendJson(res, { success: true, sent_count: sentCount });
       break;
     }
     
@@ -2232,68 +2230,6 @@ async function handleNotificationApi(req, res, url, params) {
       
       await pool.query('DELETE FROM notifications WHERE id = $1', [id]);
       sendJson(res, { success: true });
-      break;
-    }
-    
-    case 'send-report': {
-      // 发送学习报告给学生
-      const { student_id, report_type } = allParams;  // report_type: weekly, monthly
-      if (!student_id) {
-        sendJson(res, { error: '缺少student_id' }, 400);
-        return;
-      }
-      
-      // 获取学生学习数据
-      const studentResult = await pool.query('SELECT * FROM students WHERE id = $1 OR username = $1', [student_id]);
-      if (studentResult.rows.length === 0) {
-        sendJson(res, { error: '学生不存在' }, 400);
-        return;
-      }
-      const student = studentResult.rows[0];
-      
-      // 计算时间范围
-      let days = report_type === 'monthly' ? 30 : 7;
-      
-      const statsResult = await pool.query(`
-        SELECT 
-          COUNT(*) as total_questions,
-          SUM(CASE WHEN is_correct THEN 1 ELSE 0 END) as correct_count,
-          COUNT(DISTINCT DATE(created_at)) as study_days
-        FROM records
-        WHERE student_id = $1
-        AND created_at >= CURRENT_DATE - INTERVAL '${days} days'
-      `, [student.username]);
-      
-      const stats = statsResult.rows[0];
-      const accuracy = stats.total_questions > 0 
-        ? Math.round((stats.correct_count / stats.total_questions) * 100)
-        : 0;
-      
-      // 生成报告内容
-      const period = report_type === 'monthly' ? '本月' : '本周';
-      const title = `${period}学习报告`;
-      const content = `
-📊 ${period}学习总结
-
-👤 学生：${student.nickname}
-🎯 级别：${student.level}
-📝 答题总数：${stats.total_questions || 0} 道
-✅ 正确率：${accuracy}%
-📅 学习天数：${stats.study_days || 0} 天
-⭐ 累计XP：${student.xp || 0}
-📈 学习等级：Lv.${student.study_level || 1}
-
-${stats.total_questions > 0 ? '💪 继续加油，保持学习热情！' : '📚 这段时间学习较少，要加油哦！'}
-      `.trim();
-      
-      // 创建通知
-      const result = await pool.query(`
-        INSERT INTO notifications (title, content, type, target_type, target_value, is_system)
-        VALUES ($1, $2, 'report', 'student', $3, true)
-        RETURNING *
-      `, [title, content, student.id]);
-      
-      sendJson(res, result.rows[0]);
       break;
     }
     
@@ -2424,9 +2360,9 @@ async function handleReportApi(req, res, url, params) {
         const content = `答题${totalQ}道，正确率${accuracy}%，学习${studyDays}天。继续加油！`;
         
         await pool.query(`
-          INSERT INTO notifications (title, content, type, target_type, target_value, is_system)
-          VALUES ($1, $2, 'report', 'student', $3, true)
-        `, [title, content, student.id]);
+          INSERT INTO notifications (student_id, title, content, type, is_read)
+          VALUES ($1, $2, $3, 'report', FALSE)
+        `, [student.id, title, content]);
         
         pushedCount++;
       }
