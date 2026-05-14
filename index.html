@@ -20,10 +20,17 @@ html.dark{--primary:#6d8afc;--primary-dark:#5b7aec;--primary-light:#1e2340;--suc
 html.dark body{background:#0f172a;color:var(--text)}
 html.dark #app{background:var(--bg);box-shadow:0 0 40px rgba(0,0,0,0.3)}
 html.dark .login-page{background:linear-gradient(180deg,#0f172a 0%,#1e2340 100%)}
-html.dark .login-page::before{opacity:0.3}
-html.dark .login-page::after{background:transparent}
-html.dark .login-card{background:transparent;border:none}
-html.dark .login-title{color:#1a1a2e;background:rgba(255,255,255,0.85)}
+html.dark .login-page::before{opacity:0.5}
+html.dark .login-page::after{background:linear-gradient(to top,rgba(0,0,0,0.85) 0%,rgba(0,0,0,0.5) 40%,rgba(0,0,0,0.2) 70%,transparent 100%)}
+html.dark .login-card{background:rgba(30,41,59,0.7);border-color:rgba(255,255,255,0.1)}
+html.dark .login-input-group{background:rgba(255,255,255,0.95);border-color:rgba(255,255,255,0.2)}
+html.dark .login-input-group input{color:#333}
+html.dark .login-title{color:#fff;text-shadow:0 2px 12px rgba(0,0,0,0.5)}
+html.dark .login-subtitle{color:rgba(255,255,255,0.9)}
+html.dark .login-hint{color:rgba(255,255,255,0.6)}
+html.dark .login-dots span{background:rgba(255,255,255,0.3)}
+html.dark .login-dots span.active{background:#fff}
+html.dark .settings-bar{background:rgba(30,41,59,0.6);border-color:rgba(255,255,255,0.1)}
 html.dark .admin-topbar{background:var(--card);border-color:var(--border)}
 html.dark .admin-tabs{background:var(--card);border-color:var(--border)}
 html.dark .student-tabbar{background:var(--card);border-color:var(--border)}
@@ -130,33 +137,38 @@ html.large-text .admin-tab{font-size:0.9rem;padding:14px 10px}
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* ===== Login Page ===== */
-.login-page{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding:40px 24px 60px;position:relative;overflow:hidden}
+.login-page{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding:0 20px 30px;position:relative;overflow:hidden}
 .login-page::before{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:url('https://code.coze.cn/api/sandbox/coze_coding/file/proxy?expire_time=-1&file_path=assets%2F%E9%99%86%E7%90%B4%E5%AD%A6%E6%A0%A1.png&nonce=0f9a1689-b298-4294-a0d2-6e58a0b382ba&project_id=7638069931338301478&sign=170c61d3cb65cf233459e68ef687e2eb68a66dfdf9da5c5aa43eff6c44ff922d') center center/cover no-repeat;z-index:0}
-.login-page::after{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:transparent;z-index:1}
+.login-page::after{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:linear-gradient(to top,rgba(0,0,0,0.7) 0%,rgba(0,0,0,0.4) 40%,rgba(0,0,0,0.1) 70%,transparent 100%);z-index:1}
 .login-page > *{position:relative;z-index:2}
 .login-brand{padding-top:20px}
 .login-logo{width:90px;height:90px;margin:0 auto 16px;display:flex;align-items:center;justify-content:center}
 .login-logo img{width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 4px 8px rgba(0,0,0,0.1))}
 .login-icon{width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#4a6cf7,#6d8afc);display:flex;align-items:center;justify-content:center;font-size:36px;margin:0 auto 16px;box-shadow:0 8px 24px rgba(74,108,247,0.25)}
-.login-title{font-size:1.6rem;font-weight:700;color:#1a1a2e;text-align:center;line-height:1.5;text-shadow:0 2px 8px rgba(255,255,255,0.8);background:rgba(255,255,255,0.85);padding:16px 24px;border-radius:12px;backdrop-filter:blur(8px)}
-.login-subtitle{font-size:0.9rem;color:#333;letter-spacing:1px;text-align:center;margin-top:8px;text-shadow:0 1px 4px rgba(255,255,255,0.6);background:rgba(255,255,255,0.6);padding:6px 16px;border-radius:20px;display:inline-block}
-.login-card{background:transparent;backdrop-filter:none;border-radius:20px;box-shadow:none;padding:30px 24px;width:100%;max-width:360px;margin-top:24px;border:none}
-.login-input-group{display:flex;align-items:center;border-bottom:2px solid rgba(255,255,255,0.8);transition:border-color 0.3s;margin-top:20px;height:48px;background:rgba(255,255,255,0.6);padding:0 12px;border-radius:8px}
-.login-input-group:focus-within{border-image:linear-gradient(90deg,#4a6cf7,#6d8afc) 1}
-.login-input-group .icon{font-size:18px;color:var(--text2);margin-right:10px;flex-shrink:0}
-.login-input-group input{flex:1;border:none;outline:none;font-size:1rem;background:transparent;color:var(--text);min-width:0}
-.login-input-group input::placeholder{color:#bbb}
-.login-btn{width:100%;height:50px;border-radius:25px;border:none;background:linear-gradient(135deg,#4a6cf7,#357abd);color:#fff;font-size:1.1rem;font-weight:600;letter-spacing:2px;cursor:pointer;margin-top:28px;box-shadow:0 4px 15px rgba(74,108,217,0.3);transition:all 0.2s}
-.login-btn:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(74,108,217,0.4)}
-.login-btn:active{transform:translateY(0);box-shadow:0 2px 8px rgba(74,108,217,0.2)}
+.login-title{font-size:1.5rem;font-weight:700;color:#fff;text-align:center;line-height:1.6;text-shadow:0 2px 12px rgba(0,0,0,0.5);padding:0 12px;margin-bottom:6px}
+.login-subtitle{font-size:0.85rem;color:rgba(255,255,255,0.9);letter-spacing:2px;text-align:center;margin-bottom:20px;text-shadow:0 1px 4px rgba(0,0,0,0.5)}
+.login-card{background:rgba(255,255,255,0.15);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-radius:24px;box-shadow:0 8px 32px rgba(0,0,0,0.3),inset 0 1px 1px rgba(255,255,255,0.2);padding:28px 24px;width:100%;max-width:360px;border:1px solid rgba(255,255,255,0.2)}
+.login-input-group{display:flex;align-items:center;border:1px solid rgba(255,255,255,0.3);transition:all 0.3s;margin-top:16px;height:52px;background:rgba(255,255,255,0.9);padding:0 16px;border-radius:12px}
+.login-input-group:focus-within{border-color:#4a6cf7;box-shadow:0 0 0 3px rgba(74,108,247,0.2);background:#fff}
+.login-input-group .icon{font-size:20px;color:#666;margin-right:12px;flex-shrink:0}
+.login-input-group input{flex:1;border:none;outline:none;font-size:1rem;background:transparent;color:#333;min-width:0}
+.login-input-group input::placeholder{color:#999}
+.login-btn{width:100%;height:52px;border-radius:12px;border:none;background:linear-gradient(135deg,#4a6cf7 0%,#357abd 100%);color:#fff;font-size:1.1rem;font-weight:600;letter-spacing:4px;cursor:pointer;margin-top:24px;box-shadow:0 4px 16px rgba(74,108,247,0.4);transition:all 0.3s}
+.login-btn:hover{transform:translateY(-2px);box-shadow:0 6px 24px rgba(74,108,247,0.5)}
+.login-btn:active{transform:translateY(0);box-shadow:0 2px 8px rgba(74,108,247,0.3)}
 .login-btn:disabled{opacity:0.7;cursor:not-allowed;transform:none}
 .login-btn .spinner{display:inline-block;width:20px;height:20px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.6s linear infinite;vertical-align:middle}
-.login-hint{font-size:0.75rem;color:#666;text-align:center;margin-top:16px;background:rgba(255,255,255,0.5);padding:4px 12px;border-radius:12px}
-.login-dots{display:flex;gap:8px;justify-content:center;margin-top:24px;background:rgba(255,255,255,0.5);padding:8px 16px;border-radius:20px}
-.login-dots span{width:8px;height:8px;border-radius:50%;background:#999}
-.login-dots span.active{background:var(--primary);width:20px;border-radius:4px}
-.login-expired-msg{color:var(--error);font-size:0.85rem;text-align:center;margin-top:8px}
-.login-footer{display:flex;align-items:center;justify-content:center;margin-top:12px;background:rgba(255,255,255,0.5);padding:8px 16px;border-radius:20px}
+.login-hint{font-size:0.75rem;color:rgba(255,255,255,0.7);text-align:center;margin-top:16px}
+.login-dots{display:flex;gap:10px;justify-content:center;margin-top:20px}
+.login-dots span{width:10px;height:10px;border-radius:50%;background:rgba(255,255,255,0.4);transition:all 0.3s}
+.login-dots span.active{background:#fff;width:28px;border-radius:5px}
+.login-expired-msg{color:#f87171;font-size:0.85rem;text-align:center;margin-top:10px;background:rgba(248,113,113,0.2);padding:8px 12px;border-radius:8px}
+.login-footer{display:flex;align-items:center;justify-content:center;margin-top:16px}
+.login-footer a{color:rgba(255,255,255,0.8);font-size:0.82rem;text-decoration:none;transition:color 0.2s}
+.login-footer a:hover{color:#fff}
+.settings-bar{display:flex;align-items:center;gap:12px;padding:10px 16px;background:rgba(255,255,255,0.15);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);font-size:0.82rem;border-radius:16px;border:1px solid rgba(255,255,255,0.2);margin-bottom:20px}
+.settings-bar .icon-btn{background:rgba(255,255,255,0.2);border:none;border-radius:8px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#fff;transition:all 0.2s}
+.settings-bar .icon-btn:hover{background:rgba(255,255,255,0.3)}
 
 /* ===== Enrollment Form ===== */
 .enroll-form{width:100%}
