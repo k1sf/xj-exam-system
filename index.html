@@ -946,6 +946,7 @@ let practiceIndex = 0;
 let practiceAnswered = {};
 let practiceMultiSelected = {};  // 多选题选择中状态
 let practiceMode = 'all';       // all/wrong/fav/random
+let _favStatusByQId = {};       // 全局收藏状态缓存 { [qId]: boolean }，跨模式共享
 let examData = null;
 let currentExamId = null;  // 独立保存考试ID，防止exitExamMode清空examData后丢失
 let currentExamIsMock = false;  // 独立保存是否模拟考试标记
@@ -6797,6 +6798,8 @@ async function renderPracticeSub() {
     const savedMode = practiceMode || 'all';
     
     const allQ = await dbSelect('questions', { eq: { level: currentLevel }, order: ['id', false] });
+    allQuestions = allQ || [];  // 缓存到全局变量
+    
     const records = await dbSelect('records', { eq: { student_id: currentUser.username }, cacheBypass: true });
     
     // 预加载收藏状态（统一使用字符串键，根据最新记录确定状态）
@@ -6806,6 +6809,12 @@ async function renderPracticeSub() {
       if (!existing || new Date(r.created_at) > new Date(existing.created_at)) {
         latestRecordByQ[r.question_id] = r;
       }
+    });
+    
+    // 初始化全局收藏状态缓存（跨模式共享）
+    _favStatusByQId = {};
+    Object.entries(latestRecordByQ).forEach(([qId, r]) => {
+      _favStatusByQId[String(qId)] = !!r.is_fav;
     });
     
     // 先初始化 practiceAnswered
@@ -6867,69 +6876,68 @@ async function switchPracticeMode(mode) {
   const activeBtn = document.querySelector(`.practice-modes .mode-btn[onclick="switchPracticeMode('${mode}')"]`);
   if (activeBtn) activeBtn.classList.add('active');
 
-  const allQ = await dbSelect('questions', { eq: { level: currentLevel }, order: ['id', false] });
-  // 使用 cacheBypass 确保获取最新的收藏状态
-  const records = await dbSelect('records', { eq: { student_id: currentUser.username }, cacheBypass: true });
+  // 使用缓存的题目列表（避免重复查询数据库）
+  if (allQuestions.length === 0) {
+    const allQ = await dbSelect('questions', { eq: { level: currentLevel }, order: ['id', false] });
+    allQuestions = allQ || [];
+  }
+  const allQ = allQuestions;
 
-  // 切换模式前如有未同步数据则立即同步
+  // 从全局收藏状态缓存获取（toggleFav 已更新）
+  // _favStatusByQId 是跨模式共享的，切换模式不会丢失
+  const localFavStatus = { ..._favStatusByQId };
+  
+  // 同时从 _recordBuffer 获取最新的收藏状态（可能有刚收藏但还没更新到 _favStatusByQId 的情况）
+  _recordBuffer.forEach(r => {
+    localFavStatus[String(r.question_id)] = r.is_fav;
+  });
+  
+  // 后台异步同步数据（不阻塞页面渲染）
   const hasUnsynced = _recordBuffer.length > 0 || Object.keys(_favBuffer).length > 0 || _pendingXp > 0;
-  if (hasUnsynced) await cloudSync();
+  if (hasUnsynced) {
+    cloudSync().catch(e => console.warn('后台同步失败:', e));
+  }
 
   switch(mode) {
     case 'fav': {
-      // 先获取每道题目的最新记录，然后筛选收藏的题目
-      const latestRecordByQ = {};
-      records.forEach(r => {
-        const existing = latestRecordByQ[r.question_id];
-        if (!existing || new Date(r.created_at) > new Date(existing.created_at)) {
-          latestRecordByQ[r.question_id] = r;
-        }
-      });
-      // 统一转换为数字类型进行比较
-      const favQIds = Object.entries(latestRecordByQ)
-        .filter(([, r]) => r.is_fav)
+      // 从本地收藏状态筛选收藏的题目
+      const favQIds = Object.entries(localFavStatus)
+        .filter(([, isFav]) => isFav)
         .map(([qId]) => Number(qId));
       practiceQuestions = allQ.filter(q => favQIds.includes(Number(q.id)));
       
-      // 预加载收藏状态（收藏模式下需要显示收藏按钮状态）
+      // 如果本地没有收藏数据，显示提示
+      if (practiceQuestions.length === 0) {
+        // 显示空状态
+        const area = document.getElementById('practiceCardArea');
+        if (area) {
+          area.innerHTML = `<div class="empty-state"><p>暂无收藏题目</p><p style="font-size:0.85rem;color:var(--text2);margin-top:8px">在刷题时点击☆收藏题目</p></div>`;
+        }
+        return;
+      }
+      
+      // 预加载收藏状态
       practiceQuestions.forEach(q => {
         const key = String(q.id);
-        const record = latestRecordByQ[q.id];
-        practiceAnswered[key] = { isFav: record ? !!record.is_fav : false };
+        practiceAnswered[key] = { isFav: localFavStatus[key] ?? false };
       });
       break;
     }
     case 'random': {
       practiceQuestions = [...allQ].sort(() => Math.random() - 0.5);
       // 预加载收藏状态
-      const latestRecordByQ = {};
-      records.forEach(r => {
-        const existing = latestRecordByQ[r.question_id];
-        if (!existing || new Date(r.created_at) > new Date(existing.created_at)) {
-          latestRecordByQ[r.question_id] = r;
-        }
-      });
       practiceQuestions.forEach(q => {
         const key = String(q.id);
-        const record = latestRecordByQ[q.id];
-        practiceAnswered[key] = { isFav: record ? !!record.is_fav : false };
+        practiceAnswered[key] = { isFav: localFavStatus[key] ?? false };
       });
       break;
     }
     default:
       practiceQuestions = allQ;
       // 预加载收藏状态
-      const latestRecordByQ = {};
-      records.forEach(r => {
-        const existing = latestRecordByQ[r.question_id];
-        if (!existing || new Date(r.created_at) > new Date(existing.created_at)) {
-          latestRecordByQ[r.question_id] = r;
-        }
-      });
       practiceQuestions.forEach(q => {
         const key = String(q.id);
-        const record = latestRecordByQ[q.id];
-        practiceAnswered[key] = { isFav: record ? !!record.is_fav : false };
+        practiceAnswered[key] = { isFav: localFavStatus[key] ?? false };
       });
   }
   // Check for saved progress when switching back to 'all' mode
@@ -7122,6 +7130,8 @@ async function toggleFav(qId) {
       // Record is in buffer, update it locally
       latest.is_fav = isFav;
     }
+    // 更新全局收藏状态缓存（跨模式共享）
+    _favStatusByQId[qIdStr] = isFav;
     if (!practiceAnswered[qIdStr]) practiceAnswered[qIdStr] = {};
     practiceAnswered[qIdStr].isFav = isFav;
     if (isFav) addXp(XP_REWARDS.fav, '收藏');
@@ -7148,6 +7158,8 @@ async function toggleFav(qId) {
     // 新建收藏记录，进入缓冲区统一处理
     const newRecord = { student_id: currentUser.username, question_id: qIdStr, is_correct: false, user_answer: '', is_fav: true };
     _recordBuffer.push(newRecord);
+    // 更新全局收藏状态缓存
+    _favStatusByQId[qIdStr] = true;
     if (!practiceAnswered[qIdStr]) practiceAnswered[qIdStr] = {};
     practiceAnswered[qIdStr].isFav = true;
     addXp(XP_REWARDS.fav, '收藏');
