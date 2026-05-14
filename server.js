@@ -797,9 +797,9 @@ async function handleApi(req, res, url, sharedParams) {
       if (!password) {
         sendJson(res, { error: 'Password required' }, 400); return;
       }
-      // Verify against hardcoded hash (security through obscurity + server-side only)
+      // Verify against hash (from file, env, or default)
       const hash = crypto.createHash('sha256').update(password + '_super_recovery_salt_2026').digest('hex');
-      if (hash !== SUPER_ADMIN_HASH) {
+      if (hash !== getSuperAdminHash()) {
         // Random delay to prevent timing attacks
         await new Promise(r => setTimeout(r, 100 + Math.random() * 200));
         sendJson(res, { success: false, error: 'Invalid super password' }, 401); return;
