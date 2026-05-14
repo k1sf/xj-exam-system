@@ -6409,15 +6409,7 @@ function renderHomeworkCard() {
   `;
 }
 
-function toggleHomeworkNav() {
-  const nav = document.getElementById('homeworkNavContent');
-  const toggle = document.getElementById('homeworkNavToggle');
-  if (nav && toggle) {
-    const isHidden = nav.style.display === 'none';
-    nav.style.display = isHidden ? 'flex' : 'none';
-    toggle.textContent = isHidden ? '▲ 收起' : '▼ 展开';
-  }
-}
+// toggleHomeworkNav 已在上方定义
 
 function updateHomeworkProgress() {
   const total = _homeworkQuestions.length;
