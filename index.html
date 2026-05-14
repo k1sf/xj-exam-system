@@ -5208,6 +5208,8 @@ async function renderLearningSub() {
 
 function renderSettingsSub() {
   const container = document.getElementById('manageSubContent');
+  const isMaster = currentAdmin && currentAdmin.is_master;
+  
   container.innerHTML = `
     <div class="card" style="margin-bottom:12px">
       <div class="card-title">🎨 显示设置</div>
@@ -5228,7 +5230,22 @@ function renderSettingsSub() {
         <button class="btn btn-outline btn-full" onclick="openChangePassword()">🔑 修改密码</button>
       </div>
     </div>
-    ${currentUser && currentUser.is_master ? `
+    <div class="card" style="margin-bottom:12px">
+      <div class="card-title">📧 邮件备份</div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <button class="btn btn-outline btn-full" onclick="sendBackupEmailNow()">📨 立即发送备份邮件</button>
+        <div style="font-size:0.75rem;color:var(--text2)">备份将发送至: 1027424321@qq.com</div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:12px">
+      <div class="card-title">🔐 超级管理员</div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <button class="btn btn-warning btn-full" onclick="openSuperAdminLogin()">🔑 数据库导出/导入</button>
+        ${isMaster ? `<button class="btn btn-outline btn-full" onclick="sendSuperPasswordToEmail()">📧 发送超级密码到邮箱</button>` : ''}
+        <div style="font-size:0.75rem;color:var(--text2)">导出或导入数据库备份需要超级管理员密码。主管理员可通过邮箱获取新密码。</div>
+      </div>
+    </div>
+    ${isMaster ? `
     <div class="card" style="margin-bottom:12px">
       <div class="card-title">👑 管理员管理</div>
       <div id="adminList"></div>
@@ -5236,7 +5253,7 @@ function renderSettingsSub() {
     </div>
     ` : ''}
   `;
-  if (currentUser && currentUser.is_master) loadAdminList();
+  if (isMaster) loadAdminList();
 }
 
 async function renderNotifySub() {
