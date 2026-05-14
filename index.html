@@ -53,7 +53,7 @@ html.dark .tag-blue{background:#1e3a5f;color:#7dd3fc;border-color:#2563eb33}
 html.dark .tag-green{background:#14532d33;color:#86efac;border-color:#22c55e33}
 html.dark .tag-red{background:#7f1d1d33;color:#fca5a5;border-color:#ef444433}
 html.dark .tag-orange{background:#78350f33;color:#fde68a;border-color:#f59e0b33}
-html.dark .settings-bar{background:var(--card);border-color:var(--border)}
+html.dark .settings-bar{background:rgba(0,0,0,0.4);border-color:rgba(255,255,255,0.2)}
 html.dark .help-modal{background:var(--card)}
 html.dark .help-modal-body h4{color:var(--primary)}
 html.dark .help-modal-body .tip{background:#78350f33;border-color:#f59e0b}
@@ -116,7 +116,7 @@ html.large-text .student-tab{font-size:12px}
 html.large-text .admin-tab{font-size:0.9rem;padding:14px 10px}
 
 /* Settings toggle bar */
-.settings-bar{display:flex;align-items:center;gap:12px;padding:8px 16px;background:var(--card);border-bottom:1px solid var(--border);font-size:0.82rem}
+.settings-bar{display:flex;align-items:center;gap:12px;padding:8px 16px;background:rgba(255,255,255,0.6);border-bottom:1px solid rgba(255,255,255,0.3);font-size:0.82rem;border-radius:12px;backdrop-filter:blur(4px)}
 .settings-bar .toggle-group{display:flex;align-items:center;gap:6px}
 .settings-bar .toggle-switch{position:relative;width:42px;height:24px;cursor:pointer}
 .settings-bar .toggle-switch input{display:none}
@@ -130,7 +130,7 @@ html.large-text .admin-tab{font-size:0.9rem;padding:14px 10px}
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* ===== Login Page ===== */
-.login-page{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 24px;position:relative;overflow:hidden}
+.login-page{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding:40px 24px 60px;position:relative;overflow:hidden}
 .login-page::before{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:url('https://code.coze.cn/api/sandbox/coze_coding/file/proxy?expire_time=-1&file_path=assets%2F%E9%99%86%E7%90%B4%E5%AD%A6%E6%A0%A1.png&nonce=0f9a1689-b298-4294-a0d2-6e58a0b382ba&project_id=7638069931338301478&sign=170c61d3cb65cf233459e68ef687e2eb68a66dfdf9da5c5aa43eff6c44ff922d') center center/cover no-repeat;z-index:0}
 .login-page::after{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:transparent;z-index:1}
 .login-page > *{position:relative;z-index:2}
@@ -139,7 +139,7 @@ html.large-text .admin-tab{font-size:0.9rem;padding:14px 10px}
 .login-logo img{width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 4px 8px rgba(0,0,0,0.1))}
 .login-icon{width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#4a6cf7,#6d8afc);display:flex;align-items:center;justify-content:center;font-size:36px;margin:0 auto 16px;box-shadow:0 8px 24px rgba(74,108,247,0.25)}
 .login-title{font-size:1.6rem;font-weight:700;color:#1a1a2e;text-align:center;line-height:1.5;text-shadow:0 2px 8px rgba(255,255,255,0.8);background:rgba(255,255,255,0.85);padding:16px 24px;border-radius:12px;backdrop-filter:blur(8px)}
-.login-subtitle{font-size:0.9rem;color:#333;letter-spacing:1px;text-align:center;margin-top:8px;text-shadow:0 1px 4px rgba(255,255,255,0.6)}
+.login-subtitle{font-size:0.9rem;color:#333;letter-spacing:1px;text-align:center;margin-top:8px;text-shadow:0 1px 4px rgba(255,255,255,0.6);background:rgba(255,255,255,0.6);padding:6px 16px;border-radius:20px;display:inline-block}
 .login-card{background:transparent;backdrop-filter:none;border-radius:20px;box-shadow:none;padding:30px 24px;width:100%;max-width:360px;margin-top:24px;border:none}
 .login-input-group{display:flex;align-items:center;border-bottom:2px solid rgba(255,255,255,0.8);transition:border-color 0.3s;margin-top:20px;height:48px;background:rgba(255,255,255,0.6);padding:0 12px;border-radius:8px}
 .login-input-group:focus-within{border-image:linear-gradient(90deg,#4a6cf7,#6d8afc) 1}
@@ -151,11 +151,12 @@ html.large-text .admin-tab{font-size:0.9rem;padding:14px 10px}
 .login-btn:active{transform:translateY(0);box-shadow:0 2px 8px rgba(74,108,217,0.2)}
 .login-btn:disabled{opacity:0.7;cursor:not-allowed;transform:none}
 .login-btn .spinner{display:inline-block;width:20px;height:20px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.6s linear infinite;vertical-align:middle}
-.login-hint{font-size:0.75rem;color:#ccc;text-align:center;margin-top:16px}
-.login-dots{display:flex;gap:8px;justify-content:center;margin-top:24px}
-.login-dots span{width:8px;height:8px;border-radius:50%;background:#ddd}
+.login-hint{font-size:0.75rem;color:#666;text-align:center;margin-top:16px;background:rgba(255,255,255,0.5);padding:4px 12px;border-radius:12px}
+.login-dots{display:flex;gap:8px;justify-content:center;margin-top:24px;background:rgba(255,255,255,0.5);padding:8px 16px;border-radius:20px}
+.login-dots span{width:8px;height:8px;border-radius:50%;background:#999}
 .login-dots span.active{background:var(--primary);width:20px;border-radius:4px}
 .login-expired-msg{color:var(--error);font-size:0.85rem;text-align:center;margin-top:8px}
+.login-footer{display:flex;align-items:center;justify-content:center;margin-top:12px;background:rgba(255,255,255,0.5);padding:8px 16px;border-radius:20px}
 
 /* ===== Enrollment Form ===== */
 .enroll-form{width:100%}
