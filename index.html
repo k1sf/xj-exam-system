@@ -220,9 +220,10 @@ html.large-text .admin-tab{font-size:0.9rem;padding:14px 10px}
 .student-tab.active::before{opacity:1}
 
 /* Profile Tab Navigation */
-.profile-tab{flex:1;padding:8px 4px;border:none;background:none;border-radius:8px;font-size:.78rem;cursor:pointer;transition:all .2s;color:var(--text2);white-space:nowrap;text-align:center}
-.profile-tab.active{background:var(--primary);color:#fff;font-weight:600}
-.profile-tab:hover:not(.active){background:var(--bg)}
+.profile-tab-nav{display:flex;gap:4px;padding:4px;background:var(--bg);border-radius:12px;margin-bottom:12px}
+.profile-tab{flex:1;padding:10px 6px;border:none;background:transparent;border-radius:8px;font-size:.85rem;cursor:pointer;transition:all .2s;color:var(--text2);white-space:nowrap;text-align:center;font-weight:500}
+.profile-tab.active{background:var(--primary);color:#fff;font-weight:600;box-shadow:0 2px 8px rgba(var(--primary-rgb),0.3)}
+.profile-tab:hover:not(.active){background:var(--card)}
 
 /* ===== Help Modal ===== */
 .help-modal-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:flex-end;justify-content:center}
@@ -8267,14 +8268,14 @@ async function renderProfile() {
     </div>
     
     <!-- Tab导航区 -->
-    <div style="display:flex;gap:4px;margin:12px;padding:4px;background:var(--card);border-radius:10px;overflow-x:auto">
+    <div class="profile-tab-nav" style="margin:12px">
       <button class="profile-tab ${_profileSubTab === 'task' ? 'active' : ''}" onclick="switchProfileTab('task')">📋 今日任务</button>
       <button class="profile-tab ${_profileSubTab === 'ranking' ? 'active' : ''}" onclick="switchProfileTab('ranking')">🏆 学习排名</button>
       <button class="profile-tab ${_profileSubTab === 'settings' ? 'active' : ''}" onclick="switchProfileTab('settings')">⚙️ 设置</button>
     </div>
     
     <!-- 内容区 -->
-    <div id="profileSubContent" style="margin:0 12px 12px"></div>
+    <div id="profileSubContent" style="margin:0 12px 12px;overflow:hidden"></div>
   `;
 
   document.querySelectorAll('.stat-value[data-target]').forEach(el => {
@@ -8316,7 +8317,7 @@ function switchProfileTab(tab) {
 
 function renderProfileTask(container) {
   container.innerHTML = `
-    <div class="card">
+    <div class="card" style="overflow:hidden">
       <div class="card-title">📋 今日任务</div>
       <div id="taskProgressContent" style="min-height:60px">
         <div style="text-align:center;padding:20px;color:var(--text3)"><span class="spinner"></span> 加载中...</div>
@@ -8405,20 +8406,20 @@ async function loadTaskProgressInProfile() {
     const doneCount = tasks.filter(t => t.done).length;
     
     container.innerHTML = `
-      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">
+      <div style="display:grid;grid-template-columns:1fr;gap:8px">
         ${tasks.map(t => `
-          <div style="display:flex;align-items:center;gap:8px;padding:10px;background:${t.done ? 'rgba(16,185,129,0.1)' : 'var(--bg)'};border-radius:8px;border:1px solid ${t.done ? '#10b981' : 'var(--border)'}">
-            <span style="font-size:1.2rem">${t.icon}</span>
-            <div style="flex:1;min-width:0">
-              <div style="font-size:.8rem;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.name}</div>
-              ${t.progress ? `<div style="font-size:.7rem;color:var(--text3)">${t.progress}</div>` : ''}
+          <div style="display:flex;align-items:center;gap:10px;padding:12px;background:${t.done ? 'rgba(16,185,129,0.1)' : 'var(--bg)'};border-radius:10px;border:1px solid ${t.done ? '#10b981' : 'var(--border)'}">
+            <span style="font-size:1.3rem;flex-shrink:0">${t.icon}</span>
+            <div style="flex:1;min-width:0;overflow:hidden">
+              <div style="font-size:.85rem;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.name}</div>
+              ${t.progress ? `<div style="font-size:.75rem;color:var(--text3);margin-top:2px">${t.progress}</div>` : ''}
             </div>
-            ${t.done ? '<span style="color:#10b981;font-size:1rem">✓</span>' : '<span style="color:var(--text3);font-size:1rem">○</span>'}
+            <span style="color:${t.done ? '#10b981' : 'var(--text3)'};font-size:1.2rem;flex-shrink:0">${t.done ? '✓' : '○'}</span>
           </div>
         `).join('')}
       </div>
-      <div style="margin-top:10px;text-align:center;font-size:.8rem;color:var(--text3)">
-        今日完成：${doneCount}/4 项任务
+      <div style="margin-top:12px;text-align:center;font-size:.85rem;color:var(--text3);padding:8px;background:var(--bg);border-radius:8px">
+        今日完成：<span style="color:var(--primary);font-weight:600">${doneCount}</span>/4 项任务
       </div>
     `;
   } catch (e) {
