@@ -219,6 +219,10 @@ html.large-text .admin-tab{font-size:0.9rem;padding:14px 10px}
 .student-tab::before{content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--primary);opacity:0;transition:opacity 0.2s}
 .student-tab.active::before{opacity:1}
 
+/* Profile Tab Navigation */
+.profile-tab{flex:1;padding:8px 4px;border:none;background:none;border-radius:8px;font-size:.78rem;cursor:pointer;transition:all .2s;color:var(--text2);white-space:nowrap;text-align:center}
+.profile-tab.active{background:var(--primary);color:#fff;font-weight:600}
+.profile-tab:hover:not(.active){background:var(--bg)}
 
 /* ===== Help Modal ===== */
 .help-modal-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:flex-end;justify-content:center}
@@ -8189,6 +8193,8 @@ async function viewExamResult(examId) {
   `;
 }
 
+let _profileSubTab = 'task';  // 默认显示今日任务
+
 async function renderProfile() {
   if (!currentUser) return;
   
@@ -8224,53 +8230,134 @@ async function renderProfile() {
   const isExpired = currentUser?.expires_at ? new Date(currentUser.expires_at) < new Date() : false;
   
   document.getElementById('studentContent').innerHTML = `
-    <div class="profile-header">
-      <div class="profile-avatar" style="background:${hashColor(currentUser.nickname)};font-size:1.5rem;display:flex;align-items:center;justify-content:center;position:relative">
-        ${sIcon}
-        <span style="position:absolute;bottom:-2px;right:-4px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;font-size:.6rem;padding:1px 5px;border-radius:8px;font-weight:700">Lv.${sLv}</span>
-      </div>
-      <div class="profile-name">${escHtml(currentUser.nickname)}</div>
-      <div class="profile-meta">${LEVEL_ICONS[currentLevel]||''} ${escHtml(currentLevel)}${currentUser.cohort ? ` · ${escHtml(currentUser.cohort)}` : ''}</div>
-      <div class="profile-meta" style="margin-top:4px">📱 ${escHtml(currentUser.username)} · 账号到期：${expireDate} ${isExpired ? '<span class="tag tag-red">已过期</span>' : ''}</div>
-    </div>
-    <div class="card" style="margin-top:12px;padding:16px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <div style="display:flex;align-items:center;gap:6px">
-          <span style="font-size:1.3rem">${sIcon}</span>
-          <span style="font-weight:700;font-size:1rem;color:var(--text1)">Lv.${sLv} ${sTitle}</span>
+    <!-- 个人信息区 -->
+    <div class="profile-header" style="padding:16px">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div class="profile-avatar" style="background:${hashColor(currentUser.nickname)};font-size:1.5rem;display:flex;align-items:center;justify-content:center;position:relative;width:56px;height:56px;min-width:56px">
+          ${sIcon}
+          <span style="position:absolute;bottom:-2px;right:-4px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;font-size:.6rem;padding:1px 5px;border-radius:8px;font-weight:700">Lv.${sLv}</span>
         </div>
-        <span style="font-size:.8rem;color:var(--text3)">${xpInLevel} / ${xpNeeded} XP</span>
+        <div style="flex:1;min-width:0">
+          <div class="profile-name" style="font-size:1.1rem;margin-bottom:2px">${escHtml(currentUser.nickname)}</div>
+          <div class="profile-meta" style="font-size:.8rem">${LEVEL_ICONS[currentLevel]||''} ${escHtml(currentLevel)}${currentUser.cohort ? ` · ${escHtml(currentUser.cohort)}` : ''}</div>
+          <div class="profile-meta" style="font-size:.75rem;margin-top:2px;color:var(--text3)">📱 ${escHtml(currentUser.username)} · 到期：${expireDate} ${isExpired ? '<span class="tag tag-red">已过期</span>' : ''}</div>
+        </div>
       </div>
-      <div style="background:#e5e7eb;border-radius:99px;height:10px;overflow:hidden">
-        <div style="background:linear-gradient(90deg,#f59e0b,#d97706);height:100%;border-radius:99px;width:${xpProgress}%;transition:width .6s ease"></div>
+      <!-- XP进度条 -->
+      <div style="margin-top:12px;padding:10px 12px;background:var(--card);border-radius:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <div style="display:flex;align-items:center;gap:4px">
+            <span style="font-size:1rem">${sIcon}</span>
+            <span style="font-weight:600;font-size:.85rem">Lv.${sLv} ${sTitle}</span>
+          </div>
+          <span style="font-size:.75rem;color:var(--text3)">${xpInLevel}/${xpNeeded} XP</span>
+        </div>
+        <div style="background:#e5e7eb;border-radius:99px;height:8px;overflow:hidden">
+          <div style="background:linear-gradient(90deg,#f59e0b,#d97706);height:100%;border-radius:99px;width:${xpProgress}%;transition:width .6s ease"></div>
+        </div>
       </div>
-      <div style="display:flex;justify-content:space-between;margin-top:4px;font-size:.7rem;color:var(--text3)">
-        <span>Lv.${sLv}</span>
-        <span>${sLv < MAX_STUDY_LEVEL ? 'Lv.' + (sLv+1) : 'MAX'}</span>
-      </div>
-      <div style="margin-top:8px;font-size:.75rem;color:var(--text3);text-align:center">累计经验值：${xp} XP</div>
     </div>
-    <!-- 每日任务进度 -->
-    <div class="card" style="margin-top:12px" id="taskProgressCard">
+    
+    <!-- 数据统计区 -->
+    <div class="stats-grid" style="margin:0 12px">
+      <div class="stat-card blue"><div class="stat-icon">✍️</div><div class="stat-value" data-target="${totalCount}">0</div><div class="stat-label">答题</div></div>
+      <div class="stat-card green"><div class="stat-icon">✓</div><div class="stat-value" data-target="${pct}">0</div><div class="stat-label">正确率%</div></div>
+      <div class="stat-card orange"><div class="stat-icon">❌</div><div class="stat-value" data-target="${wrongCount}">0</div><div class="stat-label">错题</div></div>
+      <div class="stat-card purple"><div class="stat-icon">⭐</div><div class="stat-value" data-target="${favCount}">0</div><div class="stat-label">收藏</div></div>
+    </div>
+    
+    <!-- Tab导航区 -->
+    <div style="display:flex;gap:4px;margin:12px;padding:4px;background:var(--card);border-radius:10px;overflow-x:auto">
+      <button class="profile-tab ${_profileSubTab === 'task' ? 'active' : ''}" onclick="switchProfileTab('task')">📋 今日任务</button>
+      <button class="profile-tab ${_profileSubTab === 'ranking' ? 'active' : ''}" onclick="switchProfileTab('ranking')">🏆 学习排名</button>
+      <button class="profile-tab ${_profileSubTab === 'password' ? 'active' : ''}" onclick="switchProfileTab('password')">🔐 修改密码</button>
+      <button class="profile-tab ${_profileSubTab === 'settings' ? 'active' : ''}" onclick="switchProfileTab('settings')">⚙️ 模式设置</button>
+    </div>
+    
+    <!-- 内容区 -->
+    <div id="profileSubContent" style="margin:0 12px 12px"></div>
+  `;
+
+  document.querySelectorAll('.stat-value[data-target]').forEach(el => {
+    animateNumber(el, parseInt(el.dataset.target));
+  });
+  
+  // 加载当前Tab内容
+  switchProfileTab(_profileSubTab);
+  
+  } catch (e) {
+    console.error('renderProfile error:', e);
+    document.getElementById('studentContent').innerHTML = `
+      <div class="card" style="margin-top:12px;padding:20px;text-align:center">
+        <div style="font-size:2rem;margin-bottom:12px">⚠️</div>
+        <div style="color:var(--text2)">加载失败，请刷新重试</div>
+        <button class="btn btn-primary" style="margin-top:12px" onclick="renderProfile()">重新加载</button>
+      </div>
+    `;
+  }
+}
+
+function switchProfileTab(tab) {
+  _profileSubTab = tab;
+  
+  // 更新Tab样式
+  document.querySelectorAll('.profile-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('onclick').includes(`'${tab}'`));
+  });
+  
+  const container = document.getElementById('profileSubContent');
+  if (!container) return;
+  
+  switch(tab) {
+    case 'task': renderProfileTask(container); break;
+    case 'ranking': renderProfileRanking(container); break;
+    case 'password': renderProfilePassword(container); break;
+    case 'settings': renderProfileSettings(container); break;
+  }
+}
+
+function renderProfileTask(container) {
+  container.innerHTML = `
+    <div class="card">
       <div class="card-title">📋 今日任务</div>
       <div id="taskProgressContent" style="min-height:60px">
         <div style="text-align:center;padding:20px;color:var(--text3)"><span class="spinner"></span> 加载中...</div>
       </div>
     </div>
-    <div class="stats-grid" style="margin-top:12px">
-      <div class="stat-card blue"><div class="stat-icon">✍️</div><div class="stat-value" data-target="${totalCount}">0</div><div class="stat-label">答题总数</div></div>
-      <div class="stat-card green"><div class="stat-icon">✓</div><div class="stat-value" data-target="${pct}">0</div><div class="stat-label">正确率%</div></div>
-      <div class="stat-card orange"><div class="stat-icon">❌</div><div class="stat-value" data-target="${wrongCount}">0</div><div class="stat-label">错题数</div></div>
-      <div class="stat-card purple"><div class="stat-icon">⭐</div><div class="stat-value" data-target="${favCount}">0</div><div class="stat-label">收藏数</div></div>
-    </div>
-    <div class="card" style="animation-delay:0.3s;margin-top:12px" id="rankingCard">
-      <div class="card-title">🏆 学习排名</div>
+  `;
+  loadTaskProgressInProfile();
+}
+
+function renderProfileRanking(container) {
+  container.innerHTML = `
+    <div class="card">
       <div id="rankingContent" style="min-height:100px">
         <div style="text-align:center;padding:20px;color:var(--text3)"><span class="spinner"></span> 加载排名...</div>
       </div>
     </div>
-    <div class="card" style="animation-delay:0.4s;margin-top:12px">
-      <div class="card-title">⚙️ 设置</div>
+  `;
+  loadRanking('today');
+}
+
+function renderProfilePassword(container) {
+  container.innerHTML = `
+    <div class="card">
+      <div class="card-title">🔐 修改密码</div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <input class="input" type="password" id="oldPwd" placeholder="当前密码">
+        <input class="input" type="password" id="newPwd" placeholder="新密码（至少6位）">
+        <input class="input" type="password" id="confirmPwd" placeholder="确认新密码">
+        <button class="btn btn-primary btn-full" onclick="changePassword()">修改密码</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderProfileSettings(container) {
+  const currentLevel = currentUser?.level || '初级';
+  container.innerHTML = `
+    <div class="card">
+      <div class="card-title">⚙️ 模式设置</div>
       <div style="display:flex;flex-direction:column;gap:12px">
         ${currentUser.can_change_level ? `
         <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:8px;border-bottom:1px solid var(--border)">
@@ -8291,43 +8378,13 @@ async function renderProfile() {
         <button class="btn" style="background:var(--bg);border:1px solid var(--border);margin-top:4px" onclick="showHelpModal()">📖 帮助文档</button>
       </div>
     </div>
-    <div class="card" style="animation-delay:0.5s;margin-top:12px">
-      <div class="card-title">🔐 修改密码</div>
-      <div style="display:flex;flex-direction:column;gap:10px">
-        <input class="input" type="password" id="oldPwd" placeholder="当前密码">
-        <input class="input" type="password" id="newPwd" placeholder="新密码（至少6位）">
-        <input class="input" type="password" id="confirmPwd" placeholder="确认新密码">
-        <button class="btn btn-primary btn-full" onclick="changePassword()">修改密码</button>
-      </div>
-    </div>
-
   `;
-
-  document.querySelectorAll('.stat-value[data-target]').forEach(el => {
-    animateNumber(el, parseInt(el.dataset.target));
-  });
   
-  // 初始化显示设置开关状态
+  // 初始化开关状态
   const darkModeSwitch = document.getElementById('profileDarkMode');
   const largeFontSwitch = document.getElementById('profileLargeFont');
   if (darkModeSwitch) darkModeSwitch.checked = localStorage.getItem('xjDarkMode') === 'true';
   if (largeFontSwitch) largeFontSwitch.checked = localStorage.getItem('xjLargeFont') === 'true';
-  
-  // 加载任务进度
-  loadTaskProgressInProfile();
-  // 加载排名
-  loadRanking('today');
-  
-  } catch (e) {
-    console.error('renderProfile error:', e);
-    document.getElementById('studentContent').innerHTML = `
-      <div class="card" style="margin-top:12px;padding:20px;text-align:center">
-        <div style="font-size:2rem;margin-bottom:12px">⚠️</div>
-        <div style="color:var(--text2)">加载失败，请刷新重试</div>
-        <button class="btn btn-primary" style="margin-top:12px" onclick="renderProfile()">重新加载</button>
-      </div>
-    `;
-  }
 }
 
 // 在"我的"页面显示任务进度
