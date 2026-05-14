@@ -1020,6 +1020,27 @@ const XP_DAILY_LIMIT = 500; // 每日XP上限
 let _dailyXpEarned = 0; // 今日已获得XP
 let _dailyXpDate = ''; // 日期追踪
 
+// 更新错题掌握度
+async function updateWrongMastery(questionId, isCorrect) {
+  if (!currentUser || !questionId) return;
+  const qId = parseInt(questionId);
+  if (isNaN(qId)) return;
+  try {
+    await fetch(`${API_BASE}/wrong-submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        student_id: currentUser.id,
+        question_id: qId,
+        is_correct: isCorrect,
+        mode: 'practice'
+      })
+    });
+  } catch (e) {
+    console.error('更新错题掌握度失败:', e);
+  }
+}
+
 function addXp(amount, reason) {
   if (!currentUser || userRole !== 'student') return;
   // 检查每日XP上限
