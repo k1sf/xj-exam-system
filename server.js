@@ -3141,11 +3141,13 @@ async function handleWrongTrainingApi(req, res, url, params) {
       }
       
       try {
+        // 将 JavaScript 数组转换为 PostgreSQL 数组格式
+        const pgArray = `{${question_ids.join(',')}}`;
         const result = await pool.query(`
           INSERT INTO wrong_training_sessions (student_id, mode, question_ids, total_questions)
           VALUES ($1, $2, $3, $4)
           RETURNING id
-        `, [student_id, mode || 'daily', JSON.stringify(question_ids), question_ids.length]);
+        `, [student_id, mode || 'daily', pgArray, question_ids.length]);
         
         sendJson(res, { session_id: result.rows[0].id });
       } catch (e) {
