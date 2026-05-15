@@ -7010,7 +7010,7 @@ async function renderStudent() {
   
   // 获取答案快查功能开关
   try {
-    const settings = await dbSelect('system_settings', { eq: { key: 'answer_lookup_enabled' }, cacheBypass: true });
+    const settings = await dbSelect('system_settings', { eq: { key: 'answer_lookup_enabled' }, order: ['key', true], cacheBypass: true });
     _answerLookupEnabled = settings.length > 0 ? settings[0].value === 'true' : true;
   } catch(e) {
     _answerLookupEnabled = true; // 默认开启
@@ -10695,7 +10695,7 @@ async function toggleAutoBackup(enabled) {
 
 async function loadAutoBackupStatus() {
   try {
-    const result = await dbSelect('system_settings', { eq: { key: 'auto_backup_enabled' }, limit: 1 });
+    const result = await dbSelect('system_settings', { eq: { key: 'auto_backup_enabled' }, order: ['key', true], limit: 1 });
     const enabled = result && result[0] && result[0].value === '1';
     const toggle = document.getElementById('autoBackupToggle');
     if (toggle) toggle.checked = enabled;
