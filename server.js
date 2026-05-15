@@ -95,7 +95,12 @@ const EMAIL_CONFIG = {
   auth: {
     user: '1027424321@qq.com',
     pass: 'ljamomjdkkocbegf'
-  }
+  },
+  // 添加超时配置，防止长时间阻塞
+  connectionTimeout: 10000,  // 连接超时10秒
+  socketTimeout: 30000,      // Socket超时30秒
+  greetingTimeout: 10000,    // 问候超时10秒
+  responseTimeout: 30000     // 响应超时30秒
 };
 
 // 创建邮件传输器
@@ -110,7 +115,7 @@ let backupConfig = {
   backupHistory: []  // 保存最近3份备份记录
 };
 
-// 发送备份邮件
+// 发送备份邮件（带超时控制）
 async function sendBackupEmail(backupData, filename) {
   const mailOptions = {
     from: EMAIL_CONFIG.auth.user,
@@ -120,12 +125,18 @@ async function sendBackupEmail(backupData, filename) {
     attachments: [
       {
         filename: filename,
-        content: JSON.stringify(backupData, null, 2)
+        content: typeof backupData === 'string' ? backupData : JSON.stringify(backupData, null, 2)
       }
     ]
   };
   
-  return new Promise((resolve, reject) => {
+  // 使用 Promise.race 添加超时控制
+  const timeoutMs = 45000; // 45秒超时
+  const timeoutPromise = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error('邮件发送超时，请检查网络连接')), timeoutMs);
+  });
+  
+  const sendPromise = new Promise((resolve, reject) => {
     transporter.sendMail(mailOptions, (error, info) => {
       if (error) {
         console.error('发送备份邮件失败:', error);
@@ -136,6 +147,8 @@ async function sendBackupEmail(backupData, filename) {
       }
     });
   });
+  
+  return Promise.race([sendPromise, timeoutPromise]);
 }
 
 // 执行数据库备份
@@ -1017,38 +1030,61 @@ async function handleApi(req, res, url, sharedParams) {
     
     case 'backup-send': {
       // 手动发送备份邮件（无需密码验证）
-      try {
-        // 获取所有数据
-        const [students, questions, records, exams, admins] = await Promise.all([
-          pool.query('SELECT * FROM students'),
-          pool.query('SELECT * FROM questions'),
-          pool.query('SELECT * FROM records'),
-          pool.query('SELECT * FROM exams'),
-          pool.query('SELECT id, username, nickname, is_master, created_at FROM admins')
-        ]);
-        
-        const backupData = {
-          version: '1.0',
-          timestamp: new Date().toISOString(),
-          data: {
-            students: students.rows,
-            questions: questions.rows,
-            records: records.rows,
-            exams: exams.rows,
-            admins: admins.rows
+      // 改为异步执行：先立即返回响应，后台发送邮件
+      (async () => {
+        try {
+          console.log('开始执行备份发送...');
+          
+          // 获取所有数据
+          const [students, questions, records, exams, admins] = await Promise.all([
+            pool.query('SELECT * FROM students'),
+            pool.query('SELECT * FROM questions'),
+            pool.query('SELECT * FROM records'),
+            pool.query('SELECT * FROM exams'),
+            pool.query('SELECT id, username, nickname, is_master, created_at FROM admins')
+          ]);
+          
+          const backupData = {
+            version: '1.0',
+            timestamp: new Date().toISOString(),
+            data: {
+              students: students.rows,
+              questions: questions.rows,
+              records: records.rows,
+              exams: exams.rows,
+              admins: admins.rows
+            }
+          };
+          
+          const filename = `backup_${new Date().toISOString().slice(0,10)}.json`;
+          
+          // 发送邮件
+          await sendBackupEmail(backupData, filename);
+          
+          // 更新备份记录
+          const backupTime = new Date().toISOString();
+          backupConfig.lastBackupTime = backupTime;
+          backupConfig.backupHistory.push({
+            time: backupTime,
+            filename: filename,
+            size: JSON.stringify(backupData).length
+          });
+          if (backupConfig.backupHistory.length > 3) {
+            backupConfig.backupHistory = backupConfig.backupHistory.slice(-3);
           }
-        };
-        
-        const filename = `backup_${new Date().toISOString().slice(0,10)}.json`;
-        
-        // 发送邮件
-        await sendBackupEmail(backupData, filename);
-        
-        sendJson(res, { success: true, message: `备份已发送到 ${backupConfig.email}` });
-      } catch (err) {
-        console.error('Backup email error:', err);
-        sendJson(res, { error: '发送失败: ' + err.message }, 500);
-      }
+          
+          console.log('备份邮件发送成功:', backupConfig.email);
+        } catch (err) {
+          console.error('Backup email error:', err);
+        }
+      })();
+      
+      // 立即返回响应，不等待邮件发送完成
+      sendJson(res, { 
+        success: true, 
+        message: `备份正在发送中，请稍后查看邮箱 ${backupConfig.email}`,
+        async: true 
+      });
       break;
     }
     
