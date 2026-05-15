@@ -22,14 +22,12 @@ html.dark #app{background:var(--bg);box-shadow:0 0 40px rgba(0,0,0,0.3)}
 html.dark .login-page{background:linear-gradient(180deg,#0f172a 0%,#1e2340 100%)}
 html.dark .login-page::before{opacity:0.5}
 html.dark .login-page::after{background:linear-gradient(to top,rgba(0,0,0,0.85) 0%,rgba(0,0,0,0.5) 40%,rgba(0,0,0,0.2) 70%,transparent 100%)}
-html.dark .login-card{background:rgba(30,41,59,0.18);backdrop-filter:blur(3px);border-color:rgba(255,255,255,0.05)}
+html.dark .login-card{background:rgba(30,41,59,0.35);backdrop-filter:blur(8px);border-color:rgba(255,255,255,0.1)}
 html.dark .login-input-group{background:rgba(255,255,255,0.95);border-color:rgba(255,255,255,0.2)}
 html.dark .login-input-group input{color:#333}
 html.dark .login-title{color:#fff;text-shadow:0 2px 12px rgba(0,0,0,0.5)}
 html.dark .login-subtitle{color:rgba(255,255,255,0.9)}
 html.dark .login-hint{color:rgba(255,255,255,0.6)}
-html.dark .login-dots span{background:rgba(255,255,255,0.3)}
-html.dark .login-dots span.active{background:#fff}
 html.dark .settings-bar{background:rgba(30,41,59,0.6);border-color:rgba(255,255,255,0.1)}
 html.dark .admin-topbar{background:var(--card);border-color:var(--border)}
 html.dark .admin-tabs{background:var(--card);border-color:var(--border)}
@@ -462,9 +460,13 @@ html.dark .answer-level{background:var(--bg);color:var(--text2)}
 
 /* ===== Login Page ===== */
 .login-page{min-height:80vh;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:15px;padding-top:25vh;position:relative;overflow:hidden}
-.login-page::before{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:url('https://code.coze.cn/api/sandbox/coze_coding/file/proxy?expire_time=-1&file_path=assets%2Fxx.jpg&nonce=b5aab218-6f24-40c3-944c-3a77e425b237&project_id=7638069931338301478&sign=b750f9def26eca7d05f38368ea9246b7e28e268fdbb90d09f085012347e7c218') center center/cover no-repeat;z-index:0}
+.login-page::before{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:#1a1a2e url('assets/xx.jpg') center center/cover no-repeat;z-index:0;transition:opacity 0.5s}
 .login-page::after{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:linear-gradient(to top,rgba(0,0,0,0.7) 0%,rgba(0,0,0,0.4) 40%,rgba(0,0,0,0.1) 70%,transparent 100%);z-index:1}
 .login-page > *{position:relative;z-index:2}
+/* 背景加载动画 */
+.login-loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:0;opacity:1;transition:opacity 0.5s}
+.login-loading.hidden{opacity:0;pointer-events:none}
+.login-loading-spinner{width:50px;height:50px;border:3px solid rgba(255,255,255,0.2);border-top-color:#ffd700;border-radius:50%;animation:spin 1s linear infinite}
 /* 繁星围着logo缓缓旋转 */
 .stars-wrapper{position:relative;z-index:2;display:flex;align-items:center;justify-content:center;flex-direction:column;margin-top:0vh;margin-bottom:10px}
 .stars-container{position:absolute;width:300px;height:300px;z-index:1;pointer-events:none;top:50%;left:50%;transform:translate(-50%,-50%)}
@@ -488,7 +490,7 @@ html.dark .answer-level{background:var(--bg);color:var(--text2)}
 .login-icon{width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#4a6cf7,#6d8afc);display:flex;align-items:center;justify-content:center;font-size:36px;margin:0 auto 16px;box-shadow:0 8px 24px rgba(74,108,247,0.25)}
 .login-title{font-size:1.3rem;font-weight:700;color:#fff;text-align:center;line-height:1.5;text-shadow:0 2px 12px rgba(0,0,0,0.5);padding:0 12px;margin-bottom:4px}
 .login-subtitle{font-size:0.75rem;color:rgba(255,255,255,0.9);letter-spacing:2px;text-align:center;margin-bottom:16px;text-shadow:0 1px 4px rgba(0,0,0,0.5)}
-.login-card{background:rgba(255,255,255,0.015);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);border-radius:20px;box-shadow:0 4px 16px rgba(0,0,0,0.1),inset 0 1px 1px rgba(255,255,255,0.05);padding:18px 18px;width:100%;max-width:272px;border:1px solid rgba(255,255,255,0.08)}
+.login-card{background:rgba(255,255,255,0.18);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-radius:20px;box-shadow:0 4px 16px rgba(0,0,0,0.1),inset 0 1px 1px rgba(255,255,255,0.05);padding:18px 18px;width:100%;max-width:272px;border:1px solid rgba(255,255,255,0.15)}
 .login-input-group{display:flex;align-items:center;border:1px solid rgba(255,255,255,0.3);transition:all 0.3s;margin-top:12px;height:44px;background:rgba(255,255,255,0.9);padding:0 14px;border-radius:10px}
 .login-input-group:focus-within{border-color:#4a6cf7;box-shadow:0 0 0 3px rgba(74,108,247,0.2);background:#fff}
 .login-input-group .icon{font-size:20px;color:#666;margin-right:12px;flex-shrink:0}
@@ -500,9 +502,6 @@ html.dark .answer-level{background:var(--bg);color:var(--text2)}
 .login-btn:disabled{opacity:0.7;cursor:not-allowed;transform:none}
 .login-btn .spinner{display:inline-block;width:20px;height:20px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.6s linear infinite;vertical-align:middle}
 .login-hint{font-size:0.75rem;color:rgba(255,255,255,0.7);text-align:center;margin-top:16px}
-.login-dots{display:flex;gap:10px;justify-content:center;margin-top:20px}
-.login-dots span{width:10px;height:10px;border-radius:50%;background:rgba(255,255,255,0.4);transition:all 0.3s}
-.login-dots span.active{background:#fff;width:28px;border-radius:5px}
 .login-expired-msg{color:#f87171;font-size:0.85rem;text-align:center;margin-top:10px;background:rgba(248,113,113,0.2);padding:8px 12px;border-radius:8px}
 .login-footer{display:flex;align-items:center;justify-content:center;margin-top:16px}
 .login-footer a{color:rgba(255,255,255,0.8);font-size:0.82rem;text-decoration:none;transition:color 0.2s}
@@ -522,7 +521,6 @@ html.dark .answer-level{background:var(--bg);color:var(--text2)}
 .login-input-group input{font-size:0.95rem}
 .login-btn{height:46px;font-size:1rem;margin-top:18px;letter-spacing:2px}
 .login-hint{font-size:0.7rem;margin-top:12px}
-.login-dots{margin-top:16px}
 .settings-bar{padding:8px 12px;gap:10px;font-size:0.75rem;margin-bottom:12px}
 .settings-bar .icon-btn{width:32px;height:32px}
 .stars-wrapper{margin-top:0vh}
@@ -2963,8 +2961,7 @@ function renderLogin(errorMsg) {
   
   document.getElementById('app').innerHTML = `
     <div class="login-page">
-      <div class="login-page::before"></div>
-      <div class="login-page::after"></div>
+      <div class="login-loading" id="loginLoading"><div class="login-loading-spinner"></div></div>
       <div class="stars-wrapper">
         <div class="stars-container">${starsHtml}</div>
         <div class="login-logo-circle">
@@ -2995,7 +2992,6 @@ function renderLogin(errorMsg) {
           <a href="#" onclick="event.preventDefault();sendSuperPasswordFromLogin();return false;" style="color:var(--primary);font-size:12px;text-decoration:none;padding:8px 0">📧 获取超级密码</a>
         </div>
       </div>
-      <div class="login-dots"><span class="active"></span><span></span><span></span></div>
       <div class="settings-bar" style="margin-top:20px;border-radius:12px;justify-content:center;flex-wrap:wrap">
         <div class="toggle-group"><span>🌙 暗色</span><label class="toggle-switch"><input type="checkbox" id="darkToggle" onchange="toggleDarkMode(this.checked)"><span class="toggle-slider"></span></label></div>
         <div class="toggle-group"><span>🔤 大字</span><label class="toggle-switch"><input type="checkbox" id="largeToggle" onchange="toggleLargeText(this.checked)"><span class="toggle-slider"></span></label></div>
@@ -3003,6 +2999,17 @@ function renderLogin(errorMsg) {
     </div>
   `;
   initTheme();
+  // 预加载背景图
+  const bgImg = new Image();
+  bgImg.onload = () => {
+    const loading = document.getElementById('loginLoading');
+    if (loading) loading.classList.add('hidden');
+  };
+  bgImg.onerror = () => {
+    const loading = document.getElementById('loginLoading');
+    if (loading) loading.classList.add('hidden');
+  };
+  bgImg.src = 'assets/xx.jpg';
   document.getElementById('loginPwd').addEventListener('keydown', e => { if (e.key === 'Enter') handleLogin(); });
   document.getElementById('loginUser').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('loginPwd').focus(); });
 }
