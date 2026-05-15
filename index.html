@@ -157,17 +157,17 @@ html.dark .answer-level{background:var(--bg);color:var(--text2)}
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* ===== Login Page ===== */
-.login-page{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;position:relative;overflow:hidden}
+.login-page{min-height:80vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:15px;position:relative;overflow:hidden}
 .login-page::before{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:url('https://code.coze.cn/api/sandbox/coze_coding/file/proxy?expire_time=-1&file_path=assets%2Fxx.jpg&nonce=b5aab218-6f24-40c3-944c-3a77e425b237&project_id=7638069931338301478&sign=b750f9def26eca7d05f38368ea9246b7e28e268fdbb90d09f085012347e7c218') center center/cover no-repeat;z-index:0}
 .login-page::after{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:linear-gradient(to top,rgba(0,0,0,0.7) 0%,rgba(0,0,0,0.4) 40%,rgba(0,0,0,0.1) 70%,transparent 100%);z-index:1}
 .login-page > *{position:relative;z-index:2}
 /* 繁星围着logo缓缓旋转 */
-.stars-wrapper{position:relative;z-index:2;display:flex;align-items:center;justify-content:center;margin-bottom:20px}
-.stars-container{position:absolute;width:280px;height:280px;z-index:1;pointer-events:none}
-.login-logo-circle{position:relative;z-index:2;width:70px;height:70px;margin:0 auto;border-radius:50%;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.3),0 0 40px rgba(255,215,0,0.2);border:3px solid rgba(255,255,255,0.6);flex-shrink:0}
+.stars-wrapper{position:relative;z-index:2;display:flex;align-items:center;justify-content:center;margin-bottom:20px;height:180px}
+.stars-container{position:absolute;width:260px;height:260px;z-index:1;pointer-events:none}
+.login-logo-circle{position:relative;z-index:2;width:130px;height:130px;margin:0 auto;border-radius:50%;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.3),0 0 40px rgba(255,215,0,0.2);border:3px solid rgba(255,255,255,0.6);flex-shrink:0}
 .login-logo-circle img{width:100%;height:100%;object-fit:cover}
 /* 繁星动画 - 围绕中心缓缓旋转 */
-.star{position:absolute;top:50%;left:50%;--orbit-radius:100px;--duration:25s;--delay:0s;--twinkle-duration:3s;--twinkle-delay:0s;background:radial-gradient(circle at 30% 30%,#fff 0%,#ffeaa7 50%,#fdcb6e 100%);border-radius:50%;box-shadow:0 0 6px 1px rgba(255,255,255,0.6);animation:orbit var(--duration) linear var(--delay) infinite,twinkle var(--twinkle-duration) ease-in-out var(--twinkle-delay) infinite alternate;opacity:0.6}
+.star{position:absolute;top:50%;left:50%;--orbit-radius:85px;--duration:25s;--delay:0s;--twinkle-duration:3s;--twinkle-delay:0s;background:radial-gradient(circle at 30% 30%,#fff 0%,#ffeaa7 50%,#fdcb6e 100%);border-radius:50%;box-shadow:0 0 6px 1px rgba(255,255,255,0.6);animation:orbit var(--duration) linear var(--delay) infinite,twinkle var(--twinkle-duration) ease-in-out var(--twinkle-delay) infinite alternate;opacity:0.6}
 .star-bright{background:radial-gradient(circle at 30% 30%,#fff 0%,#ffd700 40%,#ffb347 100%);box-shadow:0 0 8px 2px rgba(255,215,0,0.8),0 0 16px 4px rgba(255,215,0,0.4);opacity:0.8}
 .star-leader{background:radial-gradient(circle at 30% 30%,#fff 0%,#ffd700 20%,#ffec8b 50%,#ffd700 80%,#daa520 100%);box-shadow:0 0 12px 4px rgba(255,215,0,1),0 0 24px 8px rgba(255,215,0,0.6),0 0 36px 12px rgba(255,215,0,0.3);z-index:10;animation:orbit-leader var(--duration) linear infinite,twinkle 2s ease-in-out infinite alternate;opacity:0.95}
 /* 不同颜色的星星 */
@@ -221,8 +221,8 @@ html.dark .answer-level{background:var(--bg);color:var(--text2)}
 .login-dots{margin-top:16px}
 .settings-bar{padding:8px 12px;gap:10px;font-size:0.75rem;margin-bottom:12px}
 .settings-bar .icon-btn{width:32px;height:32px}
-.stars-wrapper{height:220px}
-.login-logo-circle{width:70px;height:70px;margin-top:8px}
+.stars-wrapper{height:200px}
+.login-logo-circle{width:105px;height:105px;margin-top:8px}
 }
 
 /* ===== Enrollment Form ===== */
@@ -2597,9 +2597,9 @@ function renderLogin(errorMsg) {
   let starsHtml = '';
   
   // 引领星 - 最亮最大的一颗，紧贴logo边框
-  const leaderSize = 16;
-  const leaderOrbit = 55;
-  const leaderDuration = 25; // 缓缓旋转
+  const leaderSize = 18;
+  const leaderOrbit = 78; // 紧贴130px logo边框外侧 (半径65+边框+间距)
+  const leaderDuration = 30; // 缓缓旋转
   starsHtml += `<div class="star star-leader" style="width:${leaderSize}px;height:${leaderSize}px;--orbit-radius:${leaderOrbit}px;--duration:${leaderDuration}s;--delay:0s"></div>`;
   
   // 繁星：80颗小星星，分布在多个轨道
@@ -2607,9 +2607,9 @@ function renderLogin(errorMsg) {
   for (let i = 2; i <= totalStars; i++) {
     // 轨道层级：从内到外分布
     const orbitLevel = Math.floor((i - 2) / 12) + 1; // 1-7层
-    const orbitBase = 65 + orbitLevel * 20; // 65, 85, 105, 125, 145, 165, 185
+    const orbitBase = 75 + orbitLevel * 12; // 从logo外围开始：75, 87, 99, 111, 123, 135
     const orbitVariation = Math.random() * 15;
-    const orbitRadius = Math.min(180, orbitBase + orbitVariation);
+    const orbitRadius = Math.min(130, orbitBase + orbitVariation);
     
     // 大小：大部分很小(2-6px)，少数稍大(6-10px)
     const isBright = Math.random() < 0.15; // 15%稍亮的星
