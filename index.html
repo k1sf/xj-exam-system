@@ -2920,20 +2920,24 @@ async function renderStudentListSub() {
     </div>
     <div class="card" style="animation-delay:0.1s">
       <div class="card-title">📋 学生列表 <span id="studentCount" style="font-size:0.78rem;color:var(--text2);font-weight:400"></span></div>
-      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
-        <input class="input" id="studentSearch" placeholder="搜索昵称/手机号" style="flex:1" oninput="filterStudents()">
-        <select class="input" id="studentCohortFilter" onchange="filterStudents()" style="width:100px;flex:none">
-          <option value="">全部班级</option>${cohortOpts}
-        </select>
-        <div class="dropdown" style="position:relative">
-        <button class="btn btn-sm btn-outline" onclick="exportStudentsCsv()">📥 导出CSV</button>
-          <button class="btn btn-sm btn-outline" onclick="toggleDropdown('batchMenu')">批量操作</button>
-          <div id="batchMenu" class="dropdown-menu" style="display:none;position:absolute;right:0;top:100%;z-index:100;min-width:120px;background:var(--card);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15)">
-            <a href="javascript:void(0)" onclick="batchRenewStudents();toggleDropdown('batchMenu')" style="display:block;padding:10px 16px;color:var(--text);text-decoration:none;border-bottom:1px solid var(--border)">续期</a>
-            <a href="javascript:void(0)" onclick="batchToggleStudents(true);toggleDropdown('batchMenu')" style="display:block;padding:10px 16px;color:var(--text);text-decoration:none;border-bottom:1px solid var(--border)">禁用</a>
-            <a href="javascript:void(0)" onclick="batchToggleStudents(false);toggleDropdown('batchMenu')" style="display:block;padding:10px 16px;color:var(--text);text-decoration:none;border-bottom:1px solid var(--border)">启用</a>
-            <a href="javascript:void(0)" onclick="batchLockLevel(true);toggleDropdown('batchMenu')" style="display:block;padding:10px 16px;color:var(--text);text-decoration:none;border-bottom:1px solid var(--border)">锁定等级</a>
-            <a href="javascript:void(0)" onclick="batchLockLevel(false);toggleDropdown('batchMenu')" style="display:block;padding:10px 16px;color:var(--text);text-decoration:none">解锁等级</a>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+        <div style="display:flex;gap:8px">
+          <input class="input" id="studentSearch" placeholder="搜索昵称/手机号" style="flex:1" oninput="filterStudents()">
+          <select class="input" id="studentCohortFilter" onchange="filterStudents()" style="width:90px;flex:none">
+            <option value="">全部班级</option>${cohortOpts}
+          </select>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-sm btn-outline" onclick="exportStudentsCsv()">📥 导出CSV</button>
+          <div class="dropdown" style="position:relative;flex:1">
+            <button class="btn btn-sm btn-outline btn-full" onclick="toggleDropdown('batchMenu')">📋 批量操作</button>
+            <div id="batchMenu" class="dropdown-menu" style="display:none;position:absolute;left:0;top:100%;z-index:100;min-width:120px;background:var(--card);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15)">
+              <a href="javascript:void(0)" onclick="batchRenewStudents();toggleDropdown('batchMenu')" style="display:block;padding:10px 16px;color:var(--text);text-decoration:none;border-bottom:1px solid var(--border)">续期</a>
+              <a href="javascript:void(0)" onclick="batchToggleStudents(true);toggleDropdown('batchMenu')" style="display:block;padding:10px 16px;color:var(--text);text-decoration:none;border-bottom:1px solid var(--border)">禁用</a>
+              <a href="javascript:void(0)" onclick="batchToggleStudents(false);toggleDropdown('batchMenu')" style="display:block;padding:10px 16px;color:var(--text);text-decoration:none;border-bottom:1px solid var(--border)">启用</a>
+              <a href="javascript:void(0)" onclick="batchLockLevel(true);toggleDropdown('batchMenu')" style="display:block;padding:10px 16px;color:var(--text);text-decoration:none;border-bottom:1px solid var(--border)">锁定等级</a>
+              <a href="javascript:void(0)" onclick="batchLockLevel(false);toggleDropdown('batchMenu')" style="display:block;padding:10px 16px;color:var(--text);text-decoration:none">解锁等级</a>
+            </div>
           </div>
         </div>
       </div>

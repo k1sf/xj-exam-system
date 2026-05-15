@@ -48,7 +48,7 @@ const MIMES = {
 };
 
 // ===== Security: table whitelist =====
-const ALLOWED_TABLES = ['students', 'questions', 'records', 'exams', 'admins', 'enroll_configs', 'enrollments', 'notifications', 'operation_logs', 'wrong_question_mastery', 'wrong_training_sessions'];
+const ALLOWED_TABLES = ['students', 'questions', 'records', 'exams', 'admins', 'enroll_configs', 'enrollments', 'notifications', 'operation_logs', 'wrong_question_mastery', 'wrong_training_sessions', 'system_settings'];
 function validateTable(table) {
   if (!ALLOWED_TABLES.includes(table)) throw new Error('Invalid table: ' + table);
   return table;
