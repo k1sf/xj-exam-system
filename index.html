@@ -461,13 +461,13 @@ html.dark .answer-level{background:var(--bg);color:var(--text2)}
 @keyframes card-pop{0%{transform:scale(0.95);opacity:0}100%{transform:scale(1);opacity:1}}
 
 /* ===== Login Page ===== */
-.login-page{min-height:80vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:15px;position:relative;overflow:hidden}
+.login-page{min-height:80vh;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:15px;padding-top:5vh;position:relative;overflow:hidden}
 .login-page::before{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:url('https://code.coze.cn/api/sandbox/coze_coding/file/proxy?expire_time=-1&file_path=assets%2Fxx.jpg&nonce=b5aab218-6f24-40c3-944c-3a77e425b237&project_id=7638069931338301478&sign=b750f9def26eca7d05f38368ea9246b7e28e268fdbb90d09f085012347e7c218') center center/cover no-repeat;z-index:0}
 .login-page::after{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:linear-gradient(to top,rgba(0,0,0,0.7) 0%,rgba(0,0,0,0.4) 40%,rgba(0,0,0,0.1) 70%,transparent 100%);z-index:1}
 .login-page > *{position:relative;z-index:2}
 /* 繁星围着logo缓缓旋转 */
-.stars-wrapper{position:relative;z-index:2;display:flex;align-items:center;justify-content:center;flex-direction:column;margin-top:20vh;margin-bottom:10px}
-.stars-container{position:absolute;width:260px;height:260px;z-index:1;pointer-events:none;top:50%;left:50%;transform:translate(-50%,-50%)}
+.stars-wrapper{position:relative;z-index:2;display:flex;align-items:center;justify-content:center;flex-direction:column;margin-top:0vh;margin-bottom:10px}
+.stars-container{position:absolute;width:520px;height:520px;z-index:1;pointer-events:none;top:50%;left:50%;transform:translate(-50%,-50%)}
 .login-logo-circle{position:relative;z-index:2;width:130px;height:130px;margin:0 auto;border-radius:50%;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.3),0 0 40px rgba(255,215,0,0.2);border:3px solid rgba(255,255,255,0.6);flex-shrink:0}
 .login-logo-circle img{width:100%;height:100%;object-fit:cover}
 /* 繁星动画 - 围绕中心缓缓旋转 */
@@ -488,7 +488,7 @@ html.dark .answer-level{background:var(--bg);color:var(--text2)}
 .login-icon{width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#4a6cf7,#6d8afc);display:flex;align-items:center;justify-content:center;font-size:36px;margin:0 auto 16px;box-shadow:0 8px 24px rgba(74,108,247,0.25)}
 .login-title{font-size:1.3rem;font-weight:700;color:#fff;text-align:center;line-height:1.5;text-shadow:0 2px 12px rgba(0,0,0,0.5);padding:0 12px;margin-bottom:4px}
 .login-subtitle{font-size:0.75rem;color:rgba(255,255,255,0.9);letter-spacing:2px;text-align:center;margin-bottom:16px;text-shadow:0 1px 4px rgba(0,0,0,0.5)}
-.login-card{background:rgba(255,255,255,0.015);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);border-radius:20px;box-shadow:0 4px 16px rgba(0,0,0,0.1),inset 0 1px 1px rgba(255,255,255,0.05);padding:20px 20px;width:100%;max-width:340px;border:1px solid rgba(255,255,255,0.08)}
+.login-card{background:rgba(255,255,255,0.015);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);border-radius:20px;box-shadow:0 4px 16px rgba(0,0,0,0.1),inset 0 1px 1px rgba(255,255,255,0.05);padding:18px 18px;width:100%;max-width:272px;border:1px solid rgba(255,255,255,0.08)}
 .login-input-group{display:flex;align-items:center;border:1px solid rgba(255,255,255,0.3);transition:all 0.3s;margin-top:12px;height:44px;background:rgba(255,255,255,0.9);padding:0 14px;border-radius:10px}
 .login-input-group:focus-within{border-color:#4a6cf7;box-shadow:0 0 0 3px rgba(74,108,247,0.2);background:#fff}
 .login-input-group .icon{font-size:20px;color:#666;margin-right:12px;flex-shrink:0}
@@ -516,7 +516,7 @@ html.dark .answer-level{background:var(--bg);color:var(--text2)}
 .login-page{padding:0 12px 20px}
 .login-title{font-size:1.15rem;margin-bottom:4px}
 .login-subtitle{font-size:0.75rem;margin-bottom:12px}
-.login-card{padding:20px 16px;border-radius:20px;max-width:320px}
+.login-card{padding:18px 14px;border-radius:20px;max-width:260px}
 .login-input-group{height:46px;margin-top:12px}
 .login-input-group .icon{font-size:18px}
 .login-input-group input{font-size:0.95rem}
@@ -525,8 +525,8 @@ html.dark .answer-level{background:var(--bg);color:var(--text2)}
 .login-dots{margin-top:16px}
 .settings-bar{padding:8px 12px;gap:10px;font-size:0.75rem;margin-bottom:12px}
 .settings-bar .icon-btn{width:32px;height:32px}
-.stars-wrapper{margin-top:15vh}
-.stars-container{width:210px;height:210px}
+.stars-wrapper{margin-top:0vh}
+.stars-container{width:420px;height:420px}
 .login-logo-circle{width:105px;height:105px}
 }
 
@@ -2930,7 +2930,7 @@ function renderLogin(errorMsg) {
   // 引领星 - 最亮最大的一颗，紧贴logo边框
   const isMobile = window.innerWidth <= 400;
   const leaderSize = isMobile ? 14 : 16;
-  const leaderOrbit = isMobile ? 55 : 68; // 移动端logo半径52.5+边框=55，PC端65+3=68
+  const leaderOrbit = isMobile ? 110 : 136; // 移动端logo半径52.5+边框扩大一倍，PC端65+3扩大一倍
   const leaderDuration = 25; // 缓缓旋转
   starsHtml += `<div class="star star-leader" style="width:${leaderSize}px;height:${leaderSize}px;--orbit-radius:${leaderOrbit}px;--duration:${leaderDuration}s;--delay:0s"></div>`;
   
@@ -2939,9 +2939,9 @@ function renderLogin(errorMsg) {
   for (let i = 2; i <= totalStars; i++) {
     // 轨道层级：从边框外围开始分布
     const orbitLevel = Math.floor((i - 2) / 10) + 1; // 1-8层
-    const orbitBase = (isMobile ? 60 : 80) + orbitLevel * (isMobile ? 8 : 10); // 移动端从60开始，PC端从80开始
-    const orbitVariation = Math.random() * (isMobile ? 6 : 8);
-    const orbitRadius = Math.min(isMobile ? 100 : 125, orbitBase + orbitVariation);
+    const orbitBase = (isMobile ? 120 : 160) + orbitLevel * (isMobile ? 16 : 20); // 扩大一倍
+    const orbitVariation = Math.random() * (isMobile ? 12 : 16);
+    const orbitRadius = Math.min(isMobile ? 200 : 250, orbitBase + orbitVariation);
     
     // 大小：大部分很小(2-6px)，少数稍大(6-10px)
     const isBright = Math.random() < 0.15; // 15%稍亮的星
