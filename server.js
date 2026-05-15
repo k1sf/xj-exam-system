@@ -1534,6 +1534,65 @@ async function handleApi(req, res, url, sharedParams) {
       break;
     }
     
+    case 'wrong-stats-admin': {
+      // 管理员获取所有学生的错题统计
+      const { cohort } = allParams;
+      
+      // 构建查询
+      let query = `
+        SELECT 
+          w.student_id,
+          s.nickname,
+          s.cohort,
+          COUNT(*) FILTER (WHERE w.is_mastered = FALSE AND w.wrong_count = 1) as level1,
+          COUNT(*) FILTER (WHERE w.is_mastered = FALSE AND w.wrong_count = 2) as level2,
+          COUNT(*) FILTER (WHERE w.is_mastered = FALSE AND w.wrong_count >= 3) as level3,
+          COUNT(*) FILTER (WHERE w.is_mastered = TRUE) as review,
+          COUNT(*) FILTER (WHERE w.is_mastered = FALSE) as total_wrong
+        FROM wrong_question_mastery w
+        LEFT JOIN students s ON w.student_id = s.id
+        WHERE 1=1
+      `;
+      const params = [];
+      if (cohort) {
+        query += ` AND s.cohort LIKE $1`;
+        params.push(`%${cohort}%`);
+      }
+      query += ` GROUP BY w.student_id, s.nickname, s.cohort ORDER BY total_wrong DESC`;
+      
+      const result = await pool.query(query, params);
+      sendJson(res, { success: true, stats: result.rows });
+      break;
+    }
+    
+    case 'wrong-detail-admin': {
+      // 管理员获取指定学生的错题详情
+      const { student_id } = allParams;
+      if (!student_id) {
+        sendJson(res, { error: '缺少学生ID' }, 400);
+        return;
+      }
+      
+      const result = await pool.query(`
+        SELECT 
+          w.*,
+          q.type,
+          q.content,
+          q.options,
+          q.answer,
+          q.analysis,
+          q.tags,
+          q.level as question_level
+        FROM wrong_question_mastery w
+        LEFT JOIN questions q ON w.question_id::text = q.id::text
+        WHERE w.student_id = $1
+        ORDER BY w.wrong_count DESC, w.last_practice_at DESC
+      `, [student_id]);
+      
+      sendJson(res, { success: true, questions: result.rows });
+      break;
+    }
+    
     default:
       sendJson(res, { error: 'Unknown route: ' + route }, 404);
   }
