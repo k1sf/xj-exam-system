@@ -467,7 +467,7 @@ html.dark .answer-level{background:var(--bg);color:var(--text2)}
 .login-page > *{position:relative;z-index:2}
 /* 繁星围着logo缓缓旋转 */
 .stars-wrapper{position:relative;z-index:2;display:flex;align-items:center;justify-content:center;flex-direction:column;margin-top:0vh;margin-bottom:10px}
-.stars-container{position:absolute;width:520px;height:520px;z-index:1;pointer-events:none;top:50%;left:50%;transform:translate(-50%,-50%)}
+.stars-container{position:absolute;width:600px;height:600px;z-index:1;pointer-events:none;top:50%;left:50%;transform:translate(-50%,-50%)}
 .login-logo-circle{position:relative;z-index:2;width:130px;height:130px;margin:0 auto;border-radius:50%;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.3),0 0 40px rgba(255,215,0,0.2);border:3px solid rgba(255,255,255,0.6);flex-shrink:0}
 .login-logo-circle img{width:100%;height:100%;object-fit:cover}
 /* 繁星动画 - 围绕中心缓缓旋转 */
@@ -526,7 +526,7 @@ html.dark .answer-level{background:var(--bg);color:var(--text2)}
 .settings-bar{padding:8px 12px;gap:10px;font-size:0.75rem;margin-bottom:12px}
 .settings-bar .icon-btn{width:32px;height:32px}
 .stars-wrapper{margin-top:0vh}
-.stars-container{width:420px;height:420px}
+.stars-container{width:480px;height:480px}
 .login-logo-circle{width:105px;height:105px}
 }
 
@@ -2934,14 +2934,14 @@ function renderLogin(errorMsg) {
   const leaderDuration = 25; // 缓缓旋转
   starsHtml += `<div class="star star-leader" style="width:${leaderSize}px;height:${leaderSize}px;--orbit-radius:${leaderOrbit}px;--duration:${leaderDuration}s;--delay:0s"></div>`;
   
-  // 繁星：80颗小星星，分布在多个轨道
-  const totalStars = 80;
+  // 繁星：198颗小星星（加上引领星共199颗），分布在多个轨道
+  const totalStars = 199;
   for (let i = 2; i <= totalStars; i++) {
-    // 轨道层级：从边框外围开始分布
-    const orbitLevel = Math.floor((i - 2) / 10) + 1; // 1-8层
-    const orbitBase = (isMobile ? 120 : 160) + orbitLevel * (isMobile ? 16 : 20); // 扩大一倍
-    const orbitVariation = Math.random() * (isMobile ? 12 : 16);
-    const orbitRadius = Math.min(isMobile ? 200 : 250, orbitBase + orbitVariation);
+    // 轨道层级：从边框外围开始分布（199颗星星分布在20层轨道）
+    const orbitLevel = Math.floor((i - 2) / 10) + 1; // 1-20层
+    const orbitBase = (isMobile ? 120 : 160) + orbitLevel * (isMobile ? 8 : 10); // 轨道间距
+    const orbitVariation = Math.random() * (isMobile ? 6 : 8);
+    const orbitRadius = Math.min(isMobile ? 240 : 300, orbitBase + orbitVariation);
     
     // 大小：大部分很小(2-6px)，少数稍大(6-10px)
     const isBright = Math.random() < 0.15; // 15%稍亮的星
