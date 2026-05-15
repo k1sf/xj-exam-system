@@ -2153,6 +2153,24 @@ setTimeout(() => {
   }
 }, 500);
 
+// ===== Fetch with Timeout =====
+const FETCH_TIMEOUT = 15000; // 15 seconds timeout
+async function fetchWithTimeout(url, options = {}) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timeoutId);
+    return res;
+  } catch (e) {
+    clearTimeout(timeoutId);
+    if (e.name === 'AbortError') {
+      throw new Error('请求超时，请检查网络连接');
+    }
+    throw e;
+  }
+}
+
 // ===== Cache System =====
 const _cache = {};
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes - balance between performance and freshness
@@ -2523,7 +2541,7 @@ async function dbSelect(table, opts = {}) {
   showLoading();
   try {
     const body = { table, filter: opts.eq || opts.filter || undefined, order: opts.order || ['id', false], limit: opts.limit, offset: opts.offset, select: opts.select, gte: opts.gte, gt: opts.gt, lte: opts.lte, lt: opts.lt };
-    const res = await fetch(`${API_BASE}/select`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify(body) });
+    const res = await fetchWithTimeout(`${API_BASE}/select`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify(body) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     let data = await res.json();
     if (data.error) throw new Error(data.error);
@@ -2583,7 +2601,7 @@ function _refreshInBackground(cacheKey, table, opts) {
 async function dbInsert(table, rows) {
   try {
     if (!Array.isArray(rows)) rows = [rows];
-    const res = await fetch(`${API_BASE}/insert`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify({ table, rows }) });
+    const res = await fetchWithTimeout(`${API_BASE}/insert`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify({ table, rows }) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     let data = await res.json();
     if (data.error) throw new Error(data.error);
@@ -2614,7 +2632,7 @@ async function dbInsert(table, rows) {
 
 async function dbUpdate(table, data, match) {
   try {
-    const res = await fetch(`${API_BASE}/update`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify({ table, data, match }) });
+    const res = await fetchWithTimeout(`${API_BASE}/update`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify({ table, data, match }) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     let result = await res.json();
     if (result.error) throw new Error(result.error);
@@ -2664,7 +2682,7 @@ async function dbBatchUpdate(table, batch) {
 async function dbDelete(table, match = {}, force = false) {
   try {
     const body = { table, match: match || {}, force };
-    const res = await fetch(`${API_BASE}/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify(body) });
+    const res = await fetchWithTimeout(`${API_BASE}/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify(body) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     let result = await res.json();
     if (result.error) throw new Error(result.error);

@@ -27,9 +27,12 @@ console.log('数据库URL:', dbUrlFixed.replace(/\/\/[^@]+@/, '//***:***@'));
 const pool = new Pool({
   connectionString: dbUrlFixed,
   ssl: { rejectUnauthorized: false },
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000
+  max: 50,                    // 最大连接数（免费版建议50以内）
+  min: 5,                     // 最小保持5个连接
+  idleTimeoutMillis: 60000,   // 空闲连接保持60秒
+  connectionTimeoutMillis: 5000, // 连接超时5秒
+  statement_timeout: 15000,   // 单条SQL超时15秒
+  query_timeout: 20000        // 查询超时20秒
 });
 
 pool.on('error', (err) => {
