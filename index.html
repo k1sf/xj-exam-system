@@ -20,7 +20,7 @@ html.dark{--primary:#6d8afc;--primary-dark:#5b7aec;--primary-light:#1e2340;--pri
 html.dark body{background:#0f172a;color:var(--text)}
 html.dark #app{background:var(--bg);box-shadow:0 0 40px rgba(0,0,0,0.3)}
 html.dark .login-page{background:linear-gradient(180deg,#0f172a 0%,#1e2340 100%)}
-html.dark .login-page::before{opacity:0.7;filter:brightness(1.15) contrast(1.05)}
+html.dark .login-page::before{opacity:0.5}
 html.dark .login-page::after{background:linear-gradient(to top,rgba(0,0,0,0.85) 0%,rgba(0,0,0,0.5) 40%,rgba(0,0,0,0.2) 70%,transparent 100%)}
 html.dark .login-card{background:rgba(30,41,59,0.35);backdrop-filter:blur(8px);border-color:rgba(255,255,255,0.1)}
 html.dark .login-input-group{background:rgba(255,255,255,0.95);border-color:rgba(255,255,255,0.2)}
@@ -459,9 +459,9 @@ html.dark .answer-level{background:var(--bg);color:var(--text2)}
 @keyframes card-pop{0%{transform:scale(0.95);opacity:0}100%{transform:scale(1);opacity:1}}
 
 /* ===== Login Page ===== */
-.login-page{min-height:80vh;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:15px;padding-top:18vh;position:relative;overflow:hidden}
-.login-page::before{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:#1a1a2e url('assets/xx.jpg') center center/cover no-repeat;z-index:0;transition:opacity 0.5s;filter:brightness(1.25) contrast(1.05)}
-.login-page::after{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:linear-gradient(to top,rgba(0,0,0,0.5) 0%,rgba(0,0,0,0.25) 40%,rgba(0,0,0,0.05) 70%,transparent 100%);z-index:1}
+.login-page{min-height:80vh;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:15px;padding-top:25vh;position:relative;overflow:hidden}
+.login-page::before{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:#1a1a2e url('assets/xx.jpg') center center/cover no-repeat;z-index:0;transition:opacity 0.5s}
+.login-page::after{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:linear-gradient(to top,rgba(0,0,0,0.7) 0%,rgba(0,0,0,0.4) 40%,rgba(0,0,0,0.1) 70%,transparent 100%);z-index:1}
 .login-page > *{position:relative;z-index:2}
 /* 背景加载动画 */
 .login-loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:0;opacity:1;transition:opacity 0.5s}
@@ -512,7 +512,7 @@ html.dark .answer-level{background:var(--bg);color:var(--text2)}
 
 /* 移动端登录面板优化 */
 @media(max-width:400px){
-.login-page{padding:0 12px 20px;padding-top:2vh}
+.login-page{padding:0 12px 20px;padding-top:7vh}
 .login-title{font-size:1.15rem;margin-bottom:4px}
 .login-subtitle{font-size:0.75rem;margin-bottom:12px}
 .login-card{padding:18px 14px;border-radius:20px;max-width:260px}
@@ -523,7 +523,7 @@ html.dark .answer-level{background:var(--bg);color:var(--text2)}
 .login-hint{font-size:0.7rem;margin-top:12px}
 .settings-bar{padding:8px 12px;gap:10px;font-size:0.75rem;margin-bottom:12px}
 .settings-bar .icon-btn{width:32px;height:32px}
-.stars-wrapper{margin-top:3vh}
+.stars-wrapper{margin-top:10vh}
 .stars-container{width:400px;height:400px}
 .login-logo-circle{width:105px;height:105px}
 }
