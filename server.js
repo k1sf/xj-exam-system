@@ -3284,6 +3284,90 @@ async function handleWrongTrainingApi(req, res, url, params) {
       break;
     }
     
+    case 'stats-admin': {
+      // 管理端：获取所有学生的错题统计
+      const { cohort } = allParams;
+      
+      try {
+        let query = `
+          SELECT 
+            m.student_id,
+            s.nickname,
+            s.cohort,
+            COUNT(*) FILTER (WHERE m.is_mastered = FALSE AND m.wrong_count = 1) as level1,
+            COUNT(*) FILTER (WHERE m.is_mastered = FALSE AND m.wrong_count = 2) as level2,
+            COUNT(*) FILTER (WHERE m.is_mastered = FALSE AND m.wrong_count >= 3) as level3,
+            COUNT(*) FILTER (WHERE m.is_mastered = TRUE) as review,
+            COUNT(*) FILTER (WHERE m.is_mastered = FALSE) as total_wrong
+          FROM wrong_question_mastery m
+          LEFT JOIN students s ON s.id = m.student_id
+          WHERE 1=1
+        `;
+        const queryParams = [];
+        if (cohort) {
+          query += ` AND s.cohort LIKE $${queryParams.length + 1}`;
+          queryParams.push(`%${cohort}%`);
+        }
+        query += ` GROUP BY m.student_id, s.nickname, s.cohort ORDER BY total_wrong DESC`;
+        
+        const result = await pool.query(query, queryParams);
+        
+        sendJson(res, {
+          success: true,
+          stats: result.rows.map(row => ({
+            student_id: row.student_id,
+            nickname: row.nickname,
+            cohort: row.cohort,
+            level1: parseInt(row.level1) || 0,
+            level2: parseInt(row.level2) || 0,
+            level3: parseInt(row.level3) || 0,
+            review: parseInt(row.review) || 0,
+            total_wrong: parseInt(row.total_wrong) || 0
+          }))
+        });
+      } catch (e) {
+        console.error('Stats admin error:', e);
+        sendJson(res, { error: '查询失败' }, 500);
+      }
+      break;
+    }
+    
+    case 'detail-admin': {
+      // 管理端：获取指定学生的错题详情
+      const { student_id } = allParams;
+      if (!student_id) {
+        sendJson(res, { error: '缺少学生ID' }, 400);
+        return;
+      }
+      
+      try {
+        const result = await pool.query(`
+          SELECT 
+            m.*,
+            q.type,
+            q.content,
+            q.options,
+            q.answer,
+            q.analysis,
+            q.tags,
+            q.level as question_level
+          FROM wrong_question_mastery m
+          JOIN questions q ON q.id = m.question_id
+          WHERE m.student_id = $1
+          ORDER BY m.wrong_count DESC, m.last_practice_at DESC NULLS LAST
+        `, [student_id]);
+        
+        sendJson(res, {
+          success: true,
+          questions: result.rows
+        });
+      } catch (e) {
+        console.error('Detail admin error:', e);
+        sendJson(res, { error: '查询失败' }, 500);
+      }
+      break;
+    }
+    
     default:
       sendJson(res, { error: 'Unknown wrong training route: ' + route }, 404);
   }

@@ -5408,19 +5408,23 @@ function switchManageSubTab(tab) {
 }
 
 // ===== 错题统计页面 =====
+let _wrongStatsCohort = '';
+let _wrongStatsStudentId = null;
+
 async function renderWrongStatsSub() {
   const container = document.getElementById('manageSubContent');
   container.innerHTML = `<div class="card"><div class="card-title">❌ 错题统计加载中...</div></div>`;
   
   try {
-    // 获取所有学生
+    // 获取所有学生用于班级筛选
     allStudents = await dbSelect('students', { order: ['created_at', false] });
+    const allCohorts = [...new Set(allStudents.flatMap(s => (s.cohort || '').split(',').map(c => c.trim()).filter(Boolean)))];
     
     // 调用API获取错题统计
-    const res = await fetch('/api/wrong-stats', {
+    const res = await fetch('/api/wrong-stats-admin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-      body: JSON.stringify({})
+      body: JSON.stringify({ cohort: _wrongStatsCohort || undefined })
     });
     const data = await res.json();
     
@@ -5428,47 +5432,87 @@ async function renderWrongStatsSub() {
     
     const stats = data.stats || [];
     
+    // 计算汇总数据
+    const totalStudents = stats.length;
+    const totalWrong = stats.reduce((sum, s) => sum + (s.total_wrong || 0), 0);
+    const totalLevel3 = stats.reduce((sum, s) => sum + (s.level3 || 0), 0);
+    const totalReview = stats.reduce((sum, s) => sum + (s.review || 0), 0);
+    
     // 构建统计表格
     let html = `
       <div class="card" style="margin-bottom:12px">
         <div class="card-title">❌ 学生错题统计</div>
-        <p style="font-size:12px;color:#666;margin-bottom:12px">
-          说明：三级=连续错3次+，二级=错2次，一级=错1次，复习=已做对移入复习本
+        
+        <!-- 汇总卡片 -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
+          <div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border-radius:12px;padding:16px;text-align:center;color:#fff">
+            <div style="font-size:1.5rem;font-weight:700">${totalStudents}</div>
+            <div style="font-size:0.8rem;opacity:0.9">有错题学生</div>
+          </div>
+          <div style="background:linear-gradient(135deg,#f093fb 0%,#f5576c 100%);border-radius:12px;padding:16px;text-align:center;color:#fff">
+            <div style="font-size:1.5rem;font-weight:700">${totalWrong}</div>
+            <div style="font-size:0.8rem;opacity:0.9">待攻克错题</div>
+          </div>
+          <div style="background:linear-gradient(135deg,#ff9a9e 0%,#fecfef 100%);border-radius:12px;padding:16px;text-align:center;color:#333">
+            <div style="font-size:1.5rem;font-weight:700">${totalLevel3}</div>
+            <div style="font-size:0.8rem;opacity:0.8">高难度错题</div>
+          </div>
+          <div style="background:linear-gradient(135deg,#a8edea 0%,#fed6e3 100%);border-radius:12px;padding:16px;text-align:center;color:#333">
+            <div style="font-size:1.5rem;font-weight:700">${totalReview}</div>
+            <div style="font-size:0.8rem;opacity:0.8">已掌握</div>
+          </div>
+        </div>
+        
+        <!-- 筛选条件 -->
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+          <select id="wrongCohortFilter" onchange="filterWrongStats()" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border-color);background:var(--card-bg)">
+            <option value="">全部班级</option>
+            ${allCohorts.map(c => `<option value="${escHtml(c)}" ${_wrongStatsCohort===c?'selected':''}>${escHtml(c)}</option>`).join('')}
+          </select>
+          <button class="btn btn-outline" onclick="exportWrongStats()">📥 导出CSV</button>
+        </div>
+        
+        <p style="font-size:12px;color:var(--text3);margin-bottom:12px">
+          说明：一级=错1次，二级=错2次，三级=错3次及以上，复习本=已掌握待复习
         </p>
+        
         <div style="overflow-x:auto">
-          <table class="table" style="width:100%;font-size:13px;min-width:500px">
+          <table class="table" style="width:100%;font-size:13px;min-width:600px">
             <thead>
               <tr style="background:var(--bg-secondary)">
-                <th style="padding:8px;text-align:left">学生</th>
-                <th style="padding:8px;text-align:center">班级</th>
-                <th style="padding:8px;text-align:center">一级</th>
-                <th style="padding:8px;text-align:center">二级</th>
-                <th style="padding:8px;text-align:center">三级</th>
-                <th style="padding:8px;text-align:center">复习本</th>
-                <th style="padding:8px;text-align:center">总计</th>
+                <th style="padding:10px;text-align:left">学生</th>
+                <th style="padding:10px;text-align:center">班级</th>
+                <th style="padding:10px;text-align:center">一级</th>
+                <th style="padding:10px;text-align:center">二级</th>
+                <th style="padding:10px;text-align:center">三级</th>
+                <th style="padding:10px;text-align:center">复习本</th>
+                <th style="padding:10px;text-align:center">待攻克</th>
+                <th style="padding:10px;text-align:center">操作</th>
               </tr>
             </thead>
             <tbody>
     `;
     
     for (const s of stats) {
-      const student = allStudents.find(st => st.username === s.student_id);
       const total = (s.level1||0) + (s.level2||0) + (s.level3||0);
       html += `
         <tr style="border-bottom:1px solid var(--border-color)">
-          <td style="padding:8px">${escHtml(student?.nickname || s.student_id)}</td>
-          <td style="padding:8px;text-align:center">${escHtml(student?.cohort || '-')}</td>
-          <td style="padding:8px;text-align:center">${s.level1 || 0}</td>
-          <td style="padding:8px;text-align:center;color:var(--warning-color)">${s.level2 || 0}</td>
-          <td style="padding:8px;text-align:center;color:var(--error-color);font-weight:bold">${s.level3 || 0}</td>
-          <td style="padding:8px;text-align:center;color:var(--success-color)">${s.review || 0}</td>
-          <td style="padding:8px;text-align:center;font-weight:bold">${total}</td>
+          <td style="padding:10px;font-weight:500">${escHtml(s.nickname || s.student_id)}</td>
+          <td style="padding:10px;text-align:center">${escHtml(s.cohort || '-')}</td>
+          <td style="padding:10px;text-align:center">${s.level1 || 0}</td>
+          <td style="padding:10px;text-align:center;color:var(--warning-color)">${s.level2 || 0}</td>
+          <td style="padding:10px;text-align:center;color:var(--error-color);font-weight:600">${s.level3 || 0}</td>
+          <td style="padding:10px;text-align:center;color:var(--success-color)">${s.review || 0}</td>
+          <td style="padding:10px;text-align:center;font-weight:700;color:var(--primary)">${s.total_wrong || 0}</td>
+          <td style="padding:10px;text-align:center">
+            <button class="btn btn-outline" style="padding:4px 10px;font-size:12px" onclick="viewWrongDetail('${s.student_id}', '${escHtml(s.nickname || s.student_id)}')">查看</button>
+          </td>
         </tr>
       `;
     }
     
     if (stats.length === 0) {
-      html += `<tr><td colspan="7" style="padding:20px;text-align:center;color:#999">暂无错题数据</td></tr>`;
+      html += `<tr><td colspan="8" style="padding:30px;text-align:center;color:var(--text3)">暂无错题数据</td></tr>`;
     }
     
     html += `
@@ -5480,7 +5524,108 @@ async function renderWrongStatsSub() {
     
     container.innerHTML = html;
   } catch (e) {
+    console.error('错题统计加载失败:', e);
     container.innerHTML = `<div class="card"><div class="card-title">❌ 加载失败</div><p>${escHtml(e.message)}</p></div>`;
+  }
+}
+
+function filterWrongStats() {
+  _wrongStatsCohort = document.getElementById('wrongCohortFilter').value;
+  renderWrongStatsSub();
+}
+
+function exportWrongStats() {
+  const table = document.querySelector('#manageSubContent table');
+  if (!table) return showToast('没有数据可导出', 'error');
+  
+  let csv = '\uFEFF学生,班级,一级,二级,三级,复习本,待攻克\n';
+  table.querySelectorAll('tbody tr').forEach(row => {
+    const cells = row.querySelectorAll('td');
+    if (cells.length >= 7) {
+      csv += Array.from(cells).slice(0, 7).map((td, i) => {
+        const text = td.textContent.trim();
+        return i === 0 ? `"${text}"` : text;
+      }).join(',') + '\n';
+    }
+  });
+  
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `错题统计_${new Date().toLocaleDateString()}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('导出成功', 'success');
+}
+
+async function viewWrongDetail(studentId, studentName) {
+  const modal = document.getElementById('modal');
+  modal.classList.add('show');
+  document.getElementById('modalContent').innerHTML = `
+    <div style="padding:20px;text-align:center">
+      <div class="spinner-lg" style="margin:0 auto"></div>
+      <div style="margin-top:12px;color:var(--text2)">加载错题详情...</div>
+    </div>
+  `;
+  
+  try {
+    const res = await fetch('/api/wrong-detail-admin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
+      body: JSON.stringify({ student_id: studentId })
+    });
+    const data = await res.json();
+    
+    if (!data.success) throw new Error(data.error || '获取失败');
+    
+    const questions = data.questions || [];
+    
+    let html = `
+      <div style="padding:20px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h3 style="margin:0;font-size:1.1rem">❌ ${escHtml(studentName)}的错题本</h3>
+          <button onclick="closeModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3)">&times;</button>
+        </div>
+        <div style="font-size:0.85rem;color:var(--text3);margin-bottom:12px">共 ${questions.length} 道错题</div>
+        <div style="max-height:60vh;overflow-y:auto">
+    `;
+    
+    if (questions.length === 0) {
+      html += `<div style="text-align:center;padding:30px;color:var(--text3)">暂无错题</div>`;
+    } else {
+      questions.forEach((q, i) => {
+        const levelBadge = q.wrong_count >= 3 ? '🔴' : q.wrong_count === 2 ? '🟡' : '🟢';
+        const masteredBadge = q.is_mastered ? '<span style="background:var(--success-color);color:#fff;padding:2px 8px;border-radius:4px;font-size:0.75rem">已掌握</span>' : '';
+        html += `
+          <div style="background:var(--bg-secondary);border-radius:10px;padding:14px;margin-bottom:10px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <span style="font-weight:600;color:var(--primary)">第${i+1}题</span>
+              <span>${levelBadge} 错${q.wrong_count}次 ${masteredBadge}</span>
+            </div>
+            <div style="font-size:0.9rem;line-height:1.6">${escHtml(q.content)}</div>
+            ${q.analysis ? `<div style="margin-top:8px;font-size:0.8rem;color:var(--text3);padding:8px;background:var(--card-bg);border-radius:6px">解析：${escHtml(q.analysis)}</div>` : ''}
+          </div>
+        `;
+      });
+    }
+    
+    html += `
+        </div>
+      </div>
+    `;
+    
+    document.getElementById('modalContent').innerHTML = html;
+  } catch (e) {
+    document.getElementById('modalContent').innerHTML = `
+      <div style="padding:20px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h3 style="margin:0;color:var(--error-color)">加载失败</h3>
+          <button onclick="closeModal()" style="background:none;border:none;font-size:24px;cursor:pointer">&times;</button>
+        </div>
+        <p>${escHtml(e.message)}</p>
+      </div>
+    `;
   }
 }
 
