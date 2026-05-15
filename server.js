@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
+const zlib = require('zlib');
 
 const PORT = process.env.DEPLOY_RUN_PORT || 5000;
 
@@ -336,8 +337,28 @@ const server = http.createServer(async (req, res) => {
     fs.readFile(path.join(__dirname, 'index.html'), 'utf-8', (err, data) => {
       if (err) { res.writeHead(404); res.end('Not Found'); return; }
       const injected = data.replace('__API_TOKEN__', API_TOKEN);
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(injected);
+      
+      // 检查客户端是否支持gzip
+      const acceptEncoding = req.headers['accept-encoding'] || '';
+      if (acceptEncoding.includes('gzip')) {
+        // 使用gzip压缩
+        zlib.gzip(injected, (gzipErr, compressed) => {
+          if (gzipErr) {
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.end(injected);
+            return;
+          }
+          res.writeHead(200, {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Content-Encoding': 'gzip',
+            'Vary': 'Accept-Encoding'
+          });
+          res.end(compressed);
+        });
+      } else {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(injected);
+      }
     });
     return;
   }
