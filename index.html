@@ -469,19 +469,37 @@ html.dark .answer-level{background:var(--bg);color:var(--text2)}
 .login-loading-spinner{width:50px;height:50px;border:3px solid rgba(255,255,255,0.2);border-top-color:#ffd700;border-radius:50%;animation:spin 1s linear infinite}
 /* 繁星围着logo缓缓旋转 */
 .stars-wrapper{position:relative;z-index:2;display:flex;align-items:center;justify-content:center;flex-direction:column;margin-top:0vh;margin-bottom:10px}
-.stars-container{position:absolute;width:300px;height:300px;z-index:1;pointer-events:none;top:50%;left:50%;transform:translate(-50%,-50%)}
+.stars-container{position:absolute;width:600px;height:500px;z-index:1;pointer-events:none;top:50%;left:50%;transform:translate(-50%,-50%)}
 .login-logo-circle{position:relative;z-index:2;width:130px;height:130px;margin:0 auto;border-radius:50%;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.3),0 0 40px rgba(255,215,0,0.2);border:3px solid rgba(255,255,255,0.6);flex-shrink:0}
 .login-logo-circle img{width:100%;height:100%;object-fit:cover}
-/* 繁星动画 - 围绕中心缓缓旋转 */
-.star{position:absolute;top:50%;left:50%;--orbit-radius:85px;--duration:25s;--delay:0s;--twinkle-duration:3s;--twinkle-delay:0s;background:radial-gradient(circle at 30% 30%,#fff 0%,#ffeaa7 50%,#fdcb6e 100%);border-radius:50%;box-shadow:0 0 6px 1px rgba(255,255,255,0.6);animation:orbit var(--duration) linear var(--delay) infinite,twinkle var(--twinkle-duration) ease-in-out var(--twinkle-delay) infinite alternate;opacity:0.6}
+/* 繁星动画 - 椭圆轨道 + 呼吸效果 */
+.star{position:absolute;top:50%;left:50%;--orbit-a:85px;--orbit-b:65px;--duration:25s;--delay:0s;--twinkle-duration:3s;--twinkle-delay:0s;--scale-base:1;--scale-var:0.3;background:radial-gradient(circle at 30% 30%,#fff 0%,#ffeaa7 50%,#fdcb6e 100%);border-radius:50%;box-shadow:0 0 6px 1px rgba(255,255,255,0.6);animation:orbit-ellipse var(--duration) ease-in-out var(--delay) infinite,twinkle var(--twinkle-duration) ease-in-out var(--twinkle-delay) infinite alternate;opacity:0.6}
 .star-bright{background:radial-gradient(circle at 30% 30%,#fff 0%,#ffd700 40%,#ffb347 100%);box-shadow:0 0 8px 2px rgba(255,215,0,0.8),0 0 16px 4px rgba(255,215,0,0.4);opacity:0.8}
-.star-leader{background:radial-gradient(circle at 30% 30%,#fff 0%,#ffd700 20%,#ffec8b 50%,#ffd700 80%,#daa520 100%);box-shadow:0 0 12px 4px rgba(255,215,0,1),0 0 24px 8px rgba(255,215,0,0.6),0 0 36px 12px rgba(255,215,0,0.3);z-index:10;animation:orbit-leader var(--duration) linear infinite,twinkle 2s ease-in-out infinite alternate;opacity:0.95}
+.star-leader{background:radial-gradient(circle at 30% 30%,#fff 0%,#ffd700 20%,#ffec8b 50%,#ffd700 80%,#daa520 100%);box-shadow:0 0 12px 4px rgba(255,215,0,1),0 0 24px 8px rgba(255,215,0,0.6),0 0 36px 12px rgba(255,215,0,0.3);z-index:10;animation:orbit-ellipse-leader var(--duration) linear infinite,twinkle 2s ease-in-out infinite alternate;opacity:0.95}
 /* 不同颜色的星星 */
 .star:nth-child(3n){background:radial-gradient(circle at 30% 30%,#fff 0%,#a8d8ff 50%,#74b9ff 100%);box-shadow:0 0 6px 1px rgba(116,185,255,0.6)}
 .star:nth-child(5n){background:radial-gradient(circle at 30% 30%,#fff 0%,#b8e994 50%,#78e08f 100%);box-shadow:0 0 6px 1px rgba(120,224,143,0.6)}
 .star:nth-child(7n){background:radial-gradient(circle at 30% 30%,#fff 0%,#ffeaa7 50%,#f9ca24 100%);box-shadow:0 0 6px 1px rgba(249,202,36,0.6)}
-@keyframes orbit{0%{transform:rotate(0deg) translateX(var(--orbit-radius)) rotate(0deg);opacity:0.4}50%{opacity:0.7}100%{transform:rotate(360deg) translateX(var(--orbit-radius)) rotate(-360deg);opacity:0.4}}
-@keyframes orbit-leader{0%{transform:rotate(0deg) translateX(var(--orbit-radius)) rotate(0deg);opacity:0.9}100%{transform:rotate(360deg) translateX(var(--orbit-radius)) rotate(-360deg);opacity:1}}
+/* 椭圆轨道动画 + 大小变化 */
+@keyframes orbit-ellipse{
+  0%{transform:translateX(var(--orbit-a)) translateY(0) scale(calc(var(--scale-base) * (1 + var(--scale-var) * 0.5)));opacity:0.5}
+  12.5%{transform:translateX(calc(var(--orbit-a) * 0.707)) translateY(calc(var(--orbit-b) * -0.707)) scale(calc(var(--scale-base) * (1 + var(--scale-var) * 0.8)))}
+  25%{transform:translateX(0) translateY(calc(var(--orbit-b) * -1)) scale(calc(var(--scale-base) * (1 + var(--scale-var) * 1)));opacity:0.7}
+  37.5%{transform:translateX(calc(var(--orbit-a) * -0.707)) translateY(calc(var(--orbit-b) * -0.707)) scale(calc(var(--scale-base) * (1 + var(--scale-var) * 0.8)))}
+  50%{transform:translateX(calc(var(--orbit-a) * -1)) translateY(0) scale(calc(var(--scale-base) * (1 + var(--scale-var) * 0.5)));opacity:0.5}
+  62.5%{transform:translateX(calc(var(--orbit-a) * -0.707)) translateY(calc(var(--orbit-b) * 0.707)) scale(calc(var(--scale-base) * (1 + var(--scale-var) * 0.2)))}
+  75%{transform:translateX(0) translateY(var(--orbit-b)) scale(calc(var(--scale-base) * 0.9));opacity:0.7}
+  87.5%{transform:translateX(calc(var(--orbit-a) * 0.707)) translateY(calc(var(--orbit-b) * 0.707)) scale(calc(var(--scale-base) * (1 + var(--scale-var) * 0.2)))}
+  100%{transform:translateX(var(--orbit-a)) translateY(0) scale(calc(var(--scale-base) * (1 + var(--scale-var) * 0.5)));opacity:0.5}
+}
+/* 引领星椭圆轨道 - 更亮更稳 */
+@keyframes orbit-ellipse-leader{
+  0%{transform:translateX(var(--orbit-a)) translateY(0) scale(1);opacity:0.9}
+  25%{transform:translateX(0) translateY(calc(var(--orbit-b) * -1)) scale(1.1);opacity:1}
+  50%{transform:translateX(calc(var(--orbit-a) * -1)) translateY(0) scale(1);opacity:0.9}
+  75%{transform:translateX(0) translateY(var(--orbit-b)) scale(1.1);opacity:1}
+  100%{transform:translateX(var(--orbit-a)) translateY(0) scale(1);opacity:0.9}
+}
 @keyframes twinkle{0%{filter:brightness(0.6)}100%{filter:brightness(1.2)}}
 @media(prefers-reduced-motion:reduce){.star{animation:none;opacity:0.5}}
 .login-brand{padding-top:20px}
@@ -524,7 +542,7 @@ html.dark .answer-level{background:var(--bg);color:var(--text2)}
 .settings-bar{padding:8px 12px;gap:10px;font-size:0.75rem;margin-bottom:12px}
 .settings-bar .icon-btn{width:32px;height:32px}
 .stars-wrapper{margin-top:0vh}
-.stars-container{width:240px;height:240px}
+.stars-container{width:480px;height:400px}
 .login-logo-circle{width:105px;height:105px}
 }
 
@@ -2922,41 +2940,59 @@ function showConfetti() { /* animation removed */ }
 
 // ===== Login =====
 function renderLogin(errorMsg) {
-  // 生成繁星HTML - 围绕logo缓缓旋转
+  // 生成繁星HTML - 椭圆轨道 + 呼吸效果
   let starsHtml = '';
   
-  // 引领星 - 最亮最大的一颗，紧贴logo边框
+  // 引领星 - 最亮最大的一颗，贴着logo边框走椭圆轨道
   const isMobile = window.innerWidth <= 400;
   const leaderSize = isMobile ? 14 : 16;
-  const leaderOrbit = isMobile ? 52.5 : 65; // 移动端logo半径52.5，PC端半径65，贴着边框走
-  const leaderDuration = 25; // 缓缓旋转
-  starsHtml += `<div class="star star-leader" style="width:${leaderSize}px;height:${leaderSize}px;--orbit-radius:${leaderOrbit}px;--duration:${leaderDuration}s;--delay:0s"></div>`;
+  const leaderOrbitA = isMobile ? 55 : 68; // 椭圆长轴
+  const leaderOrbitB = isMobile ? 45 : 55; // 椭圆短轴
+  const leaderDuration = 30; // 缓缓旋转
+  starsHtml += `<div class="star star-leader" style="width:${leaderSize}px;height:${leaderSize}px;--orbit-a:${leaderOrbitA}px;--orbit-b:${leaderOrbitB}px;--duration:${leaderDuration}s;--delay:0s;--scale-base:1;--scale-var:0.1"></div>`;
   
-  // 繁星：198颗小星星（加上引领星共199颗），分布在多个轨道
+  // 繁星：198颗小星星（加上引领星共199颗），分布在多层椭圆轨道
   const totalStars = 199;
   for (let i = 2; i <= totalStars; i++) {
-    // 轨道层级：从引领星轨道外围开始分布（199颗星星分布在20层轨道）
-    const orbitLevel = Math.floor((i - 2) / 10) + 1; // 1-20层
-    const orbitBase = (isMobile ? 60 : 75) + orbitLevel * (isMobile ? 4 : 5); // 从外围开始，轨道间距更小
-    const orbitVariation = Math.random() * (isMobile ? 3 : 4);
-    const orbitRadius = Math.min(isMobile ? 120 : 150, orbitBase + orbitVariation);
+    // 轨道层级：内圈(75-120px)、中圈(120-200px)、外圈(200-300px)
+    const layer = Math.floor((i - 2) / 66); // 0=内圈, 1=中圈, 2=外圈
+    let orbitABase, orbitBBase;
+    
+    if (layer === 0) {
+      // 内圈：紧贴logo外围
+      orbitABase = (isMobile ? 70 : 90) + Math.random() * (isMobile ? 30 : 40);
+      orbitBBase = orbitABase * (0.7 + Math.random() * 0.2);
+    } else if (layer === 1) {
+      // 中圈：层次分明
+      orbitABase = (isMobile ? 110 : 150) + Math.random() * (isMobile ? 40 : 60);
+      orbitBBase = orbitABase * (0.65 + Math.random() * 0.2);
+    } else {
+      // 外圈：广阔星空
+      orbitABase = (isMobile ? 160 : 220) + Math.random() * (isMobile ? 50 : 80);
+      orbitBBase = orbitABase * (0.6 + Math.random() * 0.2);
+    }
     
     // 大小：大部分很小(2-6px)，少数稍大(6-10px)
     const isBright = Math.random() < 0.15; // 15%稍亮的星
     const sizeBase = isBright ? (6 + Math.random() * 4) : (2 + Math.random() * 3);
     
-    // 速度：全部缓慢旋转（20-40秒一圈）
-    const duration = 20 + Math.random() * 20;
+    // 速度：内圈快，外圈慢（模拟行星运动）
+    const duration = layer === 0 ? (15 + Math.random() * 10) : 
+                     layer === 1 ? (25 + Math.random() * 15) : 
+                     (40 + Math.random() * 20);
     
     // 随机起始位置
-    const delay = Math.random() * -30;
+    const delay = Math.random() * -40;
     
     // 随机闪烁
     const twinkleDuration = 2 + Math.random() * 3;
     const twinkleDelay = Math.random() * 5;
     
+    // 大小变化幅度：外圈变化更大
+    const scaleVar = layer === 0 ? 0.2 : layer === 1 ? 0.3 : 0.4;
+    
     const extraClass = isBright ? ' star-bright' : '';
-    starsHtml += `<div class="star${extraClass}" style="width:${sizeBase}px;height:${sizeBase}px;--orbit-radius:${orbitRadius}px;--duration:${duration}s;--delay:${delay}s;--twinkle-duration:${twinkleDuration}s;--twinkle-delay:${twinkleDelay}s"></div>`;
+    starsHtml += `<div class="star${extraClass}" style="width:${sizeBase}px;height:${sizeBase}px;--orbit-a:${orbitABase.toFixed(1)}px;--orbit-b:${orbitBBase.toFixed(1)}px;--duration:${duration.toFixed(1)}s;--delay:${delay.toFixed(1)}s;--twinkle-duration:${twinkleDuration.toFixed(1)}s;--twinkle-delay:${twinkleDelay.toFixed(1)}s;--scale-base:1;--scale-var:${scaleVar}"></div>`;
   }
   
   document.getElementById('app').innerHTML = `
