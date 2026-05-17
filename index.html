@@ -6237,9 +6237,8 @@ async function renderNotifySub() {
 
 async function renderLogsSub() {
   const container = document.getElementById('manageSubContent');
-  const result = await fetch('/api/log/list?page=1&limit=20');
-  const data = await result.json();
-  const list = (data.logs || []).map(log => `
+  const logs = await dbSelect('operation_logs', { order: ['created_at', false], limit: 20 });
+  const list = (logs || []).map(log => `
     <div class="card" style="margin-bottom:8px;padding:10px">
       <div style="display:flex;justify-content:space-between;margin-bottom:4px">
         <span class="tag tag-${log.user_type==='admin'?'blue':'green'}">${log.user_type==='admin'?'管理员':'学生'}</span>
@@ -7133,15 +7132,22 @@ async function startHomework(homeworkId) {
     const savedProgress = await loadHomeworkProgress(homeworkId);
     
     // 获取作业详情
-    const homework = await fetch(`/api/homework/get?id=${homeworkId}`).then(r => r.json());
-    if (homework.error) throw new Error(homework.error);
+    const homeworks = await dbSelect('homeworks', { eq: { id: homeworkId } });
+    const homework = homeworks[0];
+    if (!homework) throw new Error('作业不存在');
     
-    // 开始/继续作业
-    const record = await fetch('/api/homework/start', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ homework_id: homeworkId, student_id: currentUser.id })
-    }).then(r => r.json());
+    // 开始/继续作业 - 创建或更新作业记录
+    const existingRecords = await dbSelect('homework_records', { 
+      eq: { homework_id: homeworkId, student_id: currentUser.id } 
+    });
+    if (existingRecords.length === 0) {
+      await dbInsert('homework_records', {
+        homework_id: homeworkId,
+        student_id: currentUser.id,
+        status: 'in_progress',
+        started_at: new Date().toISOString()
+      });
+    }
     
     _currentStudentHomework = homework;
     
@@ -7167,7 +7173,8 @@ async function startHomework(homeworkId) {
       showToast('已恢复上次进度', 'info');
     } else {
       // 排除已答过的题
-      const answeredIds = record.question_ids || [];
+      const existingRecord = existingRecords[0];
+      const answeredIds = existingRecord?.question_ids || [];
       _homeworkQuestions = allQuestions.filter(q => !answeredIds.includes(q.id));
       
       // 如果题目不够，随机补充
@@ -7494,17 +7501,14 @@ async function submitHomeworkAnswer(qId, selected) {
   
   _homeworkAnswered[qId] = { selected, isCorrect };
   
-  // 提交到服务器
+  // 提交到服务器 - 使用 Supabase
   try {
-    await fetch('/api/homework/submit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        homework_id: _currentStudentHomework.id,
-        student_id: currentUser.id,
-        question_id: qId,
-        is_correct: isCorrect
-      })
+    await dbInsert('homework_records', {
+      homework_id: _currentStudentHomework.id,
+      student_id: currentUser.id,
+      question_id: qId,
+      is_correct: isCorrect,
+      user_answer: selected.join(',')
     });
     
     // 同时记录到 records 表
@@ -7535,9 +7539,11 @@ function nextHomeworkQuestion() {
 }
 
 async function renderHomeworkComplete() {
-  // 获取最终进度
+  // 获取最终进度 - 使用 Supabase
   try {
-    const progress = await fetch(`/api/homework/record-progress?homework_id=${_currentStudentHomework.id}&student_id=${currentUser.id}`).then(r => r.json());
+    const progress = await dbSelect('homework_records', {
+      where: { homework_id: _currentStudentHomework.id, student_id: currentUser.id }
+    });
     
     // 计算错题（使用 isCorrect 标记）
     const wrongQuestions = _homeworkQuestions.filter(q => {
@@ -10415,10 +10421,74 @@ async function loadRanking(period = 'today') {
   container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3)"><span class="spinner"></span> 加载排名...</div>';
   
   try {
-    const res = await fetch(`/api/daily-task/ranking?period=${period}&level=${currentLevel}&my_student_id=${currentUser.username}`, {
-      headers: { 'X-API-Token': API_TOKEN }
+    // 计算日期范围
+    const today = new Date();
+    let startDate, endDate;
+    if (period === 'today') {
+      startDate = endDate = today.toISOString().split('T')[0];
+    } else if (period === 'week') {
+      const weekStart = new Date(today);
+      weekStart.setDate(today.getDate() - today.getDay());
+      startDate = weekStart.toISOString().split('T')[0];
+      endDate = today.toISOString().split('T')[0];
+    } else if (period === 'month') {
+      startDate = today.toISOString().slice(0, 8) + '01';
+      endDate = today.toISOString().split('T')[0];
+    }
+    
+    // 查询答题记录计算排名
+    const { data: records, error } = await supabase
+      .from('records')
+      .select('student_id, is_correct, created_at')
+      .gte('created_at', startDate)
+      .lte('created_at', endDate + 'T23:59:59');
+    
+    if (error) throw error;
+    
+    // 按学生统计
+    const stats = {};
+    (records || []).forEach(r => {
+      if (!stats[r.student_id]) {
+        stats[r.student_id] = { total: 0, correct: 0 };
+      }
+      stats[r.student_id].total++;
+      if (r.is_correct) stats[r.student_id].correct++;
     });
-    const data = await res.json();
+    
+    // 获取学生信息
+    const studentIds = Object.keys(stats);
+    const { data: students } = await supabase
+      .from('students')
+      .select('id, username, nickname, level, cohort, xp, study_level')
+      .in('id', studentIds);
+    
+    const studentMap = {};
+    (students || []).forEach(s => {
+      studentMap[s.id] = s;
+    });
+    
+    // 生成排名
+    const rankings = Object.entries(stats)
+      .map(([id, s]) => ({
+        student_id: id,
+        username: studentMap[id]?.username,
+        nickname: studentMap[id]?.nickname || '未知',
+        level: studentMap[id]?.level,
+        cohort: studentMap[id]?.cohort,
+        xp: studentMap[id]?.xp,
+        study_level: studentMap[id]?.study_level,
+        total_questions: s.total,
+        correct: s.correct,
+        accuracy: s.total > 0 ? Math.round(s.correct / s.total * 100) : 0
+      }))
+      .sort((a, b) => b.total_questions - a.total_questions);
+    
+    // 找到我的排名
+    let myRank = null;
+    if (currentUser) {
+      myRank = rankings.findIndex(r => r.student_id === currentUser.id) + 1;
+      if (myRank === 0) myRank = null;
+    }
     
     const periodLabels = { today: '今日', week: '本周', month: '本月' };
     const periodBtns = ['today', 'week', 'month'].map(p => 
@@ -10430,14 +10500,14 @@ async function loadRanking(period = 'today') {
     `;
     
     // 我的排名
-    if (data.myRank) {
+    if (myRank) {
       html += `
         <div style="background:linear-gradient(135deg,var(--primary),#7c3aed);color:#fff;padding:10px 14px;border-radius:10px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
           <div style="display:flex;align-items:center;gap:8px">
             <span style="font-size:1.5rem">🏆</span>
             <div>
               <div style="font-weight:700">我的排名</div>
-              <div style="font-size:.75rem;opacity:.9">${periodLabels[period]}第 ${data.myRank} 名</div>
+              <div style="font-size:.75rem;opacity:.9">${periodLabels[period]}第 ${myRank} 名</div>
             </div>
           </div>
           <div style="text-align:right">
@@ -10449,11 +10519,11 @@ async function loadRanking(period = 'today') {
     }
     
     // 排名列表
-    if (data.rankings && data.rankings.length > 0) {
+    if (rankings.length > 0) {
       html += '<div style="display:flex;flex-direction:column;gap:6px">';
-      data.rankings.slice(0, 10).forEach((r, i) => {
+      rankings.slice(0, 10).forEach((r, i) => {
         const rankIcon = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}`;
-        const isMe = r.username === currentUser.username;
+        const isMe = r.student_id === currentUser?.id;
         html += `
           <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:${isMe ? 'var(--primary-light)' : 'var(--bg)'};border-radius:10px;border:${isMe ? '2px solid var(--primary)' : 'none'}">
             <div style="width:28px;text-align:center;font-weight:700;font-size:1.1rem">${rankIcon}</div>
@@ -10854,14 +10924,16 @@ let _systemSettings = null;
 
 async function loadSystemSettings() {
   try {
-    const res = await fetch('/api/system-settings-get', {
-      headers: { 'X-API-Token': API_TOKEN }
-    });
-    const data = await res.json();
-    if (data.success) {
-      _systemSettings = data.settings;
+    const { data, error } = await supabase
+      .from('system_settings')
+      .select('key, value');
+    if (!error && data) {
+      _systemSettings = {};
+      data.forEach(item => {
+        _systemSettings[item.key] = item.value;
+      });
     }
-    return _systemSettings;
+    return _systemSettings || {};
   } catch (e) {
     console.error('Load system settings error:', e);
     return {};
@@ -10870,16 +10942,10 @@ async function loadSystemSettings() {
 
 async function toggleAnswerLookup(enabled) {
   try {
-    const res = await fetch('/api/system-settings-update', {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'X-API-Token': API_TOKEN 
-      },
-      body: JSON.stringify({ key: 'answer_lookup_enabled', value: enabled })
-    });
-    const data = await res.json();
-    if (data.success) {
+    const { error } = await supabase
+      .from('system_settings')
+      .upsert({ key: 'answer_lookup_enabled', value: enabled });
+    if (!error) {
       showToast(enabled ? '答案快查功能已开启' : '答案快查功能已关闭');
     }
   } catch (e) {
@@ -11042,15 +11108,12 @@ async function submitHomeworkFinal() {
     const score = Math.round(correct / totalQuestions * 100);
     
     // 更新作业状态
-    await fetch('/api/homework/submit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-      body: JSON.stringify({
-        homework_id: _currentStudentHomework.id,
-        student_id: currentUser.id,
-        score,
-        answers: _homeworkAnswered
-      })
+    await supabase.from('homework_records').upsert({
+      homework_id: _currentStudentHomework.id,
+      student_id: currentUser.id,
+      score,
+      answers: _homeworkAnswered,
+      submitted_at: new Date().toISOString()
     });
     
     // 清除进度
@@ -11125,10 +11188,7 @@ async function renderEnrollmentPage(configId) {
   app.innerHTML = `<div class="login-page"><div class="login-card" style="text-align:center;padding:40px"><div style="font-size:2rem;margin-bottom:12px">⏳</div><h3>加载中...</h3></div></div>`;
   
   try {
-    const response = await fetch(`/api/enroll-config/get?id=${configId}`, {
-      headers: { 'X-API-Token': API_TOKEN }
-    });
-    const config = await response.json();
+    const { data: config, error } = await supabase.from('enroll_configs').select('*').eq('id', configId).single();
     
     if (!config || !config.id) {
       app.innerHTML = `<div class="login-page"><div class="login-card" style="text-align:center;padding:40px"><div style="font-size:2rem;margin-bottom:12px">❌</div><h3>报名不存在</h3><p style="color:var(--text2);margin-top:8px">该报名可能已被删除或关闭</p></div></div>`;
@@ -11210,19 +11270,48 @@ async function submitEnrollment(configId, autoSync) {
   if (!level) { showToast('请选择报考级别', 'error'); btn.disabled = false; btn.textContent = '提交报名'; return; }
   
   try {
-    const response = await fetch('/api/enroll-submit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-      body: JSON.stringify({ config_id: configId, name, phone, level, cohort })
-    });
-    const result = await response.json();
+    // 检查手机号是否已报名
+    const { data: existing } = await supabase.from('enrollments')
+      .select('id').eq('phone', phone).eq('config_id', configId).single();
     
-    if (result.error) {
-      showToast(result.error, 'error');
+    if (existing) {
+      showToast('该手机号已报名', 'error');
       btn.disabled = false;
       btn.textContent = '提交报名';
       return;
     }
+    
+    // 创建学生账号（如果不存在）
+    const { data: student } = await supabase.from('students')
+      .select('id').eq('username', phone).single();
+    
+    if (!student) {
+      await supabase.from('students').insert({
+        username: phone,
+        password: await hashPassword('123456'),
+        nickname: name,
+        level: level,
+        cohort: cohort || '未分配'
+      });
+    }
+    
+    // 创建报名记录
+    const { error: enrollError } = await supabase.from('enrollments').insert({
+      config_id: configId,
+      name: name,
+      phone: phone,
+      level: level,
+      cohort: cohort || '未分配'
+    });
+    
+    if (enrollError) {
+      showToast('报名失败: ' + enrollError.message, 'error');
+      btn.disabled = false;
+      btn.textContent = '提交报名';
+      return;
+    }
+    
+    const result = { success: true };
     
     if (autoSync) {
       // 自动同步模式：显示登录提示
@@ -11448,18 +11537,8 @@ async function sendBackupEmailNow() {
   showToast('正在生成备份并发送邮件...', 'info');
   
   try {
-    const res = await fetch('/api/backup-send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-      body: JSON.stringify({})
-    });
-    const data = await res.json();
-    
-    if (data.success) {
-      showToast('备份邮件发送成功！请查收邮箱', 'success');
-    } else {
-      showToast('发送失败: ' + (data.error || '未知错误'), 'error');
-    }
+    // GitHub Pages 不支持后端邮件功能
+    showToast('此功能需要后端服务支持，GitHub Pages 纯前端模式暂不可用', 'error');
   } catch (e) {
     showToast('发送失败: ' + e.message, 'error');
   }
@@ -11467,52 +11546,14 @@ async function sendBackupEmailNow() {
 
 // 从登录页面发送超级管理员密码到邮箱（无需登录）
 async function sendSuperPasswordFromLogin() {
-  // 弹出输入框，要求输入主管理员账号作为验证
-  const verifyCode = prompt('请输入主管理员账号进行验证：');
-  if (!verifyCode) return;
-  
-  showToast('正在验证并发送超级密码...', 'info');
-  
-  try {
-    const res = await fetch('/api/send-super-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-      body: JSON.stringify({ from_login: true, verify_code: verifyCode })
-    });
-    const data = await res.json();
-    
-    if (data.success) {
-      alert('✅ 超级密码已发送到邮箱 1027424321@qq.com\n\n请查收邮件获取超级密码。');
-    } else {
-      alert('❌ 发送失败: ' + (data.error || '未知错误'));
-    }
-  } catch (e) {
-    alert('❌ 发送失败: ' + e.message);
-  }
+  // GitHub Pages 不支持后端邮件功能
+  alert('此功能需要后端服务支持，GitHub Pages 纯前端模式暂不可用');
 }
 
 // 发送超级管理员密码到邮箱
 async function sendSuperPasswordToEmail() {
-  if (!confirm('确定要生成新的超级管理员密码并发送到邮箱吗？\n\n注意：生成新密码后，旧的超级密码将失效。')) return;
-  
-  showToast('正在生成并发送超级密码...', 'info');
-  
-  try {
-    const res = await fetch('/api/send-super-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-      body: JSON.stringify({ admin_id: currentAdmin ? currentAdmin.id : '' })
-    });
-    const data = await res.json();
-    
-    if (data.success) {
-      showToast('超级密码已发送到邮箱，请查收', 'success');
-    } else {
-      showToast('发送失败: ' + (data.error || '未知错误'), 'error');
-    }
-  } catch (e) {
-    showToast('发送失败: ' + e.message, 'error');
-  }
+  // GitHub Pages 不支持后端邮件功能
+  showToast('此功能需要后端服务支持，GitHub Pages 纯前端模式暂不可用', 'error');
 }
 
 // === Archive functions ===
@@ -11653,20 +11694,12 @@ async function doClearQuestions() {
   // 验证管理员密码（不更新session_id）
   const currentAdmin = JSON.parse(localStorage.getItem('xjAdmin') || '{}');
   
-  try {
-    const res = await fetch('/api/verify-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-      body: JSON.stringify({ table: 'admins', username: currentAdmin.username, password: pwd })
-    });
-    const data = await res.json();
-    
-    if (!data.valid) {
-      showToast('密码验证失败', 'error');
-      return;
-    }
-  } catch(e) {
-    showToast('验证失败', 'error');
+  // 使用 Supabase 验证密码
+  const adminHash = await hashPassword(pwd);
+  const admins = await dbSelect('admins', { select: ['id'], where: { username: currentAdmin.username, password: adminHash } });
+  
+  if (!admins || admins.length === 0) {
+    showToast('密码验证失败', 'error');
     return;
   }
   
@@ -13307,20 +13340,17 @@ async function saveMockExamHistory(correct, total) {
   if (!currentUser) return;
   
   try {
-    await fetch(`/api/daily-task/mock-history`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        student_id: currentUser.id,
-        level: currentLevel,
-        question_type: _mockExamConfig?.questionType || 'all',
-        question_source: _mockExamConfig?.questionSource || 'all',
-        question_count: total,
-        duration: _mockExamConfig?.duration || 60,
-        pass_rate: _mockExamConfig?.passRate || 60,
-        correct_count: correct,
-        total_xp: correct * XP_REWARDS.correct + XP_REWARDS.mock_exam
-      })
+    // 使用 Supabase 保存模拟考试历史
+    await dbInsert('mock_exam_history', {
+      student_id: currentUser.id,
+      level: currentLevel,
+      question_type: _mockExamConfig?.questionType || 'all',
+      question_source: _mockExamConfig?.questionSource || 'all',
+      question_count: total,
+      duration: _mockExamConfig?.duration || 60,
+      pass_rate: _mockExamConfig?.passRate || 60,
+      correct_count: correct,
+      total_xp: correct * XP_REWARDS.correct + XP_REWARDS.mock_exam
     });
   } catch (e) {
     console.error('保存模拟考试历史失败:', e);
@@ -13334,8 +13364,24 @@ async function loadMockHistory() {
   if (!currentUser) return;
   
   try {
-    const res = await fetch(`/api/daily-task/mock-history?student_id=${currentUser.id}&limit=10`);
-    _mockHistoryData = await res.json();
+    // 使用 Supabase 加载模拟考试历史
+    const list = await dbSelect('mock_exam_history', { 
+      where: { student_id: currentUser.id }, 
+      order: 'created_at', 
+      desc: true, 
+      limit: 10 
+    });
+    
+    // 计算统计数据
+    let stats = { total_exams: 0, avg_accuracy: 0, best_accuracy: 0 };
+    if (list && list.length > 0) {
+      stats.total_exams = list.length;
+      const accuracies = list.map(r => r.question_count > 0 ? (r.correct_count / r.question_count * 100) : 0);
+      stats.avg_accuracy = accuracies.reduce((a, b) => a + b, 0) / accuracies.length;
+      stats.best_accuracy = Math.max(...accuracies);
+    }
+    
+    _mockHistoryData = { list: list || [], stats };
   } catch (e) {
     console.error('加载模拟考试历史失败:', e);
     _mockHistoryData = { list: [], stats: {} };
