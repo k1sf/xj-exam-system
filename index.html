@@ -2395,31 +2395,43 @@ function cleanupInvalidQueueOps() {
 }
 
 setTimeout(() => {
-  // 清理无效操作
-  cleanupInvalidQueueOps();
-  
-  // 强制清理包含 records 表的 insert 操作（因为它们可能使用旧的 insert 而不是 upsert）
-  const queue = getOfflineQueue();
-  const cleanQueue = queue.filter(op => {
-    // 保留所有非 records 表的操作
-    if (op.table !== 'records') return true;
-    // 保留 update 和 delete 操作
-    if (op.type !== 'insert') return true;
-    // 移除 records 表的 insert 操作（这些应该使用 upsert）
-    console.warn('[OfflineQueue] removing old records insert op:', op.id);
-    return false;
-  });
-  
-  if (cleanQueue.length !== queue.length) {
-    saveOfflineQueue(cleanQueue);
-    console.log('[OfflineQueue] removed', queue.length - cleanQueue.length, 'old records insert operations');
+  // 彻底清除离线队列 - 因为架构已改变，旧的操作不再兼容
+  const oldQueue = getOfflineQueue();
+  if (oldQueue.length > 0) {
+    console.log('[OfflineQueue] 清除所有旧的离线操作，共', oldQueue.length, '条');
+    console.log('[OfflineQueue] 这些操作在旧架构中产生，不再兼容当前架构');
+    saveOfflineQueue([]);
   }
+  
+  // 清理 localStorage 中的其他旧数据
+  try {
+    // 清除可能包含旧数据的缓存
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith('_record_') || key.startsWith('_fav_') || key.startsWith('_sync_')) {
+        localStorage.removeItem(key);
+      }
+    });
+  } catch(e) {}
   
   updateSyncUI();
-  if (isOnline && getOfflineQueue().length > 0) {
-    setTimeout(() => processOfflineQueue(), 2000);
-  }
-}, 500);
+}, 100);
+
+// 提供全局清除离线队列的函数，用户可以在控制台调用
+window.__clearOfflineQueue = function() {
+  const queue = getOfflineQueue();
+  console.log('[ClearQueue] 清除离线队列，共', queue.length, '条操作');
+  saveOfflineQueue([]);
+  updateSyncUI();
+  console.log('[ClearQueue] 清除完成！');
+  showToast('离线队列已清除', 'success');
+};
+
+// 提供全局清除所有本地缓存的函数
+window.__clearAllCache = function() {
+  localStorage.clear();
+  console.log('[ClearCache] 所有本地缓存已清除');
+  showToast('所有本地缓存已清除，请刷新页面', 'success');
+};
 
 // ===== Fetch with Timeout =====
 const FETCH_TIMEOUT = 15000; // 15 seconds timeout
