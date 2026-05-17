@@ -2374,6 +2374,17 @@ function cleanupInvalidQueueOps() {
       }
     }
     
+    // Check select operations - check the select parameter for invalid columns
+    if (op.select && typeof op.select === 'string') {
+      const selectCols = op.select.split(',').map(s => s.trim().split('.')[0]);
+      for (const col of selectCols) {
+        if (tableInvalidCols.includes(col)) {
+          console.warn(`[OfflineQueue] removing select op with invalid ${op.table}.${col}:`, op.id);
+          return false;
+        }
+      }
+    }
+    
     return true;
   });
   
@@ -2384,7 +2395,26 @@ function cleanupInvalidQueueOps() {
 }
 
 setTimeout(() => {
+  // 清理无效操作
   cleanupInvalidQueueOps();
+  
+  // 强制清理包含 records 表的 insert 操作（因为它们可能使用旧的 insert 而不是 upsert）
+  const queue = getOfflineQueue();
+  const cleanQueue = queue.filter(op => {
+    // 保留所有非 records 表的操作
+    if (op.table !== 'records') return true;
+    // 保留 update 和 delete 操作
+    if (op.type !== 'insert') return true;
+    // 移除 records 表的 insert 操作（这些应该使用 upsert）
+    console.warn('[OfflineQueue] removing old records insert op:', op.id);
+    return false;
+  });
+  
+  if (cleanQueue.length !== queue.length) {
+    saveOfflineQueue(cleanQueue);
+    console.log('[OfflineQueue] removed', queue.length - cleanQueue.length, 'old records insert operations');
+  }
+  
   updateSyncUI();
   if (isOnline && getOfflineQueue().length > 0) {
     setTimeout(() => processOfflineQueue(), 2000);
@@ -2877,15 +2907,31 @@ async function dbSelect(table, opts = {}) {
   } finally { hideLoading(); }
 }
 
-async function dbInsert(table, rows) {
+async function dbInsert(table, rows, options = {}) {
   try {
     if (!Array.isArray(rows)) rows = [rows];
     let data = [];
     
+    // 某些表需要使用 upsert 避免重复键错误
+    const upsertTables = {
+      'records': 'student_id,question_id',
+      'homework_records': 'homework_id,student_id'
+    };
+    
     if (isSupabaseMode && supabase) {
-      const { data: result, error } = await supabase.from(table).insert(rows).select();
-      if (error) throw error;
-      data = result || [];
+      let query = supabase.from(table);
+      if (upsertTables[table] || options.upsert) {
+        const { data: result, error } = await query.upsert(rows, {
+          onConflict: options.onConflict || upsertTables[table],
+          ...options
+        }).select();
+        if (error) throw error;
+        data = result || [];
+      } else {
+        const { data: result, error } = await query.insert(rows).select();
+        if (error) throw error;
+        data = result || [];
+      }
     } else {
       const res = await fetchWithTimeout(`${API_BASE}/insert`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify({ table, rows }) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
