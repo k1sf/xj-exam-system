@@ -2242,6 +2242,13 @@ async function processOfflineQueue() {
         }
       }
     } catch(e) {
+      // Skip operations that would fail permanently (column/table does not exist)
+      const skipErrors = ['does not exist', 'not found', 'column'];
+      if (skipErrors.some(se => (e.message || '').toLowerCase().includes(se))) {
+        console.warn('[OfflineQueue] skipping permanently failed op (invalid column/table):', op.id, e.message);
+        continue; // Don't add to failed queue
+      }
+      
       op.retryCount = (op.retryCount || 0) + 1;
       if (op.retryCount < 5) {
         failed.push(op);
@@ -2314,7 +2321,33 @@ function updateSyncUI() {
 }
 
 // --- Init: process pending queue on page load ---
+// Clean up old queue items with invalid columns (e.g., homeworks.question_ids)
+function cleanupInvalidQueueOps() {
+  const queue = getOfflineQueue();
+  if (!queue.length) return;
+  
+  // Filter out operations that reference invalid columns
+  const validQueue = queue.filter(op => {
+    if (op.table === 'homeworks' && op.rows) {
+      // Check if any row contains question_ids (which doesn't exist in homeworks table)
+      for (const row of op.rows) {
+        if (row.question_ids !== undefined) {
+          console.warn('[OfflineQueue] removing op with invalid homeworks.question_ids:', op.id);
+          return false;
+        }
+      }
+    }
+    return true;
+  });
+  
+  if (validQueue.length !== queue.length) {
+    saveOfflineQueue(validQueue);
+    console.log('[OfflineQueue] cleaned up', queue.length - validQueue.length, 'invalid operations');
+  }
+}
+
 setTimeout(() => {
+  cleanupInvalidQueueOps();
   updateSyncUI();
   if (isOnline && getOfflineQueue().length > 0) {
     setTimeout(() => processOfflineQueue(), 2000);
