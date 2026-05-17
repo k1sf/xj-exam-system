@@ -7317,10 +7317,9 @@ async function startHomework(homeworkId) {
       const { error } = await supabase.from('homework_records').upsert({
         homework_id: homeworkId,
         student_id: currentUser.id,
-        status: 'in_progress',
-        started_at: new Date().toISOString()
+        is_completed: false
       }, { onConflict: 'homework_id,student_id' });
-      if (error) console.error('[startStudentHomework] upsert 失败:', error);
+      if (error) console.error('[startHomework] upsert 失败:', error);
     }
     
     _currentStudentHomework = homework;
@@ -7346,7 +7345,10 @@ async function startHomework(homeworkId) {
       
       showToast('已恢复上次进度', 'info');
     } else {
-      // 排除已答过的题
+      // 排除已答过的题 - 查询已有作业记录
+      const existingRecords = await dbSelect('homework_records', {
+        eq: { homework_id: homeworkId, student_id: currentUser.id }
+      });
       const existingRecord = existingRecords[0];
       const answeredIds = existingRecord?.question_ids || [];
       _homeworkQuestions = allQuestions.filter(q => !answeredIds.includes(q.id));
