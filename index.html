@@ -1730,13 +1730,23 @@ async function flushRecordBuffer() {
 // ===== Cloud Sync (Unified) =====
 // 云端同步：将本地缓冲数据同步到云端
 async function cloudSync() {
-  if (!currentUser) return;
+  if (!currentUser || !supabase) return;
   
-  // 同步答题记录
+  // 同步答题记录（使用 upsert 避免重复）
   if (_recordBuffer.length > 0) {
     const batch = _recordBuffer.splice(0, _recordBuffer.length);
     try {
-      await dbInsert('records', batch);
+      // 直接使用 Supabase upsert，避免重复记录
+      const { error } = await supabase.from('records').upsert(batch, { 
+        onConflict: 'student_id,question_id',
+        ignoreDuplicates: false 
+      });
+      if (error) {
+        _recordBuffer.unshift(...batch);
+        console.warn('cloudSync records error:', error);
+      } else {
+        console.log(`[CloudSync] 同步了 ${batch.length} 条答题记录`);
+      }
     } catch(e) {
       _recordBuffer.unshift(...batch);
       console.warn('cloudSync records error:', e);
@@ -1812,42 +1822,56 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
-// 页面关闭时尝试同步（sendBeacon 作为辅助）
+// 页面关闭时同步数据到 Supabase
 window.addEventListener('beforeunload', () => {
-  // 先保存本地数据（确保即使 sendBeacon 失败也有备份）
+  // 保存本地数据作为备份
   saveLocalData();
   
-  // 尝试用 sendBeacon 同步（不一定成功）
-  const beaconUrl = (endpoint) => `${API_BASE}${endpoint}?token=${encodeURIComponent(API_TOKEN)}`;
-  if (_recordBuffer.length) {
-    const batch = [..._recordBuffer];
-    const body = JSON.stringify({ table: 'records', rows: batch });
-    navigator.sendBeacon && navigator.sendBeacon(beaconUrl('/insert'), body);
-  }
-  if (Object.keys(_favBuffer).length) {
-    const updates = Object.values(_favBuffer);
-    for (const u of updates) {
-      const body = JSON.stringify({ table: 'records', data: { is_fav: u.is_fav }, match: { id: u.id } });
-      navigator.sendBeacon && navigator.sendBeacon(beaconUrl('/update'), body);
-    }
-  }
-  // XP sendBeacon: 使用增量模式，避免重复累加
-  if (_pendingXp > 0 && currentUser) {
-    // 标记 XP 已发送，防止 cloudSync 成功后再次发送
-    const xpToSend = _pendingXp;
-    // XP 更新通过 sendBeacon（使用增量值，服务端需要支持或用绝对值）
-    const body = JSON.stringify({ 
-      table: 'students', 
-      data: { xp: (currentUser.xp || 0) + xpToSend }, 
-      match: { id: currentUser.id } 
-    });
-    const sent = navigator.sendBeacon && navigator.sendBeacon(beaconUrl('/update'), body);
-    if (sent) {
-      // sendBeacon 成功加入队列，清除待发送 XP
-      _pendingXp = 0;
-    }
+  // 使用 cloudSync 同步到 Supabase（同步调用）
+  if (currentUser && (_recordBuffer.length || Object.keys(_favBuffer).length || _pendingXp > 0)) {
+    // 使用 fetch 同步发送（keepalive 确保页面关闭后仍能发送）
+    syncImmediately();
   }
 });
+
+// 立即同步函数（用于 beforeunload）
+async function syncImmediately() {
+  if (!supabase || !currentUser) return;
+  
+  try {
+    // 同步答题记录
+    if (_recordBuffer.length) {
+      const batch = [..._recordBuffer];
+      for (const record of batch) {
+        await supabase.from('records').upsert(record, { onConflict: 'student_id,question_id' });
+      }
+      _recordBuffer = [];
+    }
+    
+    // 同步收藏状态
+    if (Object.keys(_favBuffer).length) {
+      const updates = Object.values(_favBuffer);
+      for (const u of updates) {
+        await supabase.from('records').update({ is_fav: u.is_fav }).eq('id', u.id);
+      }
+      _favBuffer = {};
+    }
+    
+    // 同步 XP
+    if (_pendingXp > 0) {
+      await supabase.from('students').update({ xp: (currentUser.xp || 0) + _pendingXp }).eq('id', currentUser.id);
+      currentUser.xp = (currentUser.xp || 0) + _pendingXp;
+      _pendingXp = 0;
+    }
+    
+    // 清除本地缓存（同步成功后）
+    localStorage.removeItem('xj_records');
+    localStorage.removeItem('xj_favs');
+    localStorage.removeItem('xj_xp');
+  } catch (e) {
+    console.error('syncImmediately error:', e);
+  }
+}
 
 // ===== Global Sync State & Smart Sync System =====
 // 全局同步状态管理
