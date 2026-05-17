@@ -1547,6 +1547,7 @@ let btnSaveLoading = false;
 // Accumulates practice records in memory, flushes to DB periodically or on trigger
 const _recordBuffer = [];
 let _recordBufferTimer = null;
+let _recordBufferSyncTimer = null; // 短延迟同步定时器
 const RECORD_BUFFER_FLUSH_INTERVAL = 600000; // 10分钟定时同步（减少云端请求）
 const RECORD_BUFFER_MAX_SIZE = 50; // 缓冲区满50条才刷新（减少同步次数）
 let _favBuffer = {}; // { recordId: { id, is_fav } } - deduped fav updates
@@ -1673,7 +1674,7 @@ function mergeLocalData(localData) {
 }
 
 function bufferFavUpdate(id, isFav, questionId) {
-  _favBuffer[id] = { id, is_fav: isFav, question_id: questionId };
+  _favBuffer[id] = { id, is_fav: isFav, question_id: parseInt(questionId) };
   // 不再定时同步，仅保存到本地持久化
   saveLocalData();
 }
@@ -1718,8 +1719,25 @@ function bufferRecord(record) {
   cacheUpsertAnywhere('records', record, r => r.student_id === record.student_id && r.question_id === record.question_id);
   // 保存到本地持久化（防止关闭浏览器丢失）
   saveLocalData();
-  // 缓冲区满时才触发云端同步
+  // 保存练习进度（防止刷新丢失）
+  savePracticeProgress();
+  // 更新错题集缓存（用于实时显示）
+  if (!record.is_correct) {
+    _wrongQuestions = _wrongQuestions || [];
+    const existingIdx = _wrongQuestions.findIndex(q => q.question_id === record.question_id);
+    if (existingIdx === -1) {
+      _wrongQuestions.push({ question_id: record.question_id, is_correct: false });
+    }
+  }
+  // 设置短延迟同步定时器（5秒后同步，避免频繁请求）
+  if (_recordBufferSyncTimer) clearTimeout(_recordBufferSyncTimer);
+  _recordBufferSyncTimer = setTimeout(() => {
+    cloudSync();
+    _recordBufferSyncTimer = null;
+  }, 5000);
+  // 缓冲区满时立即触发云端同步
   if (_recordBuffer.length >= RECORD_BUFFER_MAX_SIZE) {
+    if (_recordBufferSyncTimer) { clearTimeout(_recordBufferSyncTimer); _recordBufferSyncTimer = null; }
     cloudSync();
   }
 }
@@ -2081,6 +2099,8 @@ function refreshCurrentView() {
         // 强制重新加载题目和收藏状态
         practiceQuestions = null;
         practiceAnswered = {};
+        _favStatusByQId = {}; // 重置收藏状态缓存，让 switchPracticeMode 重新从数据库加载
+        _wrongQuestions = []; // 重置错题缓存
         renderPractice(); 
         break;
       case 'exam': renderStudentExam(); break;
@@ -8688,6 +8708,25 @@ async function switchPracticeMode(mode) {
   }
   const allQ = allQuestions;
 
+  // 从数据库加载收藏状态（如果全局缓存为空或数据过旧）
+  if (Object.keys(_favStatusByQId).length === 0 && currentUser) {
+    console.log('[switchPracticeMode] 从数据库加载收藏状态...');
+    try {
+      const favRecords = await dbSelect('records', {
+        select: ['question_id', 'is_fav'],
+        eq: { student_id: currentUser.username, is_fav: true }
+      });
+      if (favRecords && favRecords.length > 0) {
+        favRecords.forEach(r => {
+          _favStatusByQId[String(r.question_id)] = true;
+        });
+        console.log(`[switchPracticeMode] 已加载 ${favRecords.length} 个收藏状态`);
+      }
+    } catch(e) {
+      console.warn('[switchPracticeMode] 加载收藏状态失败:', e);
+    }
+  }
+  
   // 从全局收藏状态缓存获取（toggleFav 已更新）
   // _favStatusByQId 是跨模式共享的，切换模式不会丢失
   const localFavStatus = { ..._favStatusByQId };
@@ -8876,9 +8915,9 @@ function answerPractice(qId, letter) {
   const isCorrect = checkAnswer(letter, q.answer, q.type);
   practiceAnswered[actualQId] = { answer: letter, isCorrect, isFav: practiceAnswered[actualQId]?.isFav || false };
   
-  // 保存答题记录（保留现有收藏状态）
+  // 保存答题记录（保留现有收藏状态）- 使用数字类型的 question_id
   const currentFav = practiceAnswered[actualQId]?.isFav || false;
-  bufferRecord({ student_id: currentUser.username, question_id: actualQId, is_correct: isCorrect, user_answer: letter, is_fav: currentFav });
+  bufferRecord({ student_id: currentUser.username, question_id: parseInt(actualQId), is_correct: isCorrect, user_answer: letter, is_fav: currentFav });
   
   // 更新错题掌握度
   updateWrongMastery(actualQId, isCorrect);
@@ -8905,9 +8944,9 @@ function confirmMultiAnswer(qId) {
   practiceAnswered[actualQId] = { answer, isCorrect, isFav: practiceAnswered[actualQId]?.isFav || false };
   delete practiceMultiSelected[actualQId];
   
-  // 保存答题记录（保留现有收藏状态）
+  // 保存答题记录（保留现有收藏状态）- 使用数字类型的 question_id
   const currentFav = practiceAnswered[actualQId]?.isFav || false;
-  bufferRecord({ student_id: currentUser.username, question_id: actualQId, is_correct: isCorrect, user_answer: answer, is_fav: currentFav });
+  bufferRecord({ student_id: currentUser.username, question_id: parseInt(actualQId), is_correct: isCorrect, user_answer: answer, is_fav: currentFav });
   
   // 更新错题掌握度
   updateWrongMastery(actualQId, isCorrect);
@@ -9020,15 +9059,23 @@ async function toggleFav(qId) {
     }
   } else {
     // 新建收藏记录，进入缓冲区统一处理
-    const newRecord = { student_id: currentUser.username, question_id: qIdStr, is_correct: false, user_answer: '', is_fav: true };
+    const newRecord = { student_id: currentUser.username, question_id: qIdNum, is_correct: false, user_answer: '', is_fav: true };
     _recordBuffer.push(newRecord);
     // 更新全局收藏状态缓存
     _favStatusByQId[qIdStr] = true;
     if (!practiceAnswered[qIdStr]) practiceAnswered[qIdStr] = {};
     practiceAnswered[qIdStr].isFav = true;
     addXp(XP_REWARDS.fav, '收藏');
+    // 保存到本地
+    saveLocalData();
     // 立即刷新卡片以更新收藏按钮状态
     renderPracticeCard();
+    // 设置短延迟同步
+    if (_recordBufferSyncTimer) clearTimeout(_recordBufferSyncTimer);
+    _recordBufferSyncTimer = setTimeout(() => {
+      cloudSync();
+      _recordBufferSyncTimer = null;
+    }, 5000);
     if (_recordBuffer.length >= RECORD_BUFFER_MAX_SIZE) flushRecordBuffer();
   }
 }
