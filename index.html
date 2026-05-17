@@ -1774,8 +1774,10 @@ async function flushRecordBuffer() {
       }
       console.log(`[flushRecordBuffer] 同步成功: ${successCount}/${batch.length}`);
     } else {
-      // 降级到 insert（旧模式）
-      await dbInsert('records', batch);
+      // supabase 不可用时，跳过同步（保留在缓冲区）
+      console.warn('[flushRecordBuffer] supabase 不可用，跳过同步');
+      _recordBuffer.unshift(...batch);
+      return;
     }
     saveLocalData(); // 更新本地数据（清空已同步的记录）
   } catch(e) {
@@ -7310,17 +7312,15 @@ async function startHomework(homeworkId) {
     const homework = homeworks[0];
     if (!homework) throw new Error('作业不存在');
     
-    // 开始/继续作业 - 创建或更新作业记录
-    const existingRecords = await dbSelect('homework_records', { 
-      eq: { homework_id: homeworkId, student_id: currentUser.id } 
-    });
-    if (existingRecords.length === 0) {
-      await dbInsert('homework_records', {
+    // 开始/继续作业 - 创建或更新作业记录（使用 upsert 避免重复）
+    if (supabase) {
+      const { error } = await supabase.from('homework_records').upsert({
         homework_id: homeworkId,
         student_id: currentUser.id,
         status: 'in_progress',
         started_at: new Date().toISOString()
-      });
+      }, { onConflict: 'homework_id,student_id' });
+      if (error) console.error('[startStudentHomework] upsert 失败:', error);
     }
     
     _currentStudentHomework = homework;
@@ -7677,13 +7677,30 @@ async function submitHomeworkAnswer(qId, selected) {
   
   // 提交到服务器 - 使用 Supabase
   try {
-    await dbInsert('homework_records', {
-      homework_id: _currentStudentHomework.id,
-      student_id: currentUser.id,
-      question_id: qId,
-      is_correct: isCorrect,
-      user_answer: selected.join(',')
-    });
+    // 更新作业记录（将题目ID添加到已答题列表）
+    if (supabase) {
+      // 获取当前记录
+      const { data: existingRecord } = await supabase.from('homework_records')
+        .select('question_ids, total_count, correct_count')
+        .eq('homework_id', _currentStudentHomework.id)
+        .eq('student_id', currentUser.id)
+        .single();
+      
+      const existingIds = existingRecord?.question_ids || [];
+      if (!existingIds.includes(parseInt(qId))) {
+        const newIds = [...existingIds, parseInt(qId)];
+        const newTotal = (existingRecord?.total_count || 0) + 1;
+        const newCorrect = (existingRecord?.correct_count || 0) + (isCorrect ? 1 : 0);
+        
+        const { error } = await supabase.from('homework_records').update({
+          question_ids: newIds,
+          total_count: newTotal,
+          correct_count: newCorrect
+        }).eq('homework_id', _currentStudentHomework.id).eq('student_id', currentUser.id);
+        
+        if (error) console.error('[submitHomeworkAnswer] 更新作业记录失败:', error);
+      }
+    }
     
     // 同时记录到 records 表（使用 upsert 避免重复）
     if (supabase) {
@@ -7695,7 +7712,7 @@ async function submitHomeworkAnswer(qId, selected) {
         exam_id: null,
         is_fav: false
       }, { onConflict: 'student_id,question_id' });
-      if (error) console.error('[submitHomeworkAnswer] upsert 失败:', error);
+      if (error) console.error('[submitHomeworkAnswer] records upsert 失败:', error);
     }
     
     // 加 XP
@@ -9951,13 +9968,17 @@ async function submitExamAnswers() {
   // 使用 upsert 避免重复键错误（考试记录也使用 upsert 更新）
   if (supabase) {
     for (const rec of records) {
-      const { error } = await supabase.from('records').upsert(rec, { 
-        onConflict: 'student_id,question_id' 
-      });
-      if (error) console.error('[submitExamAnswers] upsert 失败:', error, rec);
+      try {
+        const { error } = await supabase.from('records').upsert(rec, { 
+          onConflict: 'student_id,question_id' 
+        });
+        if (error) console.error('[submitExamAnswers] upsert 失败:', error, rec);
+      } catch(e) {
+        console.error('[submitExamAnswers] upsert 异常:', e, rec);
+      }
     }
   } else {
-    await dbInsert('records', records);
+    console.warn('[submitExamAnswers] supabase 不可用，跳过记录保存');
   }
   
   // 更新错题掌握度（非快捷考试访客）
