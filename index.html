@@ -2212,12 +2212,26 @@ async function processOfflineQueue() {
   isSyncing = true;
   updateSyncUI();
 
+  // Tables that need upsert instead of insert
+  const upsertTables = {
+    'records': 'student_id,question_id',
+    'homework_records': 'homework_id,student_id'
+  };
+
   const failed = [];
   for (const op of queue) {
     try {
       if (op.type === 'insert') {
-        const { error } = await supabase.from(op.table).insert(op.rows);
-        if (error) throw error;
+        // Use upsert for tables with unique constraints
+        if (upsertTables[op.table]) {
+          const { error } = await supabase.from(op.table).upsert(op.rows, {
+            onConflict: upsertTables[op.table]
+          });
+          if (error) throw error;
+        } else {
+          const { error } = await supabase.from(op.table).insert(op.rows);
+          if (error) throw error;
+        }
       } else if (op.type === 'update') {
         let query = supabase.from(op.table).update(op.data);
         for (const [key, value] of Object.entries(op.match)) {
@@ -2242,10 +2256,10 @@ async function processOfflineQueue() {
         }
       }
     } catch(e) {
-      // Skip operations that would fail permanently (column/table does not exist)
-      const skipErrors = ['does not exist', 'not found', 'column'];
+      // Skip operations that would fail permanently (column/table does not exist, duplicate key)
+      const skipErrors = ['does not exist', 'not found', 'column', 'duplicate key'];
       if (skipErrors.some(se => (e.message || '').toLowerCase().includes(se))) {
-        console.warn('[OfflineQueue] skipping permanently failed op (invalid column/table):', op.id, e.message);
+        console.warn('[OfflineQueue] skipping permanently failed op:', op.id, e.message);
         continue; // Don't add to failed queue
       }
       
@@ -2326,17 +2340,40 @@ function cleanupInvalidQueueOps() {
   const queue = getOfflineQueue();
   if (!queue.length) return;
   
+  // Invalid columns for each table
+  const invalidColumns = {
+    'homeworks': ['question_ids'],  // homeworks table doesn't have question_ids column
+    'homework_records': ['status', 'started_at', 'completed'],  // homework_records table doesn't have these columns
+    'records': []  // records table is OK
+  };
+  
   // Filter out operations that reference invalid columns
   const validQueue = queue.filter(op => {
-    if (op.table === 'homeworks' && op.rows) {
-      // Check if any row contains question_ids (which doesn't exist in homeworks table)
+    const tableInvalidCols = invalidColumns[op.table] || [];
+    if (tableInvalidCols.length === 0) return true;
+    
+    // Check insert operations
+    if (op.rows) {
       for (const row of op.rows) {
-        if (row.question_ids !== undefined) {
-          console.warn('[OfflineQueue] removing op with invalid homeworks.question_ids:', op.id);
+        for (const col of tableInvalidCols) {
+          if (row[col] !== undefined) {
+            console.warn(`[OfflineQueue] removing op with invalid ${op.table}.${col}:`, op.id);
+            return false;
+          }
+        }
+      }
+    }
+    
+    // Check update operations
+    if (op.data) {
+      for (const col of tableInvalidCols) {
+        if (op.data[col] !== undefined) {
+          console.warn(`[OfflineQueue] removing op with invalid ${op.table}.${col}:`, op.id);
           return false;
         }
       }
     }
+    
     return true;
   });
   
