@@ -1211,6 +1211,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .homework-admin-card .card-btn.primary{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border:none}
 .homework-admin-card .card-btn.primary:hover{opacity:.9}
 </style>
+<!-- Supabase SDK for GitHub Pages -->
+<script src="https://unpkg.com/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
 </head>
 <body>
 <div id="app"></div>
@@ -1349,6 +1351,13 @@ let currentUser = null;   // student object or null
 let currentAdmin = null;  // admin object (with is_master) or null
 let allStudents = [];
 const API_TOKEN = 'xj_exam_system_api_token_2024_fixed';  // Server injects token on page load
+const API_BASE = '/api';  // Fallback for non-Supabase mode
+
+// ===== Supabase Configuration (GitHub Pages Mode) =====
+const SUPABASE_URL = 'https://br-jolly-tahr-31ec8190.supabase2.aidap-global.cn-beijing.volces.com';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjMzNTg5NzUyMzYsInJvbGUiOiJhbm9uIn0.IRMuafXO5mnHyM-TDi6EnQafegbR-t5D_V-b-7pSJ3c';
+let supabase = null;  // Will be initialized after SDK loads
+let isSupabaseMode = false;  // Flag to indicate Supabase mode
 let allQuestions = [];
 let allExams = [];
 let practiceQuestions = [];
@@ -1484,16 +1493,18 @@ async function flushXp() {
   }
 }
 
-function flushXpSync() {
-  // Synchronous flush for beforeunload - uses fetch keepalive
+async function flushXpSync() {
+  // Synchronous flush for beforeunload - uses Supabase directly
   if (_pendingXp <= 0 || !currentUser) return;
   const delta = _pendingXp;
   _pendingXp = 0;
   try {
     const newXp = (currentUser.xp || 0);
     const newLv = levelFromXp(newXp);
-    const body = { table: 'students', data: { xp: newXp, study_level: newLv }, match: { id: currentUser.id } };
-    fetch('/api/update', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify(body), keepalive: true });
+    // Use Supabase for XP update
+    if (isSupabaseMode && supabase) {
+      await dbUpdate('students', { data: { xp: newXp, study_level: newLv }, eq: { id: currentUser.id } });
+    }
   } catch(e) { _pendingXp += delta; }
 }
 function showXpFloat(amount, reason) {
@@ -2036,9 +2047,9 @@ function removeFromQueue(opId) {
   updateSyncUI();
 }
 
-// --- Process Queue ---
+// --- Process Queue (Supabase version) ---
 async function processOfflineQueue() {
-  if (isSyncing || !isOnline) return;
+  if (isSyncing || !isOnline || !supabase) return;
   const queue = getOfflineQueue();
   if (!queue.length) return;
 
@@ -2048,29 +2059,31 @@ async function processOfflineQueue() {
   const failed = [];
   for (const op of queue) {
     try {
-      let res;
-      const body = { table: op.table };
       if (op.type === 'insert') {
-        body.rows = op.rows;
-        res = await fetch(`${API_BASE}/insert`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify(body) });
+        const { error } = await supabase.from(op.table).insert(op.rows);
+        if (error) throw error;
       } else if (op.type === 'update') {
-        body.data = op.data;
-        body.match = op.match;
-        res = await fetch(`${API_BASE}/update`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify(body) });
-      } else if (op.type === 'delete') {
-        body.match = op.match;
-        res = await fetch(`${API_BASE}/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify(body) });
-      }
-      if (res && !res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        // Skip operations that would fail permanently (e.g., already deleted, duplicate)
-        const skipErrors = ['does not exist', 'already exists', 'violates unique', 'not found'];
-        const errMsg = (errData.error || '').toLowerCase();
-        if (skipErrors.some(se => errMsg.includes(se))) {
-          console.warn('[OfflineQueue] skipping permanently failed op:', op.id, errData.error);
-          continue;
+        let query = supabase.from(op.table).update(op.data);
+        for (const [key, value] of Object.entries(op.match)) {
+          query = query.eq(key, value);
         }
-        throw new Error(errData.error || `HTTP ${res.status}`);
+        const { error } = await query;
+        if (error) throw error;
+      } else if (op.type === 'delete') {
+        let query = supabase.from(op.table).delete();
+        for (const [key, value] of Object.entries(op.match)) {
+          query = query.eq(key, value);
+        }
+        const { error } = await query;
+        if (error) {
+          // Skip operations that would fail permanently
+          const skipErrors = ['does not exist', 'not found'];
+          if (skipErrors.some(se => error.message.toLowerCase().includes(se))) {
+            console.warn('[OfflineQueue] skipping permanently failed op:', op.id, error.message);
+            continue;
+          }
+          throw error;
+        }
       }
     } catch(e) {
       op.retryCount = (op.retryCount || 0) + 1;
@@ -2084,7 +2097,6 @@ async function processOfflineQueue() {
   }
 
   saveOfflineQueue(failed);
-  // Clear read cache only for affected tables after sync
   const syncedTables = [...new Set(queue.map(op => op.table))];
   syncedTables.forEach(t => cacheClearTable(t));
   isSyncing = false;
@@ -2507,8 +2519,25 @@ function clearLogin() {
   flushRecordBuffer(); // Flush any pending practice records
 }
 
+// ===== Supabase Initialization =====
+async function initSupabase() {
+  try {
+    if (!window.supabase) {
+      throw new Error('Supabase SDK not loaded');
+    }
+    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    isSupabaseMode = true;
+    console.log('Supabase initialized successfully');
+    return true;
+  } catch (e) {
+    console.error('Failed to initialize Supabase:', e);
+    isSupabaseMode = false;
+    return false;
+  }
+}
+
 // ===== API Layer (with cache, loading, error handling) =====
-const API_BASE = '/api';
+// API_BASE is now used as fallback only
 
 async function dbSelect(table, opts = {}) {
   // cacheOnly: return cached data without hitting cloud (for tab switches)
@@ -2519,32 +2548,81 @@ async function dbSelect(table, opts = {}) {
       allCached.sort((a, b) => (b[1].ts || 0) - (a[1].ts || 0));
       return allCached[0][1].data || [];
     }
-    return null; // No cache available
+    return null;
   }
-  // cacheBypass: skip cache, always hit cloud
+  
   const cacheKey = opts.cacheBypass ? null : `sel_${table}_${JSON.stringify(opts)}`;
   if (cacheKey) {
     const cached = cacheGet(cacheKey);
     if (cached) return cached;
   }
 
-  // SWR: if we have stale (expired) cache, return it immediately and refresh in background
-  if (cacheKey) {
-    const staleEntry = _cache[cacheKey];
-    if (staleEntry && Array.isArray(staleEntry.data)) {
-      // Return stale data immediately, refresh in background
-      _refreshInBackground(cacheKey, table, opts);
-      return staleEntry.data;
-    }
-  }
-
   showLoading();
   try {
-    const body = { table, filter: opts.eq || opts.filter || undefined, order: opts.order || ['id', false], limit: opts.limit, offset: opts.offset, select: opts.select, gte: opts.gte, gt: opts.gt, lte: opts.lte, lt: opts.lt };
-    const res = await fetchWithTimeout(`${API_BASE}/select`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify(body) });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    let data = await res.json();
-    if (data.error) throw new Error(data.error);
+    let data = [];
+    
+    if (isSupabaseMode && supabase) {
+      // Use Supabase SDK
+      let query = supabase.from(table).select(opts.select ? (Array.isArray(opts.select) ? opts.select.join(',') : opts.select) : '*');
+      
+      // Apply filters
+      if (opts.eq) {
+        Object.entries(opts.eq).forEach(([key, value]) => {
+          query = query.eq(key, value);
+        });
+      }
+      if (opts.filter) {
+        Object.entries(opts.filter).forEach(([key, value]) => {
+          if (Array.isArray(value)) {
+            query = query.in(key, value);
+          } else {
+            query = query.eq(key, value);
+          }
+        });
+      }
+      if (opts.gte) {
+        Object.entries(opts.gte).forEach(([key, value]) => {
+          query = query.gte(key, value);
+        });
+      }
+      if (opts.gt) {
+        Object.entries(opts.gt).forEach(([key, value]) => {
+          query = query.gt(key, value);
+        });
+      }
+      if (opts.lte) {
+        Object.entries(opts.lte).forEach(([key, value]) => {
+          query = query.lte(key, value);
+        });
+      }
+      if (opts.lt) {
+        Object.entries(opts.lt).forEach(([key, value]) => {
+          query = query.lt(key, value);
+        });
+      }
+      
+      // Apply order
+      if (opts.order) {
+        const [col, desc] = Array.isArray(opts.order) ? opts.order : [opts.order, false];
+        query = query.order(col, { ascending: !desc });
+      }
+      
+      // Apply pagination
+      if (opts.limit) query = query.limit(opts.limit);
+      if (opts.offset) query = query.range(opts.offset, opts.offset + (opts.limit || 100) - 1);
+      
+      const { data: result, error } = await query;
+      if (error) throw error;
+      data = result || [];
+    } else {
+      // Fallback to API (for Vercel deployment)
+      const body = { table, filter: opts.eq || opts.filter || undefined, order: opts.order || ['id', false], limit: opts.limit, offset: opts.offset, select: opts.select, gte: opts.gte, gt: opts.gt, lte: opts.lte, lt: opts.lt };
+      const res = await fetchWithTimeout(`${API_BASE}/select`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify(body) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      data = await res.json();
+      if (data.error) throw new Error(data.error);
+    }
+    
     // Normalize numeric IDs
     data = data.map(row => {
       Object.keys(row).forEach(k => {
@@ -2557,54 +2635,28 @@ async function dbSelect(table, opts = {}) {
     if (cacheKey) cacheSet(cacheKey, data);
     return data;
   } catch(e) {
-    // Offline fallback: try to return any cached data (even expired)
-    if (!isOnline || e.message === 'Failed to fetch') {
-      const allCached = Object.entries(_cache).filter(([k]) => k.startsWith('sel_' + table + '_'));
-      if (allCached.length) {
-        allCached.sort((a, b) => (b[1].ts || 0) - (a[1].ts || 0));
-        return allCached[0][1].data || [];
-      }
-      return [];
-    }
     console.error('dbSelect error:', e);
-    showToast('网络异常，请检查网络连接后重试', 'error');
+    showToast('查询失败: ' + e.message, 'error');
     return [];
   } finally { hideLoading(); }
-}
-
-// SWR background refresh - fetches latest data and silently updates cache + UI
-let _refreshingKeys = new Set();
-function _refreshInBackground(cacheKey, table, opts) {
-  if (_refreshingKeys.has(cacheKey)) return; // Already refreshing this key
-  _refreshingKeys.add(cacheKey);
-  const body = { table, filter: opts.eq || opts.filter || undefined, order: opts.order || ['id', false], limit: opts.limit, offset: opts.offset, select: opts.select, gte: opts.gte, gt: opts.gt, lte: opts.lte, lt: opts.lt };
-  fetch(`${API_BASE}/select`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify(body) })
-    .then(res => res.ok ? res.json() : Promise.reject())
-    .then(data => {
-      if (data && !data.error) {
-        // Normalize and update cache
-        data = data.map(row => {
-          Object.keys(row).forEach(k => {
-            if (typeof row[k] === 'string' && /^\d+$/.test(row[k]) && (k === 'id' || k === 'question_id' || k === 'exam_id')) row[k] = parseInt(row[k]);
-          });
-          return row;
-        });
-        cacheSet(cacheKey, data);
-        // Dispatch custom event so UI can optionally update
-        document.dispatchEvent(new CustomEvent('cache-refreshed', { detail: { table, cacheKey } }));
-      }
-    })
-    .catch(() => {}) // Silently ignore background refresh errors
-    .finally(() => _refreshingKeys.delete(cacheKey));
 }
 
 async function dbInsert(table, rows) {
   try {
     if (!Array.isArray(rows)) rows = [rows];
-    const res = await fetchWithTimeout(`${API_BASE}/insert`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify({ table, rows }) });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    let data = await res.json();
-    if (data.error) throw new Error(data.error);
+    let data = [];
+    
+    if (isSupabaseMode && supabase) {
+      const { data: result, error } = await supabase.from(table).insert(rows).select();
+      if (error) throw error;
+      data = result || [];
+    } else {
+      const res = await fetchWithTimeout(`${API_BASE}/insert`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify({ table, rows }) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      data = await res.json();
+      if (data.error) throw new Error(data.error);
+    }
+    
     // Normalize numeric IDs
     data = data.map(row => {
       Object.keys(row).forEach(k => {
@@ -2612,45 +2664,45 @@ async function dbInsert(table, rows) {
       });
       return row;
     });
-    // Optimistic: insert returned rows into cache instead of clearing all
-    data.forEach(row => cacheUpsertAnywhere(table, row));
-    // For tables we can't easily upsert (complex filters), clear just that table
     cacheClearTable(table);
     return data;
   } catch(e) {
-    // Offline fallback: queue the operation
-    if (!isOnline || e.message === 'Failed to fetch' || e.message.includes('NetworkError') || e.message.includes('network')) {
-      if (!Array.isArray(rows)) rows = [rows];
-      enqueueOperation({ type: 'insert', table, rows: JSON.parse(JSON.stringify(rows)) });
-      showToast('网络不可用，数据已保存到本地，恢复网络后自动同步', 'warning');
-      return [];  // Return empty array as placeholder
-    }
     console.error('dbInsert error:', e);
+    showToast('插入失败: ' + e.message, 'error');
     throw e;
   }
 }
 
 async function dbUpdate(table, data, match) {
   try {
-    const res = await fetchWithTimeout(`${API_BASE}/update`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify({ table, data, match }) });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    let result = await res.json();
-    if (result.error) throw new Error(result.error);
-    // Smart cache: update matching rows in cache instead of clearing everything
-    const matchKeys = Object.keys(match || {});
-    cacheUpsertAnywhere(table, data, r => matchKeys.every(k => {
-      const matchVal = match[k];
-      if (Array.isArray(matchVal)) return matchVal.includes(r[k]);
-      return r[k] == matchVal;
-    }));
+    let result = [];
+    
+    if (isSupabaseMode && supabase) {
+      let query = supabase.from(table).update(data);
+      if (match) {
+        Object.entries(match).forEach(([key, value]) => {
+          if (Array.isArray(value)) {
+            query = query.in(key, value);
+          } else {
+            query = query.eq(key, value);
+          }
+        });
+      }
+      const { data: res, error } = await query.select();
+      if (error) throw error;
+      result = res || [];
+    } else {
+      const res = await fetchWithTimeout(`${API_BASE}/update`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify({ table, data, match }) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      result = await res.json();
+      if (result.error) throw new Error(result.error);
+    }
+    
+    cacheClearTable(table);
     return result;
   } catch(e) {
-    if (!isOnline || e.message === 'Failed to fetch' || e.message.includes('NetworkError') || e.message.includes('network')) {
-      enqueueOperation({ type: 'update', table, data: JSON.parse(JSON.stringify(data)), match: JSON.parse(JSON.stringify(match)) });
-      showToast('网络不可用，数据已保存到本地，恢复网络后自动同步', 'warning');
-      return [];
-    }
     console.error('dbUpdate error:', e);
+    showToast('更新失败: ' + e.message, 'error');
     throw e;
   }
 }
@@ -2660,19 +2712,39 @@ async function dbBatchUpdate(table, batch) {
   if (!batch || batch.length === 0) return { success: true, successCount: 0, failCount: 0 };
   
   try {
-    const res = await fetch(`${API_BASE}/update`, { 
-      method: 'POST', 
-      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, 
-      body: JSON.stringify({ table, batch }) 
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    let result = await res.json();
-    if (result.error) throw new Error(result.error);
+    let successCount = 0;
+    let failCount = 0;
     
-    // 清除缓存
+    if (isSupabaseMode && supabase) {
+      for (const item of batch) {
+        try {
+          let query = supabase.from(table).update(item.data);
+          if (item.match) {
+            Object.entries(item.match).forEach(([key, value]) => {
+              query = query.eq(key, value);
+            });
+          }
+          const { error } = await query;
+          if (error) throw error;
+          successCount++;
+        } catch(e) {
+          failCount++;
+        }
+      }
+    } else {
+      const res = await fetch(`${API_BASE}/update`, { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, 
+        body: JSON.stringify({ table, batch }) 
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      let result = await res.json();
+      if (result.error) throw new Error(result.error);
+      return result;
+    }
+    
     cacheClearTable(table);
-    
-    return result;
+    return { success: true, successCount, failCount };
   } catch(e) {
     console.error('dbBatchUpdate error:', e);
     throw e;
@@ -2681,77 +2753,107 @@ async function dbBatchUpdate(table, batch) {
 
 async function dbDelete(table, match = {}, force = false) {
   try {
-    const body = { table, match: match || {}, force };
-    const res = await fetchWithTimeout(`${API_BASE}/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify(body) });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    let result = await res.json();
-    if (result.error) throw new Error(result.error);
-    // Smart cache: remove matching rows from cache instead of clearing everything
-    const matchKeys = Object.keys(match || {});
-    if (matchKeys.length === 0 && !force) {
-      // No cache update needed for full delete with force
-    } else if (matchKeys.length > 0) {
-      cacheRemoveAnywhere(table, r => matchKeys.every(k => {
-        const matchVal = match[k];
-        if (Array.isArray(matchVal)) return matchVal.includes(r[k]);
-        return r[k] == matchVal;
-      }));
+    let result = [];
+    
+    if (isSupabaseMode && supabase) {
+      let query = supabase.from(table).delete();
+      if (match && Object.keys(match).length > 0) {
+        Object.entries(match).forEach(([key, value]) => {
+          if (Array.isArray(value)) {
+            query = query.in(key, value);
+          } else {
+            query = query.eq(key, value);
+          }
+        });
+      }
+      const { data: res, error } = await query.select();
+      if (error) throw error;
+      result = res || [];
+    } else {
+      const body = { table, match: match || {}, force };
+      const res = await fetchWithTimeout(`${API_BASE}/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify(body) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      result = await res.json();
+      if (result.error) throw new Error(result.error);
     }
+    
+    cacheClearTable(table);
     return result;
   } catch(e) {
-    if (!isOnline || e.message === 'Failed to fetch' || e.message.includes('NetworkError') || e.message.includes('network')) {
-      enqueueOperation({ type: 'delete', table, match: JSON.parse(JSON.stringify(match)), force });
-      showToast('网络不可用，操作已保存到本地，恢复网络后自动同步', 'warning');
-      return [];
-    }
     console.error('dbDelete error:', e);
+    showToast('删除失败: ' + e.message, 'error');
     throw e;
   }
 }
 
 async function dbCount(table, filter) {
   try {
-    const res = await fetch(`${API_BASE}/count`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify({ table, filter }) });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    if (data.error) throw new Error(data.error);
-    return parseInt(data.count) || 0;
-  } catch(e) { return 0; }
+    if (isSupabaseMode && supabase) {
+      let query = supabase.from(table).select('*', { count: 'exact', head: true });
+      if (filter) {
+        Object.entries(filter).forEach(([key, value]) => {
+          if (Array.isArray(value)) {
+            query = query.in(key, value);
+          } else {
+            query = query.eq(key, value);
+          }
+        });
+      }
+      const { count, error } = await query;
+      if (error) throw error;
+      return count || 0;
+    } else {
+      const res = await fetch(`${API_BASE}/count`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN }, body: JSON.stringify({ table, filter }) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      return parseInt(data.count) || 0;
+    }
+  } catch(e) {
+    console.error('dbCount error:', e);
+    return 0;
+  }
 }
 
-// ===== Override admin operations to sync immediately =====
-const _originalDbInsert = dbInsert;
-dbInsert = async function(...args) {
-  const result = await _originalDbInsert.apply(this, args);
-  if (isAdminMode()) {
-    await syncImmediately();
-  } else {
-    saveLocalData();
+// ===== 登录函数 =====
+async function dbLogin(username, password, role = 'student') {
+  try {
+    const table = role === 'admin' ? 'admins' : 'students';
+    const { data, error } = await supabase.from(table).select('*').eq('username', username).single();
+    if (error || !data) {
+      return { success: false, error: '账号不存在' };
+    }
+    
+    // 检查密码（支持明文和SHA256哈希）
+    let valid = false;
+    if (data.password.startsWith('sha256:')) {
+      // 哈希密码验证
+      const hash = await hashPassword(password);
+      valid = data.password === hash;
+    } else {
+      // 明文密码验证
+      valid = data.password === password;
+    }
+    
+    if (!valid) {
+      return { success: false, error: '密码错误' };
+    }
+    
+    return { success: true, user: data };
+  } catch(e) {
+    console.error('dbLogin error:', e);
+    return { success: false, error: '登录失败: ' + e.message };
   }
-  return result;
-};
+}
 
-const _originalDbUpdate = dbUpdate;
-dbUpdate = async function(...args) {
-  const result = await _originalDbUpdate.apply(this, args);
-  if (isAdminMode()) {
-    await syncImmediately();
-  } else {
-    saveLocalData();
-  }
-  return result;
-};
-
-const _originalDbDelete = dbDelete;
-dbDelete = async function(...args) {
-  const result = await _originalDbDelete.apply(this, args);
-  if (isAdminMode()) {
-    await syncImmediately();
-  } else {
-    saveLocalData();
-  }
-  return result;
-};
+// 密码哈希函数
+async function hashPassword(password) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password + 'xj-exam-salt');
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return 'sha256:' + hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 // ===== Admin Permission Guard =====
 function requireAdmin() {
@@ -3046,65 +3148,39 @@ async function handleLogin() {
   if (!isOnline && !navigator.onLine) { showToast('当前无网络连接，无法登录', 'error'); return; }
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
   try {
-    // Try admin login via /api/login (verifies hashed password server-side)
-    const adminRes = await fetch(`${API_BASE}/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-      body: JSON.stringify({ table: 'admins', username, password })
-    });
-    const adminData = await adminRes.json();
-    // 只有密码错误才停止，账号不存在继续尝试学生登录
-    if (adminData.error === 'Wrong password') {
-      showToast('密码错误', 'error'); btn.disabled = false; btn.textContent = '登 录'; return;
-    }
-    // 管理员登录成功
-    if (adminData.username) {
-      userRole = 'admin';
-      currentAdmin = adminData;
-      currentUser = null;
-      saveLogin('admin', null, adminData);
-      if (adminData.session_id) localStorage.setItem('xjSessionId', adminData.session_id);
-      // 清除所有缓存，确保数据一致性
-      cacheClear();
-      // 登录成功，直接进入系统（session刚设置，无需自我验证）
-      startSessionCheck();
-      renderAdmin();
-      preloadData('admin');
-      // Show help on first login
-      if (localStorage.getItem('xjHideHelp_admin') !== '1') showHelp('admin');
-      return;
-    }
-    // Student login - phone number validation
-    if (!/^1[3-9]\d{9}$/.test(username)) {
-      showToast('请输入正确的11位手机号', 'error'); btn.disabled = false; btn.textContent = '登 录'; return;
-    }
-    const studentRes = await fetch(`${API_BASE}/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-      body: JSON.stringify({ table: 'students', username, password })
-    });
-    const studentData = await studentRes.json();
-    if (studentData.error) {
-      if (studentData.error === 'User not found') {
-        showToast('该手机号未注册，请联系管理员', 'error');
-      } else if (studentData.error === 'Wrong password') {
+    // 使用 dbLogin 进行登录验证
+    const result = await dbLogin(username, password);
+    
+    if (result.error) {
+      if (result.error === '密码错误') {
         showToast('密码错误', 'error');
+      } else if (result.error === '账号不存在') {
+        showToast('该账号未注册，请联系管理员', 'error');
+      } else if (result.error === '请输入正确的11位手机号') {
+        showToast('请输入正确的11位手机号', 'error');
       } else {
-        showToast(studentData.error, 'error');
+        showToast(result.error, 'error');
       }
       btn.disabled = false; btn.textContent = '登 录'; return;
     }
-    const student = studentData;
-    // Check account status
-    if (student.status === 'disabled') {
-      showToast('该账号已被禁用，请联系管理员', 'error'); btn.disabled = false; btn.textContent = '登 录'; return;
+    
+    // 管理员登录成功
+    if (result.role === 'admin') {
+      userRole = 'admin';
+      currentAdmin = result.user;
+      currentUser = null;
+      saveLogin('admin', null, result.user);
+      if (result.user.session_id) localStorage.setItem('xjSessionId', result.user.session_id);
+      cacheClear();
+      startSessionCheck();
+      renderAdmin();
+      preloadData('admin');
+      if (localStorage.getItem('xjHideHelp_admin') !== '1') showHelp('admin');
+      return;
     }
-    if (student.status === 'expired' || (student.expires_at && new Date(student.expires_at) < new Date())) {
-      if (student.status !== 'expired') {
-        try { await dbUpdate('students', { status: 'expired' }, { id: student.id }); } catch(e) { console.warn('Status update failed:', e); }
-      }
-      showToast('账号已过期，请联系管理员续期', 'error'); btn.disabled = false; btn.textContent = '登 录'; return;
-    }
+    
+    // 学生登录成功
+    const student = result.user;
     userRole = 'student';
     currentUser = student;
     currentLevel = student.level || '初级';
@@ -3112,20 +3188,16 @@ async function handleLogin() {
     if (!currentUser.study_level || currentUser.study_level < 1) {
       currentUser.study_level = levelFromXp(currentUser.xp || 0);
     }
-    // 保存session_id并清除缓存
     const sessionId = student.session_id;
     if (sessionId) localStorage.setItem('xjSessionId', sessionId);
-    // 清除所有缓存，确保获取最新数据
     cacheClear();
-    // 登录成功，直接进入系统（session刚设置，无需自我验证）
     saveLogin('student', student, null);
     startSessionCheck();
     renderStudent();
-    // Preload student data in background (questions, records, exams)
     preloadData('student');
-    // Show help on first login
     if (localStorage.getItem('xjHideHelp_student') !== '1') showHelp('student');
   } catch(e) {
+    console.error('Login error:', e);
     showToast('登录失败，请重试', 'error');
   } finally {
     btn.disabled = false;
@@ -3134,11 +3206,9 @@ async function handleLogin() {
 }
 
 async function handleLogout() {
-  // 停止定时器
   stopPracticeSyncTimer();
   stopExamSyncTimer();
   
-  // 退出前同步数据
   if (currentUser && (_recordBuffer.length > 0 || Object.keys(_favBuffer).length > 0 || _pendingXp > 0)) {
     try {
       await cloudSync();
@@ -3152,13 +3222,10 @@ async function handleLogout() {
   currentUser = null;
   currentAdmin = null;
   allStudents = []; allQuestions = []; allExams = [];
-  // Clear server-side session_id
+  
+  // 使用 dbLogout 清除服务端会话
   try {
-    await fetch(`${API_BASE}/logout`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN, 'X-Session-Id': sessionId || '' },
-      body: JSON.stringify({})
-    });
+    await dbLogout(sessionId);
   } catch(e) { /* ignore */ }
   renderLogin();
 }
@@ -6667,14 +6734,21 @@ async function adminChangePwd() {
   if (!oldPwd) { showToast('请输入当前密码', 'error'); return; }
   if (!newPwd || newPwd.length < 4) { showToast('新密码至少4位', 'error'); return; }
   if (newPwd !== confirmPwd) { showToast('两次输入的密码不一致', 'error'); return; }
-  // Verify old password via server
-  const verifyRes = await fetch(`${API_BASE}/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-    body: JSON.stringify({ table: 'admins', username: currentAdmin.username, password: oldPwd })
-  });
-  const verifyData = await verifyRes.json();
-  if (verifyData.error) {
+  // Verify old password via Supabase
+  const { data: adminData } = await dbSelect('admins', { where: { id: currentAdmin.id } });
+  if (!adminData || adminData.length === 0) {
+    showToast('管理员账号不存在', 'error'); return;
+  }
+  const storedPwd = adminData[0].password;
+  // Check password (support both plain and hashed)
+  let isValid = false;
+  if (storedPwd.startsWith('sha256:')) {
+    const hash = await hashPassword(oldPwd);
+    isValid = (hash === storedPwd);
+  } else {
+    isValid = (storedPwd === oldPwd);
+  }
+  if (!isValid) {
     showToast('当前密码错误', 'error'); return;
   }
   await dbUpdate('admins', { password: newPwd }, { id: currentAdmin.id });
@@ -13154,7 +13228,50 @@ function renderMockHistoryInProfile(data) {
 
 
 initTheme();
-init();
+
+// Wait for Supabase SDK to load before initializing
+async function waitForSupabaseAndInit() {
+  const maxWait = 15000; // 15 seconds max
+  const start = Date.now();
+  
+  while (!window.supabase && (Date.now() - start < maxWait)) {
+    await new Promise(r => setTimeout(r, 100));
+  }
+  
+  if (window.supabase) {
+    console.log('Supabase SDK loaded successfully');
+    // Initialize Supabase client before calling init()
+    const initResult = await initSupabase();
+    if (initResult) {
+      console.log('Supabase client initialized, starting app...');
+      init();
+    } else {
+      console.error('Failed to initialize Supabase client');
+      document.getElementById('app').innerHTML = `
+        <div class="login-page">
+          <div class="login-card" style="text-align:center;padding:40px">
+            <div style="font-size:2rem;margin-bottom:12px">⚠️</div>
+            <h3>数据库连接失败</h3>
+            <p style="color:var(--text2);margin-top:8px">请检查网络连接后刷新页面重试</p>
+            <button class="btn btn-primary" style="margin-top:16px" onclick="location.reload()">刷新页面</button>
+          </div>
+        </div>`;
+    }
+  } else {
+    console.error('Supabase SDK failed to load');
+    document.getElementById('app').innerHTML = `
+      <div class="login-page">
+        <div class="login-card" style="text-align:center;padding:40px">
+          <div style="font-size:2rem;margin-bottom:12px">⚠️</div>
+          <h3>系统加载失败</h3>
+          <p style="color:var(--text2);margin-top:8px">网络连接异常，请刷新页面重试</p>
+          <button class="btn btn-primary" style="margin-top:16px" onclick="location.reload()">刷新页面</button>
+        </div>
+      </div>`;
+  }
+}
+
+waitForSupabaseAndInit();
 </script>
 </body>
 </html>
