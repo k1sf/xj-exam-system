@@ -2849,7 +2849,7 @@ async function dbLogin(username, password, role = 'student') {
 // 密码哈希函数
 async function hashPassword(password) {
   const encoder = new TextEncoder();
-  const data = encoder.encode(password + 'xj-exam-salt');
+  const data = encoder.encode(password + '_pedicure_salt_2026');
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return 'sha256:' + hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
