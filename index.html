@@ -2580,6 +2580,16 @@ async function dbSelect(table, opts = {}) {
           }
         });
       }
+      if (opts.where) {
+        // 'where' is an alias for 'filter'
+        Object.entries(opts.where).forEach(([key, value]) => {
+          if (Array.isArray(value)) {
+            query = query.in(key, value);
+          } else {
+            query = query.eq(key, value);
+          }
+        });
+      }
       if (opts.gte) {
         Object.entries(opts.gte).forEach(([key, value]) => {
           query = query.gte(key, value);
@@ -6902,11 +6912,11 @@ async function loadDailyTasks() {
     // 使用 Supabase 查询每日任务状态
     const dailyTaskData = await dbSelect('daily_tasks', {
       where: { student_id: currentUser.username },
-      select: ['date', 'login_bonus', 'practice_count', 'practice_target', 'homework_done', 'wrong_practice_count', 'wrong_practice_target']
+      select: ['task_date', 'login_bonus', 'practice_count', 'practice_target', 'homework_done', 'wrong_practice_count', 'wrong_practice_target']
     });
     
     // 处理今日任务
-    const todayTask = dailyTaskData.find(t => t.date === today) || {
+    const todayTask = dailyTaskData.find(t => t.task_date === today) || {
       login_bonus: false,
       practice_count: 0,
       practice_target: 10,
@@ -6922,7 +6932,7 @@ async function loadDailyTasks() {
       const d = new Date();
       d.setDate(d.getDate() - i);
       const dateStr = d.toISOString().split('T')[0];
-      const dayTask = dailyTaskData.find(t => t.date === dateStr);
+      const dayTask = dailyTaskData.find(t => t.task_date === dateStr);
       weekDays.push({
         date: dateStr,
         completed: dayTask ? (dayTask.practice_count >= dayTask.practice_target) : false
@@ -7038,18 +7048,18 @@ async function loadStudentHomework() {
     // 使用 Supabase 查询作业列表
     const homeworkList = await dbSelect('homeworks', {
       where: { level: currentLevel },
-      select: ['id', 'title', 'question_ids', 'deadline', 'created_at']
+      select: ['id', 'title', 'question_ids', 'end_time', 'created_at']
     });
     
     // 查询已完成的作业记录
     const completedRecords = await dbSelect('homework_records', {
       where: { student_id: currentUser.id },
-      select: ['homework_id', 'completed']
+      select: ['homework_id', 'is_completed']
     });
     
     _studentHomeworkList = homeworkList.map(h => ({
       ...h,
-      my_completed: completedRecords.some(r => r.homework_id === h.id && r.completed)
+      my_completed: completedRecords.some(r => r.homework_id === h.id && r.is_completed)
     }));
     
     const pending = _studentHomeworkList.filter(h => !h.my_completed);
@@ -11696,7 +11706,7 @@ async function doClearQuestions() {
   
   // 使用 Supabase 验证密码
   const adminHash = await hashPassword(pwd);
-  const admins = await dbSelect('admins', { select: ['id'], where: { username: currentAdmin.username, password: adminHash } });
+  const admins = await dbSelect('admins', { select: ['id'], eq: { username: currentAdmin.username, password: adminHash } });
   
   if (!admins || admins.length === 0) {
     showToast('密码验证失败', 'error');
