@@ -1,11 +1,10 @@
 [project]
 entrypoint = "index.html"
-requires = [ "nodejs-24" ]
 
 [dev]
-build = [ "pnpm", "install" ]
-run = [ "node", "server.js" ]
+build = []
+run = ["npx", "serve", "-l", "5000", "-s"]
 
 [deploy]
-build = [ "pnpm", "install", "--prod" ]
-run = [ "node", "server.js" ]
+build = []
+run = ["npx", "serve", "-l", "5000", "-s"]
