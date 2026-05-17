@@ -1694,10 +1694,21 @@ async function flushFavBuffer() {
   const updates = Object.values(_favBuffer);
   if (updates.length === 0) return;
   _favBuffer = {};
+  
   for (const u of updates) {
     try {
+      // 检查是否有有效的记录 ID
+      if (!u.id) {
+        console.warn('flushFavBuffer: 跳过无 ID 的收藏更新', u);
+        continue;
+      }
       await dbUpdate('records', { is_fav: u.is_fav }, { id: u.id });
-    } catch(e) { console.warn('flushFavBuffer error:', e); }
+      console.log(`[flushFavBuffer] 更新收藏状态成功: record_id=${u.id}, is_fav=${u.is_fav}`);
+    } catch(e) {
+      console.warn('flushFavBuffer error:', e);
+      // 失败时重新加入缓冲区
+      _favBuffer[u.id] = u;
+    }
   }
 }
 
@@ -1737,15 +1748,17 @@ async function cloudSync() {
     const batch = _recordBuffer.splice(0, _recordBuffer.length);
     try {
       // 直接使用 Supabase upsert，避免重复记录
+      // 使用唯一索引 idx_records_student_question_unique
       const { error } = await supabase.from('records').upsert(batch, { 
-        onConflict: 'student_id,question_id',
-        ignoreDuplicates: false 
+        onConflict: 'student_id,question_id'
       });
       if (error) {
         _recordBuffer.unshift(...batch);
         console.warn('cloudSync records error:', error);
       } else {
         console.log(`[CloudSync] 同步了 ${batch.length} 条答题记录`);
+        // 同步成功后清除本地缓存
+        clearLocalData();
       }
     } catch(e) {
       _recordBuffer.unshift(...batch);
@@ -2873,11 +2886,29 @@ async function dbLogin(username, password, role = 'student') {
       return { success: false, error: '密码错误' };
     }
     
-    return { success: true, user: data };
+    return { success: true, user: data, role: role };
   } catch(e) {
     console.error('dbLogin error:', e);
     return { success: false, error: '登录失败: ' + e.message };
   }
+}
+
+// 统一登录函数：自动检测学生/管理员
+async function unifiedLogin(username, password) {
+  // 先尝试学生登录
+  let result = await dbLogin(username, password, 'student');
+  if (result.success) {
+    return { ...result, role: 'student' };
+  }
+  
+  // 学生登录失败，尝试管理员登录
+  result = await dbLogin(username, password, 'admin');
+  if (result.success) {
+    return { ...result, role: 'admin' };
+  }
+  
+  // 都失败，返回学生登录的错误信息
+  return { success: false, error: '账号或密码错误' };
 }
 
 // 密码哈希函数
@@ -3182,19 +3213,11 @@ async function handleLogin() {
   if (!isOnline && !navigator.onLine) { showToast('当前无网络连接，无法登录', 'error'); return; }
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
   try {
-    // 使用 dbLogin 进行登录验证
-    const result = await dbLogin(username, password);
+    // 使用统一登录函数（自动检测学生/管理员）
+    const result = await unifiedLogin(username, password);
     
-    if (result.error) {
-      if (result.error === '密码错误') {
-        showToast('密码错误', 'error');
-      } else if (result.error === '账号不存在') {
-        showToast('该账号未注册，请联系管理员', 'error');
-      } else if (result.error === '请输入正确的11位手机号') {
-        showToast('请输入正确的11位手机号', 'error');
-      } else {
-        showToast(result.error, 'error');
-      }
+    if (!result.success) {
+      showToast(result.error || '登录失败', 'error');
       btn.disabled = false; btn.textContent = '登 录'; return;
     }
     
@@ -7069,15 +7092,15 @@ async function loadStudentHomework() {
   if (!banner) return;
   
   try {
-    // 使用 Supabase 查询作业列表
+    // 使用 Supabase 查询作业列表（修复：使用正确的列名）
     const homeworkList = await dbSelect('homeworks', {
-      where: { level: currentLevel },
-      select: ['id', 'title', 'question_ids', 'end_time', 'created_at']
+      eq: { level: currentLevel },
+      select: ['id', 'title', 'target_ids', 'end_time', 'created_at', 'question_count', 'question_start', 'question_end']
     });
     
     // 查询已完成的作业记录
     const completedRecords = await dbSelect('homework_records', {
-      where: { student_id: currentUser.id },
+      eq: { student_id: currentUser.id },
       select: ['homework_id', 'is_completed']
     });
     
@@ -7869,10 +7892,36 @@ async function renderWrongTraining() {
   
   container.innerHTML = `<div style="text-align:center;padding:40px"><div class="spinner-lg" style="margin:0 auto"></div><div style="margin-top:12px;color:var(--text2)">加载错题数据...</div></div>`;
   
-  // 加载统计数据
+  // 使用 Supabase 查询错题数据
   try {
-    const res = await fetch(`${API_BASE}/wrong-stats?student_id=${currentUser.id}&level=${encodeURIComponent(currentLevel)}`);
-    _wrongStats = await res.json();
+    // 获取错题记录
+    const wrongRecords = await dbSelect('records', { 
+      eq: { student_id: currentUser.username, is_correct: false },
+      select: ['question_id', 'wrong_level', 'created_at']
+    });
+    
+    // 获取对应级别的题目
+    const allQ = await dbSelect('questions', { eq: { level: currentLevel }, select: ['id', 'type', 'content'] });
+    const qIdSet = new Set(allQ.map(q => q.id));
+    
+    // 过滤出当前级别的错题
+    const levelWrongRecords = wrongRecords.filter(r => qIdSet.has(r.question_id));
+    
+    // 统计数据
+    const totalWrong = levelWrongRecords.length;
+    const mastered = levelWrongRecords.filter(r => r.wrong_level >= 3).length;
+    const pending = totalWrong - mastered;
+    
+    // 计算今日待复习（今天做错的题）
+    const today = new Date().toISOString().split('T')[0];
+    const todayWrong = levelWrongRecords.filter(r => r.created_at && r.created_at.startsWith(today)).length;
+    
+    _wrongStats = { 
+      stats: { total_wrong: totalWrong, mastered, new_wrong: todayWrong, practicing: pending }, 
+      todayReview: Math.min(10, pending), 
+      weekStats: {} 
+    };
+    _wrongQuestions = levelWrongRecords;
   } catch (e) {
     console.error('加载错题统计失败:', e);
     _wrongStats = { stats: { total_wrong: 0, mastered: 0, new_wrong: 0, practicing: 0 }, todayReview: 0, weekStats: {} };
@@ -8794,40 +8843,50 @@ async function toggleFav(qId) {
     currentFavStatus = practiceAnswered[qIdStr].isFav;
   }
   
-  // Check local buffer first
+  // 先检查本地缓冲区
   const bufferedRecord = _recordBuffer.find(r => String(r.question_id) === qIdStr);
   let records = [];
+  let needCreateRecord = false;
+  
   if (bufferedRecord) {
     records = [bufferedRecord];
   } else if (currentFavStatus !== null) {
     // 有缓存状态，不需要查询数据库，直接使用缓存
     records = [{ question_id: qIdStr, is_fav: currentFavStatus }];
   } else {
-    // 无缓存，查询数据库（使用 cacheOnly 避免显示 loading）
-    records = await dbSelect('records', { eq: { student_id: currentUser.username, question_id: qIdStr }, cacheOnly: true }) || [];
-    // 如果缓存也没有，尝试不带 cacheOnly 查询
-    if (records.length === 0) {
-      records = await dbSelect('records', { eq: { student_id: currentUser.username, question_id: qIdStr } });
-    }
+    // 无缓存，查询数据库
+    records = await dbSelect('records', { eq: { student_id: currentUser.username, question_id: qIdStr } }) || [];
   }
+  
+  // 计算新的收藏状态
+  const baseIsFav = currentFavStatus !== null ? currentFavStatus : (records[0]?.is_fav || false);
+  const isFav = !baseIsFav;
+  
+  // 更新全局收藏状态缓存
+  _favStatusByQId[qIdStr] = isFav;
+  if (!practiceAnswered[qIdStr]) practiceAnswered[qIdStr] = {};
+  practiceAnswered[qIdStr].isFav = isFav;
   
   if (records.length > 0) {
     const latest = records.reduce((a, b) => new Date(a.created_at || 0) > new Date(b.created_at || 0) ? a : b);
-    // 使用缓冲区中的最新收藏状态，而不是数据库中的旧值
-    const baseIsFav = currentFavStatus !== null ? currentFavStatus : (latest.is_fav || false);
-    const isFav = !baseIsFav;
     
     if (latest.id) {
-      // 使用缓冲机制，与其他操作一起批量同步
+      // 记录已有 ID，使用缓冲机制更新
       bufferFavUpdate(latest.id, isFav, qIdStr);
+    } else if (bufferedRecord) {
+      // 记录在缓冲区中，直接更新缓冲区的记录
+      bufferedRecord.is_fav = isFav;
+      saveLocalData();
     } else {
-      // Record is in buffer, update it locally
-      latest.is_fav = isFav;
+      // 记录存在但无 ID（不应该发生），尝试直接更新
+      console.warn('toggleFav: 记录无 ID，尝试通过 student_id + question_id 更新');
+      try {
+        await dbUpdate('records', { is_fav: isFav }, { student_id: currentUser.username, question_id: qIdStr });
+      } catch(e) {
+        console.error('toggleFav 更新失败:', e);
+      }
     }
-    // 更新全局收藏状态缓存（跨模式共享）
-    _favStatusByQId[qIdStr] = isFav;
-    if (!practiceAnswered[qIdStr]) practiceAnswered[qIdStr] = {};
-    practiceAnswered[qIdStr].isFav = isFav;
+    
     if (isFav) addXp(XP_REWARDS.fav, '收藏');
     
     // 在收藏夹模式下取消收藏时，立即从列表中移除该题目
@@ -8835,17 +8894,14 @@ async function toggleFav(qId) {
       const idx = practiceQuestions.findIndex(q => String(q.id || q.question_id) === qIdStr);
       if (idx !== -1) {
         practiceQuestions.splice(idx, 1);
-        // 如果移除的是当前题目，调整索引
         if (idx < practiceIndex) {
           practiceIndex--;
         } else if (idx === practiceIndex && practiceIndex >= practiceQuestions.length) {
           practiceIndex = Math.max(0, practiceQuestions.length - 1);
         }
       }
-      // 重新渲染整个练习界面
       renderPracticeCard();
     } else {
-      // 其他情况只刷新当前卡片
       renderPracticeCard();
     }
   } else {
