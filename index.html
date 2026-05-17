@@ -7685,15 +7685,18 @@ async function submitHomeworkAnswer(qId, selected) {
       user_answer: selected.join(',')
     });
     
-    // 同时记录到 records 表
-    await dbInsert('records', {
-      student_id: currentUser.username,
-      question_id: qId,
-      is_correct: isCorrect,
-      user_answer: selected.join(','),
-      exam_id: null,
-      is_fav: false
-    });
+    // 同时记录到 records 表（使用 upsert 避免重复）
+    if (supabase) {
+      const { error } = await supabase.from('records').upsert({
+        student_id: currentUser.username,
+        question_id: parseInt(qId),
+        is_correct: isCorrect,
+        user_answer: selected.join(','),
+        exam_id: null,
+        is_fav: false
+      }, { onConflict: 'student_id,question_id' });
+      if (error) console.error('[submitHomeworkAnswer] upsert 失败:', error);
+    }
     
     // 加 XP
     addXp(isCorrect ? XP_REWARDS.correct : XP_REWARDS.wrong, isCorrect ? '答对' : '答错');
@@ -9935,7 +9938,7 @@ async function submitExamAnswers() {
     if (isCorrect) correct++;
     const rec = {
       student_id: studentId,
-      question_id: q.id,
+      question_id: parseInt(q.id),
       is_correct: isCorrect,
       user_answer: userAnswer,
       is_fav: false,
@@ -9944,7 +9947,18 @@ async function submitExamAnswers() {
     if (guestName) rec.guest_name = guestName;
     records.push(rec);
   });
-  await dbInsert('records', records);
+  
+  // 使用 upsert 避免重复键错误（考试记录也使用 upsert 更新）
+  if (supabase) {
+    for (const rec of records) {
+      const { error } = await supabase.from('records').upsert(rec, { 
+        onConflict: 'student_id,question_id' 
+      });
+      if (error) console.error('[submitExamAnswers] upsert 失败:', error, rec);
+    }
+  } else {
+    await dbInsert('records', records);
+  }
   
   // 更新错题掌握度（非快捷考试访客）
   if (!currentExamIsQuick && currentUser) {
