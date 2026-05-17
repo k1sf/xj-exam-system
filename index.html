@@ -1743,70 +1743,73 @@ async function flushRecordBuffer() {
 async function cloudSync() {
   if (!currentUser || !supabase) return;
   
-  // 同步答题记录（使用 upsert 避免重复）
+  console.log('[cloudSync] 开始同步...', {
+    records: _recordBuffer.length,
+    favs: Object.keys(_favBuffer).length,
+    xp: _pendingXp
+  });
+  
+  // 同步答题记录（逐条 upsert，确保成功）
   if (_recordBuffer.length > 0) {
     const batch = _recordBuffer.splice(0, _recordBuffer.length);
-    try {
-      // 直接使用 Supabase upsert，避免重复记录
-      // 使用唯一索引 idx_records_student_question_unique
-      const { error } = await supabase.from('records').upsert(batch, { 
-        onConflict: 'student_id,question_id'
-      });
-      if (error) {
-        _recordBuffer.unshift(...batch);
-        console.warn('cloudSync records error:', error);
-      } else {
-        console.log(`[CloudSync] 同步了 ${batch.length} 条答题记录`);
-        // 同步成功后清除本地缓存
-        clearLocalData();
+    let successCount = 0;
+    
+    for (const record of batch) {
+      try {
+        // 确保字段类型正确
+        const cleanRecord = {
+          student_id: String(record.student_id),
+          question_id: parseInt(record.question_id),
+          is_correct: Boolean(record.is_correct),
+          user_answer: String(record.user_answer || ''),
+          is_fav: Boolean(record.is_fav || false)
+        };
+        
+        const { error } = await supabase.from('records').upsert(cleanRecord, { 
+          onConflict: 'student_id,question_id'
+        });
+        
+        if (error) {
+          console.error('[cloudSync] upsert 失败:', error, cleanRecord);
+        } else {
+          successCount++;
+        }
+      } catch(e) {
+        console.error('[cloudSync] upsert 异常:', e, record);
       }
-    } catch(e) {
-      _recordBuffer.unshift(...batch);
-      console.warn('cloudSync records error:', e);
+    }
+    
+    console.log(`[cloudSync] 答题记录同步: ${successCount}/${batch.length}`);
+    if (successCount === batch.length) {
+      clearLocalData();
+    } else {
+      // 部分失败，将未成功的记录放回缓冲区
+      _recordBuffer.unshift(...batch.slice(successCount));
     }
   }
   
   // 同步收藏更新
   await flushFavBuffer();
   
-  // 同步XP（增强：先获取云端最新XP，取最大值避免跨设备数据丢失）
+  // 同步XP
   if (_pendingXp > 0) {
     try {
-      // 先从云端获取最新的XP值
-      const cloudData = await dbSelect('students', { 
-        select: ['xp', 'study_level'], 
-        eq: { id: currentUser.id },
-        cacheBypass: true 
-      });
-      const cloudXp = cloudData[0]?.xp || 0;
-      const cloudLv = cloudData[0]?.study_level || 1;
-      
-      // 本地XP = currentUser.xp（内存中的值）
-      const localXp = currentUser.xp || 0;
-      
-      // 取最大值：如果云端更新则用云端，否则用本地
-      const maxXp = Math.max(cloudXp, localXp);
-      const maxLv = Math.max(cloudLv, currentUser.study_level || 1);
-      
-      // 同步到数据库
-      await dbUpdate('students', { xp: maxXp, study_level: maxLv }, { id: currentUser.id });
-      
-      // 更新本地currentUser
-      currentUser.xp = maxXp;
-      currentUser.study_level = maxLv;
-      saveLogin('student', currentUser);
-      
-      _pendingXp = 0;
-      console.log(`[CloudSync] XP同步完成: 云端${cloudXp}, 本地${localXp}, 最终${maxXp}`);
+      const newXp = (currentUser.xp || 0) + _pendingXp;
+      const { error } = await supabase.from('students').update({ xp: newXp }).eq('id', currentUser.id);
+      if (error) {
+        console.error('[cloudSync] XP 更新失败:', error);
+      } else {
+        currentUser.xp = newXp;
+        _pendingXp = 0;
+        console.log(`[cloudSync] XP 同步成功: ${newXp}`);
+      }
     } catch(e) {
       console.warn('cloudSync xp error:', e);
     }
   }
   
-  // 更新同步时间并清除本地数据
   _lastSyncTime = Date.now();
-  clearLocalData();
-  console.log('[CloudSync] 同步完成');
+  console.log('[cloudSync] 同步完成');
 }
 
 // ===== Practice Mode 10-Minute Auto Sync =====
@@ -1847,42 +1850,118 @@ window.addEventListener('beforeunload', () => {
   }
 });
 
-// 立即同步函数（用于 beforeunload）
+// 立即同步函数（用于 beforeunload 和手动同步）
 async function syncImmediately() {
   if (!supabase || !currentUser) return;
   
+  _isSyncing = true;
+  
+  console.log('[syncImmediately] 开始同步...', {
+    records: _recordBuffer.length,
+    favs: Object.keys(_favBuffer).length,
+    xp: _pendingXp
+  });
+  
   try {
-    // 同步答题记录
+    // 同步答题记录（逐条 upsert，确保成功）
     if (_recordBuffer.length) {
       const batch = [..._recordBuffer];
+      let successCount = 0;
+      
       for (const record of batch) {
-        await supabase.from('records').upsert(record, { onConflict: 'student_id,question_id' });
+        try {
+          // 确保字段类型正确
+          const cleanRecord = {
+            student_id: String(record.student_id),
+            question_id: parseInt(record.question_id),
+            is_correct: Boolean(record.is_correct),
+            user_answer: String(record.user_answer || ''),
+            is_fav: Boolean(record.is_fav || false)
+          };
+          
+          const { error } = await supabase.from('records').upsert(cleanRecord, { 
+            onConflict: 'student_id,question_id'
+          });
+          
+          if (error) {
+            console.error('[syncImmediately] upsert 失败:', error, cleanRecord);
+          } else {
+            successCount++;
+          }
+        } catch(e) {
+          console.error('[syncImmediately] upsert 异常:', e, record);
+        }
       }
-      _recordBuffer = [];
+      
+      console.log(`[syncImmediately] 答题记录同步: ${successCount}/${batch.length}`);
+      if (successCount === batch.length) {
+        _recordBuffer = [];
+      }
     }
     
     // 同步收藏状态
     if (Object.keys(_favBuffer).length) {
       const updates = Object.values(_favBuffer);
+      let favSuccess = 0;
+      
       for (const u of updates) {
-        await supabase.from('records').update({ is_fav: u.is_fav }).eq('id', u.id);
+        if (!u.id) {
+          console.warn('[syncImmediately] 跳过无 ID 的收藏更新:', u);
+          continue;
+        }
+        try {
+          const { error } = await supabase.from('records').update({ is_fav: u.is_fav }).eq('id', u.id);
+          if (error) {
+            console.error('[syncImmediately] 收藏更新失败:', error, u);
+          } else {
+            favSuccess++;
+          }
+        } catch(e) {
+          console.error('[syncImmediately] 收藏更新异常:', e, u);
+        }
       }
-      _favBuffer = {};
+      
+      console.log(`[syncImmediately] 收藏状态同步: ${favSuccess}/${updates.length}`);
+      if (favSuccess === updates.length) {
+        _favBuffer = {};
+      }
     }
     
     // 同步 XP
     if (_pendingXp > 0) {
-      await supabase.from('students').update({ xp: (currentUser.xp || 0) + _pendingXp }).eq('id', currentUser.id);
-      currentUser.xp = (currentUser.xp || 0) + _pendingXp;
-      _pendingXp = 0;
+      try {
+        const newXp = (currentUser.xp || 0) + _pendingXp;
+        const { error } = await supabase.from('students').update({ xp: newXp }).eq('id', currentUser.id);
+        if (error) {
+          console.error('[syncImmediately] XP 更新失败:', error);
+        } else {
+          currentUser.xp = newXp;
+          _pendingXp = 0;
+          console.log(`[syncImmediately] XP 同步成功: ${newXp}`);
+        }
+      } catch(e) {
+        console.error('[syncImmediately] XP 更新异常:', e);
+      }
     }
     
-    // 清除本地缓存（同步成功后）
+    // 同步成功后清除本地缓存
     localStorage.removeItem('xj_records');
     localStorage.removeItem('xj_favs');
     localStorage.removeItem('xj_xp');
+    clearLocalData();
+    
+    // 清除所有相关缓存（确保刷新时获取最新数据）
+    cacheClearTable('records');
+    cacheClearTable('students');
+    cacheClearTable('questions');
+    cacheClearTable('exams');
+    
+    _lastSyncTime = Date.now();
+    console.log('[syncImmediately] 同步完成');
   } catch (e) {
-    console.error('syncImmediately error:', e);
+    console.error('[syncImmediately] 同步失败:', e);
+  } finally {
+    _isSyncing = false;
   }
 }
 
@@ -1908,16 +1987,6 @@ async function syncAll() {
   } finally {
     _isSyncing = false;
   }
-}
-
-// 立即同步（用于手动同步按钮和关键操作）
-async function syncImmediately() {
-  await syncAll();
-  // 清除所有相关缓存（确保刷新时获取最新数据）
-  cacheClearTable('records');
-  cacheClearTable('students');
-  cacheClearTable('questions');
-  cacheClearTable('exams');
 }
 
 // ===== Exam Mode Control =====
@@ -7892,24 +7961,49 @@ async function renderWrongTraining() {
   
   container.innerHTML = `<div style="text-align:center;padding:40px"><div class="spinner-lg" style="margin:0 auto"></div><div style="margin-top:12px;color:var(--text2)">加载错题数据...</div></div>`;
   
+  // 检查用户是否登录
+  if (!currentUser || !currentUser.username) {
+    container.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text3)">请先登录</div>`;
+    return;
+  }
+  
+  console.log('[renderWrongTraining] 开始加载错题数据...', {
+    username: currentUser.username,
+    level: currentLevel
+  });
+  
   // 使用 Supabase 查询错题数据
   try {
-    // 获取错题记录
+    // 获取错题记录（使用手机号作为 student_id）
     const wrongRecords = await dbSelect('records', { 
       eq: { student_id: currentUser.username, is_correct: false },
-      select: ['question_id', 'wrong_level', 'created_at']
+      select: ['question_id', 'wrong_level', 'created_at', 'is_fav']
     });
     
-    // 获取对应级别的题目
-    const allQ = await dbSelect('questions', { eq: { level: currentLevel }, select: ['id', 'type', 'content'] });
-    const qIdSet = new Set(allQ.map(q => q.id));
+    console.log('[renderWrongTraining] 查询到错题记录:', wrongRecords?.length || 0, wrongRecords);
     
-    // 过滤出当前级别的错题
-    const levelWrongRecords = wrongRecords.filter(r => qIdSet.has(r.question_id));
+    // 获取对应级别的题目
+    const allQ = await dbSelect('questions', { 
+      eq: { level: currentLevel }, 
+      select: ['id', 'type', 'content'] 
+    });
+    
+    console.log('[renderWrongTraining] 当前级别题目数:', allQ?.length || 0, allQ?.slice(0, 3));
+    
+    // 使用数字类型的 Set 进行匹配
+    const qIdSet = new Set(allQ.map(q => parseInt(q.id)));
+    
+    // 过滤出当前级别的错题（确保类型匹配）
+    const levelWrongRecords = (wrongRecords || []).filter(r => {
+      const qId = parseInt(r.question_id);
+      return !isNaN(qId) && qIdSet.has(qId);
+    });
+    
+    console.log('[renderWrongTraining] 当前级别错题数:', levelWrongRecords.length, levelWrongRecords.slice(0, 3));
     
     // 统计数据
     const totalWrong = levelWrongRecords.length;
-    const mastered = levelWrongRecords.filter(r => r.wrong_level >= 3).length;
+    const mastered = levelWrongRecords.filter(r => (r.wrong_level || 0) >= 3).length;
     const pending = totalWrong - mastered;
     
     // 计算今日待复习（今天做错的题）
@@ -7922,8 +8016,10 @@ async function renderWrongTraining() {
       weekStats: {} 
     };
     _wrongQuestions = levelWrongRecords;
+    
+    console.log('[renderWrongTraining] 错题统计:', _wrongStats);
   } catch (e) {
-    console.error('加载错题统计失败:', e);
+    console.error('[renderWrongTraining] 加载错题统计失败:', e);
     _wrongStats = { stats: { total_wrong: 0, mastered: 0, new_wrong: 0, practicing: 0 }, todayReview: 0, weekStats: {} };
   }
   
@@ -8316,8 +8412,9 @@ async function submitWrongAnswer() {
   const isCorrect = userAnswer === correctAnswer;
   
   // 记录答题记录到缓冲区（同步到records表）
+  // 注意：records 表的 student_id 是手机号（字符串），不是 UUID
   bufferRecord({
-    student_id: currentUser.id,
+    student_id: currentUser.username,
     question_id: q.id,
     is_correct: isCorrect,
     user_answer: userAnswer,
@@ -8821,8 +8918,16 @@ function confirmMultiAnswer(qId) {
 }
 
 async function toggleFav(qId) {
-  // 统一使用字符串键
+  // 统一使用数字类型查询（数据库中 question_id 是 bigint）
+  const qIdNum = parseInt(qId);
   const qIdStr = String(qId);
+  
+  if (isNaN(qIdNum)) {
+    console.error('[toggleFav] 无效的题目 ID:', qId);
+    return;
+  }
+  
+  console.log('[toggleFav] 开始处理收藏:', qIdStr, '当前用户:', currentUser?.username);
   
   // 先检查收藏缓冲区，合并最新状态
   let currentFavStatus = null;
@@ -8844,18 +8949,25 @@ async function toggleFav(qId) {
   }
   
   // 先检查本地缓冲区
-  const bufferedRecord = _recordBuffer.find(r => String(r.question_id) === qIdStr);
+  const bufferedRecord = _recordBuffer.find(r => parseInt(r.question_id) === qIdNum);
   let records = [];
-  let needCreateRecord = false;
   
   if (bufferedRecord) {
     records = [bufferedRecord];
   } else if (currentFavStatus !== null) {
     // 有缓存状态，不需要查询数据库，直接使用缓存
-    records = [{ question_id: qIdStr, is_fav: currentFavStatus }];
+    records = [{ question_id: qIdNum, is_fav: currentFavStatus }];
   } else {
-    // 无缓存，查询数据库
-    records = await dbSelect('records', { eq: { student_id: currentUser.username, question_id: qIdStr } }) || [];
+    // 无缓存，查询数据库（使用数字类型的 question_id）
+    try {
+      records = await dbSelect('records', { 
+        eq: { student_id: currentUser.username, question_id: qIdNum } 
+      }) || [];
+      console.log('[toggleFav] 查询记录结果:', records.length, '条');
+    } catch(e) {
+      console.error('[toggleFav] 查询记录失败:', e);
+      records = [];
+    }
   }
   
   // 计算新的收藏状态
@@ -8873,17 +8985,19 @@ async function toggleFav(qId) {
     if (latest.id) {
       // 记录已有 ID，使用缓冲机制更新
       bufferFavUpdate(latest.id, isFav, qIdStr);
+      console.log('[toggleFav] 缓冲收藏更新:', latest.id, isFav);
     } else if (bufferedRecord) {
       // 记录在缓冲区中，直接更新缓冲区的记录
       bufferedRecord.is_fav = isFav;
       saveLocalData();
+      console.log('[toggleFav] 更新缓冲区记录');
     } else {
-      // 记录存在但无 ID（不应该发生），尝试直接更新
-      console.warn('toggleFav: 记录无 ID，尝试通过 student_id + question_id 更新');
+      // 记录存在但无 ID，尝试直接更新
+      console.warn('[toggleFav] 记录无 ID，尝试通过 student_id + question_id 更新');
       try {
-        await dbUpdate('records', { is_fav: isFav }, { student_id: currentUser.username, question_id: qIdStr });
+        await dbUpdate('records', { is_fav: isFav }, { student_id: currentUser.username, question_id: qIdNum });
       } catch(e) {
-        console.error('toggleFav 更新失败:', e);
+        console.error('[toggleFav] 更新失败:', e);
       }
     }
     
@@ -8891,7 +9005,7 @@ async function toggleFav(qId) {
     
     // 在收藏夹模式下取消收藏时，立即从列表中移除该题目
     if (practiceMode === 'fav' && !isFav) {
-      const idx = practiceQuestions.findIndex(q => String(q.id || q.question_id) === qIdStr);
+      const idx = practiceQuestions.findIndex(q => parseInt(q.id || q.question_id) === qIdNum);
       if (idx !== -1) {
         practiceQuestions.splice(idx, 1);
         if (idx < practiceIndex) {
