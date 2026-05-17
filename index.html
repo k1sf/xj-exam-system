@@ -1748,7 +1748,35 @@ async function flushRecordBuffer() {
   // Take all records from buffer
   const batch = _recordBuffer.splice(0, _recordBuffer.length);
   try {
-    await dbInsert('records', batch);
+    // 使用 upsert 避免重复键错误
+    if (supabase) {
+      let successCount = 0;
+      for (const record of batch) {
+        try {
+          const cleanRecord = {
+            student_id: String(record.student_id),
+            question_id: parseInt(record.question_id),
+            is_correct: Boolean(record.is_correct),
+            user_answer: String(record.user_answer || ''),
+            is_fav: Boolean(record.is_fav || false)
+          };
+          const { error } = await supabase.from('records').upsert(cleanRecord, { 
+            onConflict: 'student_id,question_id'
+          });
+          if (error) {
+            console.error('[flushRecordBuffer] upsert 失败:', error, cleanRecord);
+          } else {
+            successCount++;
+          }
+        } catch(e) {
+          console.error('[flushRecordBuffer] upsert 异常:', e, record);
+        }
+      }
+      console.log(`[flushRecordBuffer] 同步成功: ${successCount}/${batch.length}`);
+    } else {
+      // 降级到 insert（旧模式）
+      await dbInsert('records', batch);
+    }
     saveLocalData(); // 更新本地数据（清空已同步的记录）
   } catch(e) {
     // If failed, put records back (they'll be retried on next flush or via offline queue)
