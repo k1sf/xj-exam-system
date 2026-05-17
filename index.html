@@ -3767,11 +3767,16 @@ async function renderEnrollSub() {
   if (!container) return;
   
   try {
-    const response = await fetch('/api/enroll-config/list', {
-      headers: { 'X-API-Token': API_TOKEN }
-    });
-    _enrollmentConfigs = await response.json();
+    _enrollmentConfigs = await dbSelect('enroll_configs', { order: ['id', false] });
+    // 获取每个配置的报名人数
+    for (const config of _enrollmentConfigs) {
+      const countResult = await dbCount('enrollments', { where: { config_id: config.id } });
+      config.enrollment_count = countResult;
+      const approvedResult = await dbCount('enrollments', { where: { config_id: config.id, status: 'approved' } });
+      config.approved_count = approvedResult;
+    }
   } catch(e) {
+    console.error('加载报名配置失败:', e);
     _enrollmentConfigs = [];
   }
   
@@ -4813,11 +4818,16 @@ let _enrollmentDetailSource = 'enrollment'; // 记录报名详情页的来源：
 
 async function renderAdminEnrollment() {
   try {
-    const response = await fetch('/api/enroll-config/list', {
-      headers: { 'X-API-Token': API_TOKEN }
-    });
-    _enrollmentConfigs = await response.json();
+    _enrollmentConfigs = await dbSelect('enroll_configs', { order: ['id', false] });
+    // 获取每个配置的报名人数
+    for (const c of _enrollmentConfigs) {
+      const total = await dbCount('enrollments', { where: { config_id: c.id } });
+      const approved = await dbCount('enrollments', { where: { config_id: c.id, status: 'approved' } });
+      c.enrollment_count = total;
+      c.approved_count = approved;
+    }
   } catch(e) {
+    console.error('加载报名配置失败:', e);
     _enrollmentConfigs = [];
   }
   
@@ -4925,13 +4935,8 @@ async function createEnrollment() {
   if (!endTime) { showToast('请设置报名截止时间', 'error'); return; }
   
   try {
-    const response = await fetch('/api/enroll-config/create', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-      body: JSON.stringify({ title, levels, cohort, start_time: startTime || null, end_time: endTime, auto_sync: autoSync, created_by: currentAdmin?.id })
-    });
-    const result = await response.json();
-    if (result.error) { showToast(result.error, 'error'); return; }
+    const result = await dbInsert('enroll_configs', [{ title, levels, cohort, start_time: startTime || null, end_time: endTime, auto_sync: autoSync, created_by: currentAdmin?.id, status: 'active' }]);
+    if (!result || result.length === 0) { showToast('创建失败', 'error'); return; }
     showToast('创建成功', 'success');
     closeEnrollmentModal();
     goBackToEnrollList();
@@ -4943,13 +4948,10 @@ async function createEnrollment() {
 async function openEnrollmentDetail(configId, source = 'enrollment') {
   _enrollmentDetailSource = source; // 记录来源
   try {
-    const [configRes, listRes] = await Promise.all([
-      fetch(`/api/enroll-config/get?id=${configId}`, { headers: { 'X-API-Token': API_TOKEN } }),
-      fetch(`/api/enroll-list?config_id=${configId}`, { headers: { 'X-API-Token': API_TOKEN } })
-    ]);
-    _currentEnrollmentConfig = await configRes.json();
-    _enrollmentList = await listRes.json();
+    _currentEnrollmentConfig = (await dbSelect('enroll_configs', { where: { id: config_id } }))[0];
+    _enrollmentList = await dbSelect('enrollments', { where: { config_id: configId } });
   } catch(e) {
+    console.error('加载报名详情失败:', e);
     _currentEnrollmentConfig = null;
     _enrollmentList = [];
   }
@@ -5236,13 +5238,7 @@ function copyEnrollmentLink() {
 
 async function toggleEnrollmentStatus(configId, status) {
   try {
-    const response = await fetch('/api/enroll-config/update', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-      body: JSON.stringify({ id: configId, status })
-    });
-    const result = await response.json();
-    if (result.error) { showToast(result.error, 'error'); return; }
+    await dbUpdate('enroll_configs', { where: { id: configId }, values: { status } });
     showToast(status === 'active' ? '已开启' : '已关闭', 'success');
     openEnrollmentDetail(configId);
   } catch(e) {
@@ -5265,13 +5261,7 @@ function goBackToEnrollList() {
 async function deleteEnrollment(configId) {
   if (!confirm('确定删除此报名？报名记录将一并删除！')) return;
   try {
-    const response = await fetch('/api/enroll-config/delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-      body: JSON.stringify({ id: configId })
-    });
-    const result = await response.json();
-    if (result.error) { showToast(result.error, 'error'); return; }
+    await dbDelete('enroll_configs', { where: { id: configId } });
     showToast('删除成功', 'success');
     goBackToEnrollList();
   } catch(e) {
@@ -5291,20 +5281,42 @@ async function importEnrollments() {
   if (!confirm(`确定导入 ${pending.length} 名学生到学生列表？\n默认密码为 123456`)) return;
   
   try {
-    const response = await fetch('/api/enroll-import-students', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-      body: JSON.stringify({ config_id: _currentEnrollmentConfig.id, enrollment_ids: selectedIds })
-    });
-    const result = await response.json();
-    if (result.error) { showToast(result.error, 'error'); return; }
-    showToast(`成功导入 ${result.imported} 人，更新 ${result.updated} 人`, 'success');
-    if (result.errors?.length) {
-      console.error('导入错误：', result.errors);
+    let imported = 0, updated = 0;
+    const defaultPassword = await hashPassword('123456');
+    
+    for (const enrollment of pending) {
+      // 检查学生是否已存在
+      const existing = await dbSelect('students', { where: { username: enrollment.phone } });
+      
+      if (existing.length > 0) {
+        // 更新现有学生信息
+        await dbUpdate('students', { 
+          where: { username: enrollment.phone }, 
+          values: { nickname: enrollment.name, level: enrollment.level, cohort: enrollment.cohort }
+        });
+        updated++;
+      } else {
+        // 创建新学生
+        await dbInsert('students', [{
+          username: enrollment.phone,
+          password: defaultPassword,
+          nickname: enrollment.name,
+          level: enrollment.level,
+          cohort: enrollment.cohort,
+          status: 'active',
+          expires_at: new Date(Date.now() + 365*24*60*60*1000).toISOString()
+        }]);
+        imported++;
+      }
+      
+      // 更新报名状态
+      await dbUpdate('enrollments', { where: { id: enrollment.id }, values: { status: 'approved' } });
     }
+    
+    showToast(`成功导入 ${imported} 人，更新 ${updated} 人`, 'success');
+    
     // 刷新列表和全局学生数据
     _selectedEnrollments.clear();
-    // 重新加载学生列表
     allStudents = await dbSelect('students', { cacheBypass: true });
     filterStudents();
     openEnrollmentDetail(_currentEnrollmentConfig.id);
@@ -5358,7 +5370,7 @@ async function renderAdminHomework() {
 
 async function loadHomeworkList() {
   try {
-    _homeworkList = await fetch('/api/homework/list').then(r => r.json());
+    _homeworkList = await dbSelect('homeworks', { orderBy: 'created_at', orderDir: 'desc' });
     renderHomeworkList();
   } catch (e) {
     document.getElementById('homeworkListContainer').innerHTML = '<p class="error">加载失败</p>';
@@ -5456,11 +5468,11 @@ async function showCreateHomeworkModal() {
   
   // 获取配置
   try {
-    const configRes = await fetch('/api/homework/config/get').then(r => r.json());
-    if (!configRes.error) _homeworkConfig = configRes;
+    const configRes = await dbSelect('homework_config', { limit: 1 });
+    if (configRes && configRes.length > 0) _homeworkConfig = configRes[0];
     
-    const countRes = await fetch('/api/homework/question-count').then(r => r.json());
-    if (!countRes.error) _totalQuestionCount = countRes.total;
+    const countRes = await dbSelect('questions', { select: ['id'] });
+    _totalQuestionCount = countRes ? countRes.length : 0;
   } catch (e) {}
   
   // 计算默认题目范围
@@ -5604,29 +5616,27 @@ async function createHomework() {
   }
   
   try {
-    const res = await fetch('/api/homework/create', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title,
-        target_type: 'cohort',
-        cohorts: _selectedHomeworkCohorts,
-        question_count: qEnd - qStart + 1,
-        question_start: qStart,
-        question_end: qEnd,
-        end_time: endTime ? new Date(endTime).toISOString() : null,
-        auto_create: autoCreate
-      })
-    }).then(r => r.json());
-    
-    if (res.error) throw new Error(res.error);
+    // 使用Supabase插入作业
+    await dbInsert('homeworks', [{
+      title,
+      type: 'practice',
+      target_type: 'cohort',
+      cohorts: _selectedHomeworkCohorts,
+      question_count: qEnd - qStart + 1,
+      question_start: qStart,
+      question_end: qEnd,
+      end_time: endTime ? new Date(endTime).toISOString() : null,
+      auto_create: autoCreate,
+      created_by: currentUser?.username || 'admin'
+    }]);
     
     // 更新配置（记忆下次延续）
-    await fetch('/api/homework/config/set', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ value: { question_end: qEnd, default_count: defaultCount } })
-    });
+    const existingConfig = await dbSelect('homework_config', { select: 'id', where: { key: 'default' }, limit: 1 });
+    if (existingConfig.length > 0) {
+      await dbUpdate('homework_config', { where: { key: 'default' }, values: { value: { question_end: qEnd, default_count: defaultCount } } });
+    } else {
+      await dbInsert('homework_config', [{ key: 'default', value: { question_end: qEnd, default_count: defaultCount } }]);
+    }
     
     closeModal();
     showToast('作业布置成功', 'success');
@@ -5638,10 +5648,11 @@ async function createHomework() {
 
 async function openHomeworkDetail(id) {
   try {
-    const homework = await fetch(`/api/homework/get?id=${id}`).then(r => r.json());
-    if (homework.error) throw new Error(homework.error);
+    const homeworkList = await dbSelect('homeworks', { where: { id } });
+    const homework = homeworkList[0];
+    if (!homework) throw new Error('作业不存在');
     
-    const records = await fetch(`/api/homework/records?homework_id=${id}`).then(r => r.json());
+    const records = await dbSelect('homework_records', { where: { homework_id: id } });
     _currentHomework = homework;
     
     const typeText = homework.type === 'practice' ? '刷题' : homework.type === 'exercise' ? '错题练习' : '模拟考试';
@@ -5739,14 +5750,7 @@ async function deleteHomework(id) {
   if (!confirm('确定要删除这个作业吗？')) return;
   
   try {
-    const res = await fetch('/api/homework/delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id })
-    }).then(r => r.json());
-    
-    if (res.error) throw new Error(res.error);
-    
+    await dbDelete('homeworks', { where: { id } });
     showToast('删除成功', 'success');
     renderAdminHomework();
   } catch (e) {
@@ -6010,16 +6014,56 @@ async function viewWrongDetail(studentId, studentName) {
   `;
   
   try {
-    const res = await fetch('/api/wrong-detail-admin', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-      body: JSON.stringify({ student_id: studentId })
+    // 获取学生答错的题目
+    const records = await dbSelect('records', {
+      where: { student_id: studentId, is_correct: false },
+      select: ['question_id']
     });
-    const data = await res.json();
     
-    if (!data.success) throw new Error(data.error || '获取失败');
+    if (records.length === 0) {
+      document.getElementById('modalContent').innerHTML = `
+        <div style="padding:20px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <h3 style="margin:0;font-size:1.1rem">❌ ${escHtml(studentName)}的错题本</h3>
+            <button onclick="closeModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3)">&times;</button>
+          </div>
+          <div style="text-align:center;padding:30px;color:var(--text3)">暂无错题</div>
+        </div>
+      `;
+      return;
+    }
     
-    const questions = data.questions || [];
+    // 获取题目详情
+    const questionIds = [...new Set(records.map(r => r.question_id))];
+    const questions = await dbSelect('questions', {
+      where: { id: questionIds },
+      select: ['id', 'content', 'analysis', 'level']
+    });
+    
+    // 获取掌握状态
+    const mastery = await dbSelect('wrong_question_mastery', {
+      where: { student_id: studentId },
+      select: ['question_id', 'is_mastered', 'wrong_count']
+    });
+    
+    const masteryMap = {};
+    mastery.forEach(m => {
+      masteryMap[m.question_id] = m;
+    });
+    
+    // 统计每个题目的错误次数
+    const wrongCountMap = {};
+    records.forEach(r => {
+      wrongCountMap[r.question_id] = (wrongCountMap[r.question_id] || 0) + 1;
+    });
+    
+    const questionsWithInfo = questions.map(q => ({
+      ...q,
+      wrong_count: wrongCountMap[q.id] || 0,
+      is_mastered: masteryMap[q.id]?.is_mastered || false
+    }));
+    
+    const questionsData = questionsWithInfo;
     
     let html = `
       <div style="padding:20px">
