@@ -1215,7 +1215,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <script src="https://unpkg.com/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
 <script>
 // 版本号 - 用于确认是否加载了最新代码
-window.__CODE_VERSION__ = '2025-01-18-v10';
+window.__CODE_VERSION__ = '2025-01-18-v11';
 console.log('=== 代码版本: ' + window.__CODE_VERSION__ + ' ===');
 </script>
 </head>
@@ -3852,6 +3852,12 @@ function filterStudents() {
   // 使用包含匹配，支持搜索合并期次中的任意一个
   if (cohort) filtered = filtered.filter(s => (s.cohort || '').split(',').map(c => c.trim()).includes(cohort));
   if (search) filtered = filtered.filter(s => (s.nickname||'').toLowerCase().includes(search) || (s.username||'').includes(search));
+  // 按加入时间升序排列（最早的在前）
+  filtered.sort((a, b) => {
+    const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return ta - tb;
+  });
   _filteredStudents = filtered;
   _pg.student = 1;
   _pageRenderers.student = renderStudentListPage;
@@ -3908,7 +3914,7 @@ async function batchRenewStudents() {
       const result = await dbBatchUpdate('students', batch);
       
       showToast(`已为 ${result.successCount || students.length} 名学生续期`, 'success');
-      allStudents = await dbSelect('students', { cacheBypass: true });
+      allStudents = await dbSelect('students', { order: ['created_at', false], cacheBypass: true });
       filterStudents();
     } catch(e) { showToast('批量续期失败', 'error'); }
   });
@@ -3930,7 +3936,7 @@ async function batchToggleStudents(disable) {
       const result = await dbBatchUpdate('students', batch);
       
       showToast(`已${disable ? '禁用' : '启用'} ${result.successCount || students.length} 名学生`, 'success');
-      allStudents = await dbSelect('students', { cacheBypass: true });
+      allStudents = await dbSelect('students', { order: ['created_at', false], cacheBypass: true });
       filterStudents();
     } catch(e) { showToast('批量操作失败', 'error'); }
   });
@@ -3951,7 +3957,7 @@ async function batchLockLevel(lock) {
       const result = await dbBatchUpdate('students', batch);
       
       showToast(`已${lock ? '锁定' : '解锁'} ${result.successCount || students.length} 名学生等级`, 'success');
-      allStudents = await dbSelect('students', { cacheBypass: true });
+      allStudents = await dbSelect('students', { order: ['created_at', false], cacheBypass: true });
       filterStudents();
     } catch(e) { showToast('批量操作失败', 'error'); }
   });
@@ -4029,7 +4035,7 @@ async function resetStudentPwd(username) {
       showToast('密码已重置为 123456', 'success');
       closeModal();
       // 使用 cacheBypass 确保获取最新数据
-      allStudents = await dbSelect('students', { cacheBypass: true });
+      allStudents = await dbSelect('students', { order: ['created_at', false], cacheBypass: true });
       filterStudents();
     } catch(e) {
       showToast('重置失败', 'error');
@@ -4048,7 +4054,7 @@ async function toggleStudentStatus(username, currentStatus) {
       showToast(newStatus === 'disabled' ? '账号已禁用' : '账号已启用', 'success');
       closeModal();
       // 使用 cacheBypass 确保获取最新数据
-      allStudents = await dbSelect('students', { cacheBypass: true });
+      allStudents = await dbSelect('students', { order: ['created_at', false], cacheBypass: true });
       filterStudents();
     } catch(e) {
       showToast('操作失败', 'error');
@@ -4066,7 +4072,7 @@ async function renewStudent(username) {
       showToast('已续期一年', 'success');
       closeModal();
       // 使用 cacheBypass 确保获取最新数据
-      allStudents = await dbSelect('students', { cacheBypass: true });
+      allStudents = await dbSelect('students', { order: ['created_at', false], cacheBypass: true });
       filterStudents();
     } catch(e) {
       showToast('续期失败', 'error');
@@ -4086,7 +4092,7 @@ async function deleteStudent(username) {
       showToast('已删除', 'success');
       closeModal();
       // 使用 cacheBypass 确保获取最新数据
-      allStudents = await dbSelect('students', { cacheBypass: true });
+      allStudents = await dbSelect('students', { order: ['created_at', false], cacheBypass: true });
       filterStudents();
     } catch(e) {
       showToast('删除失败', 'error');
@@ -5390,6 +5396,11 @@ async function renderEnrollmentDetailPage() {
   
   const levelsStr = (c.levels || []).map(l => `${LEVEL_ICONS[l]||''}${escHtml(l)}`).join(' ');
   
+  // 从实际报名数据计算统计
+  const enrollmentCount = _enrollmentList.length;
+  const approvedCount = _enrollmentList.filter(e => e.status === 'approved').length;
+  const pendingCount = enrollmentCount - approvedCount;
+  
   // 生成分享链接
   const enrollUrl = `${window.location.origin}/#enroll=${c.id}`;
   
@@ -5409,7 +5420,7 @@ async function renderEnrollmentDetailPage() {
         <div>级别：${levelsStr}</div>
         ${c.cohort ? `<div>班级：${escHtml(c.cohort)}</div>` : ''}
         <div style="margin-top:8px;padding:8px;background:var(--bg2);border-radius:6px">
-          报名：${c.enrollment_count || 0}人 | 已导入：${c.approved_count || 0}人 | 待审核：${(c.enrollment_count || 0) - (c.approved_count || 0)}人
+          报名：${enrollmentCount}人 | 已导入：${approvedCount}人 | 待审核：${pendingCount}人
         </div>
       </div>
     </div>
@@ -5445,15 +5456,16 @@ function renderEnrollmentTable() {
   const filtered = getFilteredEnrollments();
   if (!filtered.length) return '<div style="text-align:center;padding:20px;color:var(--text2)">暂无报名记录</div>';
   
-  // 默认选中未导入的学生
+  // 默认选中未导入的学生（status 为 null/undefined/'pending' 视为待审核）
   filtered.forEach(e => {
-    if (e.status === 'pending') _selectedEnrollments.add(e.id);
+    const eStatus = e.status || 'pending';
+    if (eStatus === 'pending') _selectedEnrollments.add(e.id);
     else _selectedEnrollments.delete(e.id);
   });
   
   // 计算选中的待审核数量
-  const pendingSelected = filtered.filter(e => e.status === 'pending' && _selectedEnrollments.has(e.id)).length;
-  const allPending = filtered.filter(e => e.status === 'pending').length;
+  const pendingSelected = filtered.filter(e => (e.status || 'pending') === 'pending' && _selectedEnrollments.has(e.id)).length;
+  const allPending = filtered.filter(e => (e.status || 'pending') === 'pending').length;
   const allSelected = pendingSelected === allPending && allPending > 0;
   
   return `
@@ -5577,7 +5589,9 @@ function getFilteredEnrollments() {
   
   return _enrollmentList.filter(e => {
     if (level && e.level !== level) return false;
-    if (status && e.status !== status) return false;
+    // status 为 null/undefined 视为 'pending'
+    const eStatus = e.status || 'pending';
+    if (status && eStatus !== status) return false;
     if (search && !e.name.toLowerCase().includes(search) && !e.phone.includes(search)) return false;
     return true;
   });
@@ -5713,10 +5727,10 @@ async function importEnrollments() {
       
       if (existing.length > 0) {
         // 更新现有学生信息
-        await dbUpdate('students', { 
-          where: { username: enrollment.phone }, 
-          values: { nickname: enrollment.name, level: enrollment.level, cohort: enrollment.cohort }
-        });
+        await dbUpdate('students', 
+          { nickname: enrollment.name, level: enrollment.level, cohort: enrollment.cohort },
+          { username: enrollment.phone }
+        );
         updated++;
       } else {
         // 创建新学生
@@ -5740,7 +5754,7 @@ async function importEnrollments() {
     
     // 刷新列表和全局学生数据
     _selectedEnrollments.clear();
-    allStudents = await dbSelect('students', { cacheBypass: true });
+    allStudents = await dbSelect('students', { order: ['created_at', false], cacheBypass: true });
     filterStudents();
     openEnrollmentDetail(_currentEnrollmentConfig.id);
   } catch(e) {
@@ -11988,13 +12002,14 @@ async function submitEnrollment(configId, autoSync) {
       });
     }
     
-    // 创建报名记录
+    // 创建报名记录（自动同步模式下直接标记为已导入）
     const { error: enrollError } = await supabase.from('enrollments').insert({
       config_id: configId,
       name: name,
       phone: phone,
       level: level,
-      cohort: cohort || '未分配'
+      cohort: cohort || '未分配',
+      status: autoSync ? 'approved' : 'pending'
     });
     
     if (enrollError) {
