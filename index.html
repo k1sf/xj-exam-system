@@ -1215,7 +1215,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <script src="https://unpkg.com/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
 <script>
 // 版本号 - 用于确认是否加载了最新代码
-window.__CODE_VERSION__ = '2025-01-18-v13';
+window.__CODE_VERSION__ = '2025-01-18-v14';
 console.log('=== 代码版本: ' + window.__CODE_VERSION__ + ' ===');
 </script>
 </head>
@@ -3866,11 +3866,11 @@ function filterStudents() {
   // 使用包含匹配，支持搜索合并期次中的任意一个
   if (cohort) filtered = filtered.filter(s => (s.cohort || '').split(',').map(c => c.trim()).includes(cohort));
   if (search) filtered = filtered.filter(s => (s.nickname||'').toLowerCase().includes(search) || (s.username||'').includes(search));
-  // 按加入时间升序排列（最早的在前）
+  // 按加入时间降序排列（最新报名的在前面）
   filtered.sort((a, b) => {
     const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
     const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
-    return ta - tb;
+    return tb - ta; // 降序：新数据在前
   });
   _filteredStudents = filtered;
   _pg.student = 1;
@@ -5369,8 +5369,15 @@ async function createEnrollment() {
 async function openEnrollmentDetail(configId, source = 'enrollment') {
   _enrollmentDetailSource = source; // 记录来源
   try {
-    _currentEnrollmentConfig = (await dbSelect('enroll_configs', { where: { id: configId } }))[0];
-    _enrollmentList = await dbSelect('enrollments', { where: { config_id: configId } });
+    // 确保 configId 是数字类型
+    const id = typeof configId === 'string' ? parseInt(configId) : configId;
+    console.log('openEnrollmentDetail: configId=', configId, 'id=', id);
+    
+    const configs = await dbSelect('enroll_configs', { where: { id } });
+    console.log('enroll_configs result:', configs);
+    _currentEnrollmentConfig = configs[0];
+    _enrollmentList = await dbSelect('enrollments', { where: { config_id: id } });
+    console.log('enrollments result:', _enrollmentList);
   } catch(e) {
     console.error('加载报名详情失败:', e);
     _currentEnrollmentConfig = null;
@@ -5612,21 +5619,20 @@ function getFilteredEnrollments() {
 }
 
 function filterEnrollmentList() {
-  _enrollmentFilter.level = document.getElementById('enrollLevelFilter').value;
-  _enrollmentFilter.status = document.getElementById('enrollStatusFilter').value;
-  _enrollmentFilter.search = document.getElementById('enrollSearch').value.trim();
+  _enrollmentFilter.level = document.getElementById('enrollLevelFilter')?.value || '';
+  _enrollmentFilter.status = document.getElementById('enrollStatusFilter')?.value || '';
+  _enrollmentFilter.search = document.getElementById('enrollSearch')?.value?.trim() || '';
   
-  // 重新渲染整个表格（包含全选checkbox）
-  const container = document.querySelector('#adminContent .card:nth-child(2)');
+  console.log('filterEnrollmentList:', _enrollmentFilter, '_enrollmentList length:', _enrollmentList?.length);
+  
+  // 找到表格容器（div with max-height:400px）
+  const cards = document.querySelectorAll('#adminContent .card');
+  const container = cards[1]?.querySelector('div[style*="max-height"]');
   if (container) {
-    const oldTable = container.querySelector('table');
-    if (oldTable) {
-      const div = document.createElement('div');
-      div.style.maxHeight = '400px';
-      div.style.overflowY = 'auto';
-      div.innerHTML = renderEnrollmentTable();
-      oldTable.parentNode.replaceChild(div.firstElementChild, oldTable);
-    }
+    container.innerHTML = renderEnrollmentTable();
+  } else {
+    console.warn('filterEnrollmentList: container not found, re-rendering page');
+    renderEnrollmentDetailPage();
   }
 }
 
