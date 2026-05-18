@@ -1215,7 +1215,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <script src="https://unpkg.com/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
 <script>
 // 版本号 - 用于确认是否加载了最新代码
-window.__CODE_VERSION__ = '2025-01-17-v2';
+window.__CODE_VERSION__ = '2025-01-18-v1';
 console.log('=== 代码版本: ' + window.__CODE_VERSION__ + ' ===');
 </script>
 </head>
@@ -8845,8 +8845,9 @@ async function renderPracticeSub() {
   }
   
   // 从 localStorage 恢复练习进度（刷新页面后）
+  // 注意：key 必须与 savePracticeProgress/loadPracticeProgress 一致
   if (!window._restorePracticeQId && currentUser) {
-    const savedKey = `practiceProgress_${currentUser.username}`;
+    const savedKey = `practice_progress_${currentUser.username}_${currentLevel}`;
     const savedStr = localStorage.getItem(savedKey);
     if (savedStr) {
       try {
@@ -8855,9 +8856,13 @@ async function renderPracticeSub() {
           window._restorePracticeQId = saved.currentQId;
           window._restorePracticeMode = saved.mode;
           window._restorePracticeIndex = saved.index || 0;
-          console.log(`[Practice] 从 localStorage 恢复进度: QId=${saved.currentQId}, Mode=${saved.mode}`);
+          console.log(`[Practice] 从 localStorage 恢复进度: QId=${saved.currentQId}, Mode=${saved.mode}, Index=${saved.index}`);
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn('[Practice] 恢复进度失败:', e);
+      }
+    } else {
+      console.log(`[Practice] 未找到保存的进度: key=${savedKey}`);
     }
   }
   
@@ -8914,7 +8919,8 @@ async function renderPracticeSub() {
     practiceMultiSelected = {};
     practiceIndex = 0;
     
-    // 恢复之前的进度（如果是从刷新恢复）
+    // 恢复之前的进度（如果是从刷新恢复）并显示"继续学习"对话框
+    let savedProgressForDialog = null;
     if (window._restorePracticeQId && practiceQuestions.length > 0) {
       const restoreQId = window._restorePracticeQId;
       const restoreMode = window._restorePracticeMode;
@@ -8925,12 +8931,23 @@ async function renderPracticeSub() {
         // 尝试通过题目 ID 恢复进度
         const foundIndex = practiceQuestions.findIndex(q => Number(q.id) === Number(restoreQId));
         if (foundIndex >= 0) {
-          practiceIndex = foundIndex;
-          console.log(`[Practice] 恢复进度到第 ${foundIndex + 1} 题`);
+          savedProgressForDialog = {
+            index: foundIndex,
+            total: practiceQuestions.length,
+            mode: restoreMode,
+            currentQId: restoreQId,
+            timestamp: Date.now()
+          };
+          console.log(`[Practice] 检测到保存的进度: 第 ${foundIndex + 1} 题`);
         } else if (restoreIndex >= 0 && restoreIndex < practiceQuestions.length) {
-          // 如果找不到题目，尝试使用索引恢复
-          practiceIndex = restoreIndex;
-          console.log(`[Practice] 通过索引恢复进度到第 ${restoreIndex + 1} 题`);
+          savedProgressForDialog = {
+            index: restoreIndex,
+            total: practiceQuestions.length,
+            mode: restoreMode,
+            currentQId: null,
+            timestamp: Date.now()
+          };
+          console.log(`[Practice] 通过索引检测到保存的进度: 第 ${restoreIndex + 1} 题`);
         }
       }
       
@@ -8956,7 +8973,14 @@ async function renderPracticeSub() {
     <div id="practiceCardArea"></div>
   `;
   loadStudentHomework();
-  renderPracticeCard();
+  
+  // 如果有保存的进度，显示"继续学习"对话框
+  if (savedProgressForDialog && savedProgressForDialog.index > 0) {
+    renderPracticeCard();
+    setTimeout(() => showContinueDialog(savedProgressForDialog), 100);
+  } else {
+    renderPracticeCard();
+  }
 }
 
 async function switchPracticeMode(mode) {
