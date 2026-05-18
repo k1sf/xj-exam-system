@@ -1215,7 +1215,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <script src="https://unpkg.com/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
 <script>
 // 版本号 - 用于确认是否加载了最新代码
-window.__CODE_VERSION__ = '2025-01-18-v5';
+window.__CODE_VERSION__ = '2025-01-18-v7';
 console.log('=== 代码版本: ' + window.__CODE_VERSION__ + ' ===');
 </script>
 </head>
@@ -4395,6 +4395,11 @@ function openBatchImport() {
       <code style="background:#e2e8f0;padding:2px 6px;border-radius:3px;font-size:0.75rem;display:block;margin-top:2px;white-space:nowrap;overflow-x:auto">single|修脚刀的材质通常是？|碳钢|不锈钢|陶瓷|塑料|A|碳钢硬度适中|基础,工具</code>
       <code style="background:#e2e8f0;padding:2px 6px;border-radius:3px;font-size:0.75rem;display:block;margin-top:2px;white-space:nowrap;overflow-x:auto">judge|修脚前需要泡脚20分钟|||||A|软化角质|流程</code>
     </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:0.85rem;color:var(--text2);display:block;margin-bottom:6px">CSV 文件导入（可选）</label>
+      <input type="file" id="csvFileInput" accept=".csv,.txt" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-size:0.85rem" onchange="handleCsvFile(this)">
+      <div style="font-size:0.75rem;color:var(--text3);margin-top:4px">CSV 格式：题型,题干,选项A,选项B,选项C,选项D,答案,解析,标签（首行可选标题行）</div>
+    </div>
     <div style="margin-bottom:12px"><label style="font-size:0.85rem;color:var(--text2);display:block;margin-bottom:6px">导入级别</label>
       <select class="input" id="batchImportLevel">${levelOpts}</select>
     </div>
@@ -4405,6 +4410,66 @@ function openBatchImport() {
     <button class="btn btn-primary btn-full" style="margin-top:12px" id="batchImportBtn" onclick="doBatchImport()">🔍 预览导入</button>
     <div id="batchImportResult"></div>
   `);
+}
+
+// 处理 CSV 文件上传
+function handleCsvFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const text = e.target.result;
+    // 将 CSV 逗号转换为管道符格式
+    const lines = text.split('\n').filter(l => l.trim());
+    const converted = lines.map((line, i) => {
+      // 跳过可能的标题行
+      if (i === 0 && (line.includes('题型') || line.toLowerCase().includes('type'))) {
+        return '';
+      }
+      // 解析 CSV 行（处理引号内的逗号）
+      const parts = parseCsvLine(line);
+      // 转换为管道符格式
+      return parts.join('|');
+    }).filter(l => l.trim());
+    
+    // 填充到文本框
+    document.getElementById('batchImportText').value = converted.join('\n');
+    showToast(`已读取 ${converted.length} 行数据`, 'success');
+  };
+  reader.readAsText(file);
+}
+
+// 解析 CSV 行（处理引号内的逗号）
+function parseCsvLine(line) {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+  
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        // 双引号转义
+        current += '"';
+        i++;
+      } else {
+        // 切换引号状态
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      // 字段分隔符
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  // 添加最后一个字段
+  result.push(current.trim());
+  
+  return result;
 }
 
 function previewBatchImport() {
@@ -6902,7 +6967,7 @@ function exportLearningCSV() {
 // ===== Export Students CSV =====
 async function exportStudentsCsv() {
   requireAdmin();
-  const students = await dbSelect({ table: 'students', order: 'created_at.desc' });
+  const students = await dbSelect('students', { order: ['created_at', false] });
   if (!students || students.length === 0) { showToast('暂无学生数据', 'error'); return; }
   
   const header = '序号,用户名(手机号),昵称,班级,级别,状态,到期时间,经验值,学习等级,创建时间\n';
@@ -10896,8 +10961,7 @@ async function loadMockHistoryInProfile() {
     // 使用 Supabase 查询模拟考试历史
     const history = await dbSelect('mock_exam_history', {
       where: { student_id: currentUser.username },
-      order: 'created_at',
-      orderDir: false,
+      order: ['created_at', true],
       limit: 10
     });
     
@@ -13751,24 +13815,37 @@ async function doDatabaseExport() {
   result.style.display = 'none';
   
   try {
-    const res = await fetch(`${API_BASE}/superadmin/export`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-      body: JSON.stringify({ ...options, sessionToken: _superAdminSession })
-    });
-    const data = await res.json();
+    const exportData = {
+      version: '1.0',
+      exportTime: new Date().toISOString()
+    };
     
-    if (data.error) {
-      throw new Error(data.error);
+    // 直接从前端查询数据
+    if (options.questions) {
+      exportData.questions = await dbSelect('questions');
+    }
+    if (options.students) {
+      exportData.students = await dbSelect('students');
+    }
+    if (options.records) {
+      // 分批导出 records，避免数据量过大
+      const allRecords = [];
+      let offset = 0;
+      const batchSize = 1000;
+      while (true) {
+        const batch = await dbSelect('records', { limit: batchSize, offset: offset, order: ['created_at', false] });
+        if (!batch || batch.length === 0) break;
+        allRecords.push(...batch);
+        if (batch.length < batchSize) break;
+        offset += batchSize;
+      }
+      exportData.records = allRecords;
+    }
+    if (options.exams) {
+      exportData.exams = await dbSelect('exams');
     }
     
     // 创建下载
-    const exportData = {
-      version: '1.0',
-      exportTime: new Date().toISOString(),
-      ...data
-    };
-    
     downloadFile(JSON.stringify(exportData, null, 2), `exam_backup_${new Date().toISOString().slice(0,10)}.json`, 'application/json');
     
     progress.style.display = 'none';
@@ -13777,8 +13854,8 @@ async function doDatabaseExport() {
         <div style="font-size:32px;margin-bottom:8px">✅</div>
         <div style="color:#166534;font-weight:600">导出成功</div>
         <div style="font-size:0.82rem;color:#166534;margin-top:4px">
-          共导出: 题库(${data.questions?.length||0}) 学生(${data.students?.length||0}) 
-          记录(${data.records?.length||0}) 考试(${data.exams?.length||0})
+          共导出: 题库(${exportData.questions?.length||0}) 学生(${exportData.students?.length||0}) 
+          记录(${exportData.records?.length||0}) 考试(${exportData.exams?.length||0})
         </div>
       </div>
     `;
@@ -13916,19 +13993,70 @@ async function doDatabaseImport() {
   progress.style.display = 'block';
   
   try {
-    const res = await fetch(`${API_BASE}/superadmin/import`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Token': API_TOKEN },
-      body: JSON.stringify({ data, options, sessionToken: _superAdminSession })
-    });
-    const result = await res.json();
+    let questionsCount = 0, studentsCount = 0, recordsCount = 0, examsCount = 0;
     
-    if (result.error) {
-      throw new Error(result.error);
+    // 导入题库
+    if (options.questions && data.questions?.length) {
+      // 先清空现有题库（需要超级管理员权限）
+      const existingQuestions = await dbSelect('questions');
+      for (const q of existingQuestions || []) {
+        await dbDelete('questions', { id: q.id });
+      }
+      // 批量插入
+      for (const q of data.questions) {
+        const { id, created_at, ...questionData } = q;
+        await dbInsert('questions', questionData);
+        questionsCount++;
+      }
+    }
+    
+    // 导入学生
+    if (options.students && data.students?.length) {
+      const existingStudents = await dbSelect('students');
+      for (const s of existingStudents || []) {
+        await dbDelete('students', { id: s.id });
+      }
+      for (const s of data.students) {
+        const { id, created_at, ...studentData } = s;
+        await dbInsert('students', studentData);
+        studentsCount++;
+      }
+    }
+    
+    // 导入记录（分批处理，避免超时）
+    if (options.records && data.records?.length) {
+      const existingRecords = await dbSelect('records', { limit: 100 });
+      // 只删除有 id 的记录
+      for (const r of existingRecords || []) {
+        if (r.id) await dbDelete('records', { id: r.id });
+      }
+      // 分批插入
+      const batchSize = 100;
+      for (let i = 0; i < data.records.length; i += batchSize) {
+        const batch = data.records.slice(i, i + batchSize);
+        for (const r of batch) {
+          const { id, created_at, ...recordData } = r;
+          await dbInsert('records', recordData);
+          recordsCount++;
+        }
+      }
+    }
+    
+    // 导入考试
+    if (options.exams && data.exams?.length) {
+      const existingExams = await dbSelect('exams');
+      for (const e of existingExams || []) {
+        await dbDelete('exams', { id: e.id });
+      }
+      for (const e of data.exams) {
+        const { id, created_at, ...examData } = e;
+        await dbInsert('exams', examData);
+        examsCount++;
+      }
     }
     
     closeModal();
-    showToast(`导入成功！题库(${result.questionsCount}) 学生(${result.studentsCount}) 记录(${result.recordsCount}) 考试(${result.examsCount})`, 'success');
+    showToast(`导入成功！题库(${questionsCount}) 学生(${studentsCount}) 记录(${recordsCount}) 考试(${examsCount})`, 'success');
     
   } catch(e) {
     btn.disabled = false;
@@ -13970,8 +14098,7 @@ async function loadMockHistory() {
     // 使用 Supabase 加载模拟考试历史
     const list = await dbSelect('mock_exam_history', { 
       where: { student_id: currentUser.id }, 
-      order: 'created_at', 
-      desc: true, 
+      order: ['created_at', true],
       limit: 10 
     });
     
