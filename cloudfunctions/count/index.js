@@ -3,35 +3,37 @@
  * 
  * 请求参数：
  * - table: 表名
- * - filter: 筛选条件对象
- * - eq: 等于条件 { field: value }
- * - gte: 大于等于 { field: value }
- * - gt: 大于 { field: value }
- * - lte: 小于等于 { field: value }
- * - lt: 小于 { field: value }
- * - in: IN 条件 { field: [values] }
- * - neq: 不等于 { field: value }
+ * - filter: 筛选条件
+ * - where: 筛选条件（同 filter）
  * 
  * 返回：
  * - success: true/false
  * - count: 数量
  */
 
-const cloud = require('wx-server-sdk');
-cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
-const db = cloud.database();
-const _ = db.command;
+const tcb = require('tcb-admin-node');
 
-const { success, error } = require('../common/utils');
+// 初始化
+tcb.init();
 
-// 允许查询的表
+const db = tcb.database();
+
+function success(data) {
+  return { success: true, ...data };
+}
+
+function error(message) {
+  return { success: false, error: message };
+}
+
+// 允许统计的表
 const ALLOWED_TABLES = [
   'students', 'questions', 'records', 'exams', 'admins',
   'enroll_configs', 'enrollments', 'homeworks', 'homework_records'
 ];
 
 exports.main = async (event, context) => {
-  const { table, filter, eq, gte, gt, lte, lt, in: inCond, neq } = event;
+  const { table, filter, where } = event;
   
   // 参数校验
   if (!table) {
@@ -43,74 +45,18 @@ exports.main = async (event, context) => {
   }
   
   try {
+    const collection = db.collection(table);
+    
     // 构建查询条件
-    let where = {};
+    const query = filter || where || {};
     
-    // 基础筛选
-    if (filter && typeof filter === 'object') {
-      Object.assign(where, filter);
-    }
+    // 执行统计
+    const res = await collection.where(query).count();
     
-    // 等于条件
-    if (eq && typeof eq === 'object') {
-      for (const [key, value] of Object.entries(eq)) {
-        where[key] = value;
-      }
-    }
+    return success({ count: res.total || 0 });
     
-    // 大于等于
-    if (gte && typeof gte === 'object') {
-      for (const [key, value] of Object.entries(gte)) {
-        where[key] = _.gte(value);
-      }
-    }
-    
-    // 大于
-    if (gt && typeof gt === 'object') {
-      for (const [key, value] of Object.entries(gt)) {
-        where[key] = _.gt(value);
-      }
-    }
-    
-    // 小于等于
-    if (lte && typeof lte === 'object') {
-      for (const [key, value] of Object.entries(lte)) {
-        where[key] = _.lte(value);
-      }
-    }
-    
-    // 小于
-    if (lt && typeof lt === 'object') {
-      for (const [key, value] of Object.entries(lt)) {
-        where[key] = _.lt(value);
-      }
-    }
-    
-    // IN 条件
-    if (inCond && typeof inCond === 'object') {
-      for (const [key, values] of Object.entries(inCond)) {
-        if (Array.isArray(values)) {
-          where[key] = _.in(values);
-        }
-      }
-    }
-    
-    // 不等于
-    if (neq && typeof neq === 'object') {
-      for (const [key, value] of Object.entries(neq)) {
-        where[key] = _.neq(value);
-      }
-    }
-    
-    // 执行计数
-    const res = await db.collection(table).where(where).count();
-    
-    return success({
-      count: res.total
-    });
-    
-  } catch (e) {
-    console.error('统计错误:', e);
-    return error('统计失败: ' + e.message);
+  } catch (err) {
+    console.error('统计错误:', err);
+    return error('统计失败: ' + err.message);
   }
 };

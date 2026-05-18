@@ -23,12 +23,21 @@
  * - count: 总数（可选）
  */
 
-const cloud = require('wx-server-sdk');
-cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
-const db = cloud.database();
+const tcb = require('tcb-admin-node');
+
+// 初始化
+tcb.init();
+
+const db = tcb.database();
 const _ = db.command;
 
-const { success, error } = require('../common/utils');
+function success(data) {
+  return { success: true, ...data };
+}
+
+function error(message) {
+  return { success: false, error: message };
+}
 
 // 允许查询的表
 const ALLOWED_TABLES = [
@@ -37,7 +46,7 @@ const ALLOWED_TABLES = [
 ];
 
 exports.main = async (event, context) => {
-  const { table, filter, eq, gte, gt, lte, lt, in: inCond, neq, like, limit, offset, order, select } = event;
+  const { table, filter, eq, gte, gt, lte, lt, in: inCond, neq, like, limit, offset, order, select: selectFields } = event;
   
   // 参数校验
   if (!table) {
@@ -49,8 +58,6 @@ exports.main = async (event, context) => {
   }
   
   try {
-    let query = db.collection(table);
-    
     // 构建查询条件
     let where = {};
     
@@ -103,7 +110,7 @@ exports.main = async (event, context) => {
       }
     }
     
-    // 不等于
+    // 不等于条件
     if (neq && typeof neq === 'object') {
       for (const [key, value] of Object.entries(neq)) {
         where[key] = _.neq(value);
@@ -113,7 +120,7 @@ exports.main = async (event, context) => {
     // 模糊匹配
     if (like && typeof like === 'object') {
       for (const [key, value] of Object.entries(like)) {
-        // 云数据库使用正则表达式
+        // 云数据库使用正则匹配
         where[key] = db.RegExp({
           regexp: value,
           options: 'i'
@@ -121,23 +128,18 @@ exports.main = async (event, context) => {
       }
     }
     
+    // 构建查询
+    let query = db.collection(table);
+    
     // 应用条件
     if (Object.keys(where).length > 0) {
       query = query.where(where);
     }
     
-    // 获取总数
-    let totalCount = null;
-    const countRes = await db.collection(table).where(where).count();
-    totalCount = countRes.total;
-    
     // 排序
-    if (order && Array.isArray(order) && order.length >= 1) {
-      const [field, desc] = order;
+    if (order) {
+      const [field, desc] = Array.isArray(order) ? order : [order, false];
       query = query.orderBy(field, desc ? 'desc' : 'asc');
-    } else {
-      // 默认按 _id 升序
-      query = query.orderBy('_id', 'asc');
     }
     
     // 偏移
@@ -145,39 +147,27 @@ exports.main = async (event, context) => {
       query = query.skip(offset);
     }
     
-    // 限制
+    // 限制数量
     if (limit && limit > 0) {
-      query = query.limit(Math.min(limit, 100)); // 最大 100
-    } else {
-      query = query.limit(20); // 默认 20
+      query = query.limit(Math.min(limit, 1000));
     }
     
     // 执行查询
     const res = await query.get();
     
-    // 处理返回数据
-    let data = res.data;
-    
-    // 字段选择
-    if (select && Array.isArray(select) && select.length > 0) {
-      data = data.map(item => {
-        const selected = {};
-        select.forEach(field => {
-          if (item[field] !== undefined) {
-            selected[field] = item[field];
-          }
-        });
-        return selected;
-      });
-    }
-    
-    return success({
-      data,
-      count: totalCount
+    // 转换 _id 为 id
+    const data = res.data.map(item => {
+      if (item._id) {
+        item.id = item._id;
+        delete item._id;
+      }
+      return item;
     });
     
-  } catch (e) {
-    console.error('查询错误:', e);
-    return error('查询失败: ' + e.message);
+    return success({ data });
+    
+  } catch (err) {
+    console.error('查询错误:', err);
+    return error('查询失败: ' + err.message);
   }
 };

@@ -4,6 +4,6 @@
   "description": "统计数据云函数",
   "main": "index.js",
   "dependencies": {
-    "wx-server-sdk": "~2.6.3"
+    "tcb-admin-node": "^1.23.0"
   }
 }

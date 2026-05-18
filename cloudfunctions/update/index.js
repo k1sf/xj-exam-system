@@ -5,19 +5,35 @@
  * - table: 表名
  * - data: 要更新的数据
  * - match: 匹配条件
- * - id: 文档 ID（直接按 ID 更新）
+ * - id: 文档ID（单条更新）
  * 
  * 返回：
  * - success: true/false
- * - updated: 更新的行数
+ * - updated: 更新的数量
  */
 
-const cloud = require('wx-server-sdk');
-cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
-const db = cloud.database();
-const _ = db.command;
+const tcb = require('tcb-admin-node');
+const crypto = require('crypto');
 
-const { hashPassword, success, error } = require('../common/utils');
+// 初始化
+tcb.init();
+
+const db = tcb.database();
+
+// 密码盐值
+const SALT = '_pedicure_salt_2026';
+
+function hashPassword(password) {
+  return 'sha256:' + crypto.createHash('sha256').update(password + SALT).digest('hex');
+}
+
+function success(data) {
+  return { success: true, ...data };
+}
+
+function error(message) {
+  return { success: false, error: message };
+}
 
 // 允许更新的表
 const ALLOWED_TABLES = [
@@ -25,8 +41,11 @@ const ALLOWED_TABLES = [
   'enroll_configs', 'enrollments', 'homeworks', 'homework_records'
 ];
 
-// 需要密码哈希的表
-const PASSWORD_TABLES = ['students', 'admins'];
+// 需要密码哈希的表和字段
+const PASSWORD_FIELDS = {
+  students: 'password',
+  admins: 'password'
+};
 
 exports.main = async (event, context) => {
   const { table, data, match, id } = event;
@@ -44,48 +63,37 @@ exports.main = async (event, context) => {
     return error('缺少更新数据');
   }
   
-  if (!id && (!match || Object.keys(match).length === 0)) {
+  if (!match && !id) {
     return error('缺少匹配条件');
   }
   
   try {
-    // 处理更新数据
-    const updateData = { ...data };
+    const collection = db.collection(table);
+    let updateData = { ...data };
+    
+    // 更新时间
+    updateData.updated_at = new Date().toISOString();
     
     // 密码哈希
-    if (PASSWORD_TABLES.includes(table) && updateData.password) {
-      if (!updateData.password.startsWith('sha256:')) {
-        updateData.password = hashPassword(updateData.password);
+    if (PASSWORD_FIELDS[table] && updateData[PASSWORD_FIELDS[table]]) {
+      const field = PASSWORD_FIELDS[table];
+      if (!updateData[field].startsWith('sha256:')) {
+        updateData[field] = hashPassword(updateData[field]);
       }
     }
     
-    // 添加更新时间
-    updateData.updated_at = new Date().toISOString();
-    
-    let updatedCount = 0;
-    
     if (id) {
       // 按 ID 更新
-      await db.collection(table).doc(id).update({
-        data: updateData
-      });
-      updatedCount = 1;
+      await collection.doc(id).update(updateData);
+      return success({ updated: 1 });
     } else {
       // 按条件更新
-      const res = await db.collection(table)
-        .where(match)
-        .update({
-          data: updateData
-        });
-      updatedCount = res.stats.updated;
+      const res = await collection.where(match).update(updateData);
+      return success({ updated: res.updated || 1 });
     }
     
-    return success({
-      updated: updatedCount
-    });
-    
-  } catch (e) {
-    console.error('更新错误:', e);
-    return error('更新失败: ' + e.message);
+  } catch (err) {
+    console.error('更新错误:', err);
+    return error('更新失败: ' + err.message);
   }
 };

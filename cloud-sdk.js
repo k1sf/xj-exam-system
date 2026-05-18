@@ -5,7 +5,7 @@
 
 // 云开发环境配置
 const CLOUD_CONFIG = {
-  envId: '', // 部署时填写您的云开发环境 ID
+  envId: 'xj-exam-d8gh1ynujedfe558e', // 部署时填写您的云开发环境 ID
 };
 
 // 全局变量

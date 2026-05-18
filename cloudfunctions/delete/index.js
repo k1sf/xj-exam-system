@@ -4,18 +4,27 @@
  * 请求参数：
  * - table: 表名
  * - match: 匹配条件
- * - id: 文档 ID（直接按 ID 删除）
+ * - id: 文档ID（单条删除）
  * 
  * 返回：
  * - success: true/false
- * - deleted: 删除的行数
+ * - deleted: 删除的数量
  */
 
-const cloud = require('wx-server-sdk');
-cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
-const db = cloud.database();
+const tcb = require('tcb-admin-node');
 
-const { success, error } = require('../common/utils');
+// 初始化
+tcb.init();
+
+const db = tcb.database();
+
+function success(data) {
+  return { success: true, ...data };
+}
+
+function error(message) {
+  return { success: false, error: message };
+}
 
 // 允许删除的表
 const ALLOWED_TABLES = [
@@ -35,31 +44,25 @@ exports.main = async (event, context) => {
     return error('无效的表名');
   }
   
-  if (!id && (!match || Object.keys(match).length === 0)) {
+  if (!match && !id) {
     return error('缺少匹配条件');
   }
   
   try {
-    let deletedCount = 0;
+    const collection = db.collection(table);
     
     if (id) {
       // 按 ID 删除
-      await db.collection(table).doc(id).remove();
-      deletedCount = 1;
+      await collection.doc(id).remove();
+      return success({ deleted: 1 });
     } else {
       // 按条件删除
-      const res = await db.collection(table)
-        .where(match)
-        .remove();
-      deletedCount = res.stats.removed;
+      const res = await collection.where(match).remove();
+      return success({ deleted: res.deleted || 1 });
     }
     
-    return success({
-      deleted: deletedCount
-    });
-    
-  } catch (e) {
-    console.error('删除错误:', e);
-    return error('删除失败: ' + e.message);
+  } catch (err) {
+    console.error('删除错误:', err);
+    return error('删除失败: ' + err.message);
   }
 };
