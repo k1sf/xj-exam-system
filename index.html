@@ -1215,7 +1215,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <script src="https://unpkg.com/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
 <script>
 // 版本号 - 用于确认是否加载了最新代码
-window.__CODE_VERSION__ = '2025-01-18-v12';
+window.__CODE_VERSION__ = '2025-01-18-v13';
 console.log('=== 代码版本: ' + window.__CODE_VERSION__ + ' ===');
 </script>
 </head>
@@ -3638,7 +3638,7 @@ function switchAdminTab(tab) {
 let _studentSubTab = 'list';
 
 async function renderAdminStudents() {
-  allStudents = await dbSelect('students', { order: ['created_at', false], cacheBypass: true });
+  allStudents = await dbSelect('students', { order: ['created_at', true], cacheBypass: true });
   const allCohorts = allStudents.flatMap(s => (s.cohort || '').split(',').map(c => c.trim()).filter(Boolean));
   const cohorts = [...new Set(allCohorts)];
   const cohortOpts = cohorts.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('');
@@ -3672,7 +3672,7 @@ function switchStudentSubTab(tab) {
 
 async function renderStudentListSub() {
   const container = document.getElementById('studentSubContent');
-  allStudents = await dbSelect('students', { order: ['created_at', false], cacheBypass: true });
+  allStudents = await dbSelect('students', { order: ['created_at', true], cacheBypass: true });
   const allCohorts = allStudents.flatMap(s => (s.cohort || '').split(',').map(c => c.trim()).filter(Boolean));
   const cohorts = [...new Set(allCohorts)];
   const cohortOpts = cohorts.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('');
@@ -3795,7 +3795,7 @@ async function createStudents() {
 
 // 刷新学生列表（仅更新列表区域，不覆盖创建结果）
 async function refreshStudentList() {
-  allStudents = await dbSelect('students', { order: ['created_at', false], cacheBypass: true });
+  allStudents = await dbSelect('students', { order: ['created_at', true], cacheBypass: true });
   filterStudents();
 }
 
@@ -3928,7 +3928,7 @@ async function batchRenewStudents() {
       const result = await dbBatchUpdate('students', batch);
       
       showToast(`已为 ${result.successCount || students.length} 名学生续期`, 'success');
-      allStudents = await dbSelect('students', { order: ['created_at', false], cacheBypass: true });
+      allStudents = await dbSelect('students', { order: ['created_at', true], cacheBypass: true });
       filterStudents();
     } catch(e) { showToast('批量续期失败', 'error'); }
   });
@@ -3950,7 +3950,7 @@ async function batchToggleStudents(disable) {
       const result = await dbBatchUpdate('students', batch);
       
       showToast(`已${disable ? '禁用' : '启用'} ${result.successCount || students.length} 名学生`, 'success');
-      allStudents = await dbSelect('students', { order: ['created_at', false], cacheBypass: true });
+      allStudents = await dbSelect('students', { order: ['created_at', true], cacheBypass: true });
       filterStudents();
     } catch(e) { showToast('批量操作失败', 'error'); }
   });
@@ -3971,7 +3971,7 @@ async function batchLockLevel(lock) {
       const result = await dbBatchUpdate('students', batch);
       
       showToast(`已${lock ? '锁定' : '解锁'} ${result.successCount || students.length} 名学生等级`, 'success');
-      allStudents = await dbSelect('students', { order: ['created_at', false], cacheBypass: true });
+      allStudents = await dbSelect('students', { order: ['created_at', true], cacheBypass: true });
       filterStudents();
     } catch(e) { showToast('批量操作失败', 'error'); }
   });
@@ -4049,7 +4049,7 @@ async function resetStudentPwd(username) {
       showToast('密码已重置为 123456', 'success');
       closeModal();
       // 使用 cacheBypass 确保获取最新数据
-      allStudents = await dbSelect('students', { order: ['created_at', false], cacheBypass: true });
+      allStudents = await dbSelect('students', { order: ['created_at', true], cacheBypass: true });
       filterStudents();
     } catch(e) {
       showToast('重置失败', 'error');
@@ -4068,7 +4068,7 @@ async function toggleStudentStatus(username, currentStatus) {
       showToast(newStatus === 'disabled' ? '账号已禁用' : '账号已启用', 'success');
       closeModal();
       // 使用 cacheBypass 确保获取最新数据
-      allStudents = await dbSelect('students', { order: ['created_at', false], cacheBypass: true });
+      allStudents = await dbSelect('students', { order: ['created_at', true], cacheBypass: true });
       filterStudents();
     } catch(e) {
       showToast('操作失败', 'error');
@@ -4086,7 +4086,7 @@ async function renewStudent(username) {
       showToast('已续期一年', 'success');
       closeModal();
       // 使用 cacheBypass 确保获取最新数据
-      allStudents = await dbSelect('students', { order: ['created_at', false], cacheBypass: true });
+      allStudents = await dbSelect('students', { order: ['created_at', true], cacheBypass: true });
       filterStudents();
     } catch(e) {
       showToast('续期失败', 'error');
@@ -4106,7 +4106,7 @@ async function deleteStudent(username) {
       showToast('已删除', 'success');
       closeModal();
       // 使用 cacheBypass 确保获取最新数据
-      allStudents = await dbSelect('students', { order: ['created_at', false], cacheBypass: true });
+      allStudents = await dbSelect('students', { order: ['created_at', true], cacheBypass: true });
       filterStudents();
     } catch(e) {
       showToast('删除失败', 'error');
@@ -5769,7 +5769,7 @@ async function importEnrollments() {
     
     // 刷新列表和全局学生数据
     _selectedEnrollments.clear();
-    allStudents = await dbSelect('students', { order: ['created_at', false], cacheBypass: true });
+    allStudents = await dbSelect('students', { order: ['created_at', true], cacheBypass: true });
     filterStudents();
     openEnrollmentDetail(_currentEnrollmentConfig.id);
   } catch(e) {
@@ -6265,7 +6265,7 @@ async function renderWrongStatsSub() {
   
   try {
     // 获取所有学生用于班级筛选
-    allStudents = await dbSelect('students', { order: ['created_at', false] });
+    allStudents = await dbSelect('students', { order: ['created_at', true] });
     const allCohorts = [...new Set(allStudents.flatMap(s => (s.cohort || '').split(',').map(c => c.trim()).filter(Boolean)))];
     
     // 使用 Supabase 查询错题统计
@@ -6567,7 +6567,7 @@ async function viewWrongDetail(studentId, studentName) {
 
 async function renderLearningSub() {
   const container = document.getElementById('manageSubContent');
-  allStudents = await dbSelect('students', { order: ['created_at', false] });
+  allStudents = await dbSelect('students', { order: ['created_at', true] });
   const allCohorts = allStudents.flatMap(s => (s.cohort || '').split(',').map(c => c.trim()).filter(Boolean));
   const cohorts = [...new Set(allCohorts)];
   const cohortOpts = cohorts.map(c => `<option value="${escHtml(c)}" ${learningCohort===c?'selected':''}>${escHtml(c)}</option>`).join('');
@@ -6665,7 +6665,7 @@ function renderSettingsSub() {
 
 async function renderNotifySub() {
   const container = document.getElementById('manageSubContent');
-  allStudents = await dbSelect('students', { order: ['created_at', false] });
+  allStudents = await dbSelect('students', { order: ['created_at', true] });
   const allCohorts = allStudents.flatMap(s => (s.cohort || '').split(',').map(c => c.trim()).filter(Boolean));
   const cohorts = [...new Set(allCohorts)];
   const cohortOpts = cohorts.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('');
@@ -6689,7 +6689,7 @@ async function renderNotifySub() {
 
 async function renderLogsSub() {
   const container = document.getElementById('manageSubContent');
-  const logs = await dbSelect('operation_logs', { order: ['created_at', false], limit: 20 });
+  const logs = await dbSelect('operation_logs', { order: ['created_at', true], limit: 20 });
   const list = (logs || []).map(log => `
     <div class="card" style="margin-bottom:8px;padding:10px">
       <div style="display:flex;justify-content:space-between;margin-bottom:4px">
@@ -6709,7 +6709,7 @@ async function renderLogsSub() {
 }
 
 async function renderLearning() {
-  allStudents = await dbSelect('students', { order: ['created_at', false] });
+  allStudents = await dbSelect('students', { order: ['created_at', true] });
   // 拆分合并的期次为独立选项
   const allCohorts = allStudents.flatMap(s => (s.cohort || '').split(',').map(c => c.trim()).filter(Boolean));
   const cohorts = [...new Set(allCohorts)];
@@ -6806,7 +6806,7 @@ async function loadLearningData() {
   // Fetch records with date filter to avoid loading entire table
   // Use gte/lte on created_at for efficient server-side filtering
   // 使用 cacheBypass 确保获取最新数据
-  const allRecords = await dbSelect('records', { order: ['created_at', false], gte: { created_at: start.toISOString() }, lt: { created_at: end.toISOString() }, cacheBypass: true });
+  const allRecords = await dbSelect('records', { order: ['created_at', true], gte: { created_at: start.toISOString() }, lt: { created_at: end.toISOString() }, cacheBypass: true });
   const students = learningCohort
     ? allStudents.filter(s => (s.cohort || '').split(',').map(c => c.trim()).includes(learningCohort))
     : allStudents;
@@ -7022,7 +7022,7 @@ function exportLearningCSV() {
 // ===== Export Students CSV =====
 async function exportStudentsCsv() {
   requireAdmin();
-  const students = await dbSelect('students', { order: ['created_at', false] });
+  const students = await dbSelect('students', { order: ['created_at', true] });
   if (!students || students.length === 0) { showToast('暂无学生数据', 'error'); return; }
   
   const header = '序号,用户名(手机号),昵称,班级,级别,状态,到期时间,经验值,学习等级,创建时间\n';
@@ -7067,7 +7067,7 @@ async function renderAdminSettings() {
   // Admin list (only for master)
   let adminSection = '';
   if (isMaster) {
-    const admins = await dbSelect('admins', { order: ['created_at', false] });
+    const admins = await dbSelect('admins', { order: ['created_at', true] });
     adminSection = `
       <div class="card" style="margin-top:12px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
@@ -7165,7 +7165,7 @@ async function renderAdminSettings() {
 // ===== Admin Tab5: Admins (Master only) =====
 async function renderAdminAdmins() {
   if (!requireMasterAdmin()) return;
-  const admins = await dbSelect('admins', { order: ['created_at', false] });
+  const admins = await dbSelect('admins', { order: ['created_at', true] });
   const content = document.getElementById('adminContent');
   content.innerHTML = `
     <div style="padding:16px">
@@ -11690,7 +11690,7 @@ async function loadAdminList() {
   if (!container) return;
   
   try {
-    const admins = await dbSelect('admins', { order: ['created_at', false] });
+    const admins = await dbSelect('admins', { order: ['created_at', true] });
     container.innerHTML = admins.map(a => `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
         <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">
@@ -13892,7 +13892,7 @@ async function doDatabaseExport() {
       let offset = 0;
       const batchSize = 1000;
       while (true) {
-        const batch = await dbSelect('records', { limit: batchSize, offset: offset, order: ['created_at', false] });
+        const batch = await dbSelect('records', { limit: batchSize, offset: offset, order: ['created_at', true] });
         if (!batch || batch.length === 0) break;
         allRecords.push(...batch);
         if (batch.length < batchSize) break;
