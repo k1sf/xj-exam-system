@@ -1731,15 +1731,21 @@ function bufferRecord(record) {
     _wrongQuestions = _wrongQuestions || [];
     const existingIdx = _wrongQuestions.findIndex(q => q.question_id === record.question_id);
     if (existingIdx === -1) {
-      _wrongQuestions.push({ question_id: record.question_id, is_correct: false });
+      _wrongQuestions.push({ question_id: record.question_id, is_correct: false, wrong_level: 0 });
     }
+  } else {
+    // 答对了，从错题集中移除（如果存在）
+    _wrongQuestions = _wrongQuestions || [];
+    _wrongQuestions = _wrongQuestions.filter(q => q.question_id !== record.question_id);
   }
-  // 设置短延迟同步定时器（5秒后同步，避免频繁请求）
+  // 设置短延迟同步定时器
+  // 答错题目时使用更短的延迟（1秒），以便错题集快速更新
+  const syncDelay = !record.is_correct ? 1000 : 5000;
   if (_recordBufferSyncTimer) clearTimeout(_recordBufferSyncTimer);
   _recordBufferSyncTimer = setTimeout(() => {
     cloudSync();
     _recordBufferSyncTimer = null;
-  }, 5000);
+  }, syncDelay);
   // 缓冲区满时立即触发云端同步
   if (_recordBuffer.length >= RECORD_BUFFER_MAX_SIZE) {
     if (_recordBufferSyncTimer) { clearTimeout(_recordBufferSyncTimer); _recordBufferSyncTimer = null; }
@@ -2131,11 +2137,22 @@ function refreshCurrentView() {
     tabs.forEach(t => { if (t.classList.contains('active')) activeTab = t.dataset.tab; });
     switch(activeTab) {
       case 'practice': 
+        // 保存当前进度，以便刷新后恢复
+        const savedMode = practiceMode;
+        const savedIndex = practiceIndex;
+        const savedQId = practiceQuestions && practiceQuestions[savedIndex] ? practiceQuestions[savedIndex].id : null;
+        
         // 强制重新加载题目和收藏状态
         practiceQuestions = null;
         practiceAnswered = {};
         _favStatusByQId = {}; // 重置收藏状态缓存，让 switchPracticeMode 重新从数据库加载
         _wrongQuestions = []; // 重置错题缓存
+        
+        // 设置恢复标记
+        window._restorePracticeIndex = savedIndex;
+        window._restorePracticeQId = savedQId;
+        window._restorePracticeMode = savedMode;
+        
         renderPractice(); 
         break;
       case 'exam': renderStudentExam(); break;
@@ -8185,6 +8202,24 @@ async function renderWrongTraining() {
     
     console.log('[renderWrongTraining] 查询到错题记录:', wrongRecords?.length || 0, wrongRecords);
     
+    // 合并缓冲区中未同步的错题记录
+    const bufferedWrongQIds = new Set();
+    (_recordBuffer || []).forEach(r => {
+      if (!r.is_correct && r.student_id === currentUser.username) {
+        bufferedWrongQIds.add(parseInt(r.question_id));
+      }
+    });
+    
+    // 将缓冲区中的错题合并到查询结果
+    const mergedWrongRecords = [...(wrongRecords || [])];
+    bufferedWrongQIds.forEach(qId => {
+      if (!mergedWrongRecords.some(r => parseInt(r.question_id) === qId)) {
+        mergedWrongRecords.push({ question_id: qId, wrong_level: 0, is_fav: false });
+      }
+    });
+    
+    console.log('[renderWrongTraining] 合并缓冲区后错题数:', mergedWrongRecords.length);
+    
     // 获取对应级别的题目
     const allQ = await dbSelect('questions', { 
       eq: { level: currentLevel }, 
@@ -8197,7 +8232,7 @@ async function renderWrongTraining() {
     const qIdSet = new Set(allQ.map(q => parseInt(q.id)));
     
     // 过滤出当前级别的错题（确保类型匹配）
-    const levelWrongRecords = (wrongRecords || []).filter(r => {
+    const levelWrongRecords = mergedWrongRecords.filter(r => {
       const qId = parseInt(r.question_id);
       return !isNaN(qId) && qIdSet.has(qId);
     });
@@ -8850,6 +8885,32 @@ async function renderPracticeSub() {
     
     practiceMultiSelected = {};
     practiceIndex = 0;
+    
+    // 恢复之前的进度（如果是从刷新恢复）
+    if (window._restorePracticeQId && practiceQuestions.length > 0) {
+      const restoreQId = window._restorePracticeQId;
+      const restoreMode = window._restorePracticeMode;
+      const restoreIndex = window._restorePracticeIndex;
+      
+      // 检查模式是否匹配
+      if (restoreMode === practiceMode || !restoreMode) {
+        // 尝试通过题目 ID 恢复进度
+        const foundIndex = practiceQuestions.findIndex(q => Number(q.id) === Number(restoreQId));
+        if (foundIndex >= 0) {
+          practiceIndex = foundIndex;
+          console.log(`[Practice] 恢复进度到第 ${foundIndex + 1} 题`);
+        } else if (restoreIndex >= 0 && restoreIndex < practiceQuestions.length) {
+          // 如果找不到题目，尝试使用索引恢复
+          practiceIndex = restoreIndex;
+          console.log(`[Practice] 通过索引恢复进度到第 ${restoreIndex + 1} 题`);
+        }
+      }
+      
+      // 清除恢复标记
+      delete window._restorePracticeIndex;
+      delete window._restorePracticeQId;
+      delete window._restorePracticeMode;
+    }
   }
   
   // 渲染刷题界面
@@ -8964,13 +9025,27 @@ async function switchPracticeMode(mode) {
         practiceAnswered[key] = { isFav: localFavStatus[key] ?? false };
       });
   }
-  // Check for saved progress when switching back to 'all' mode
+  // Check for saved progress when switching back to 'all' mode or refreshing
   if (mode === 'all') {
     const saved = loadPracticeProgress();
-    if (saved && saved.total === allQ.length && saved.firstQId === allQ[0]?.id && saved.index > 0) {
-      renderPracticeCard();
-      showContinueDialog(saved);
-      return;
+    // 放宽检查条件：只要有保存的进度，就尝试恢复
+    if (saved && saved.index > 0 && saved.mode === 'all') {
+      // 尝试通过题目 ID 恢复位置
+      if (saved.currentQId) {
+        const foundIdx = allQ.findIndex(q => q.id === saved.currentQId);
+        if (foundIdx !== -1) {
+          // 找到了题目，恢复到这个位置
+          renderPracticeCard();
+          showContinueDialog({ ...saved, index: foundIdx });
+          return;
+        }
+      }
+      // 如果题目列表长度匹配，直接使用保存的索引
+      if (saved.total === allQ.length) {
+        renderPracticeCard();
+        showContinueDialog(saved);
+        return;
+      }
     }
   }
   renderPracticeCard();
@@ -9265,12 +9340,15 @@ async function toggleFav(qId) {
 
 // ===== Practice progress memory =====
 function savePracticeProgress() {
-  if (practiceMode !== 'all') return;
+  // 保存所有模式的进度，而不仅仅是 'all' 模式
   const key = `practice_progress_${currentUser.username}_${currentLevel}`;
+  const currentQId = practiceQuestions[practiceIndex]?.id || null;
   localStorage.setItem(key, JSON.stringify({
+    mode: practiceMode,
     index: practiceIndex,
     total: practiceQuestions.length,
     firstQId: practiceQuestions[0]?.id || null,
+    currentQId: currentQId, // 保存当前题目 ID，用于恢复
     timestamp: Date.now()
   }));
 }
@@ -9313,7 +9391,13 @@ function showContinueDialog(saved) {
 function dismissContinueDialog() {
   const overlay = document.getElementById('continue-overlay');
   if (overlay) overlay.remove();
-  practiceIndex = 0;
+  // 关闭弹窗时，从保存的进度继续（而不是从头开始）
+  const saved = loadPracticeProgress();
+  if (saved && typeof saved.index === 'number') {
+    practiceIndex = saved.index;
+  } else {
+    practiceIndex = 0;
+  }
   renderPracticeCard();
 }
 function continueFromStart() {
