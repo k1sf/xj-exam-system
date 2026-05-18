@@ -1211,12 +1211,24 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .homework-admin-card .card-btn.primary{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border:none}
 .homework-admin-card .card-btn.primary:hover{opacity:.9}
 </style>
-<!-- Supabase SDK for GitHub Pages -->
-<script src="https://unpkg.com/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
+<!-- 云开发 SDK -->
+<script src="https://imgcache.qq.com/qcloud/cloudbase-js-sdk/1.7.1/cloudbase.full.js"></script>
 <script>
-// 版本号 - 用于确认是否加载了最新代码
-window.__CODE_VERSION__ = '2025-01-18-v15';
+// ===== 部署配置 =====
+// 设置为 true 使用微信云开发，false 使用 Supabase
+const USE_CLOUD_DEV = true;
+
+// 云开发环境 ID（部署时填写）
+const CLOUD_ENV_ID = ''; // 例如: 'cloud1-xxx'
+
+// Supabase 配置（云开发模式下不需要）
+const SUPABASE_URL = '';
+const SUPABASE_ANON_KEY = '';
+
+// 版本号
+window.__CODE_VERSION__ = '2025-01-19-cloud-v2';
 console.log('=== 代码版本: ' + window.__CODE_VERSION__ + ' ===');
+console.log('=== 使用模式: ' + (USE_CLOUD_DEV ? '微信云开发' : 'Supabase') + ' ===');
 </script>
 </head>
 <body>
@@ -1358,11 +1370,11 @@ let allStudents = [];
 const API_TOKEN = 'xj_exam_system_api_token_2024_fixed';  // Server injects token on page load
 const API_BASE = '/api';  // Fallback for non-Supabase mode
 
-// ===== Supabase Configuration (GitHub Pages Mode) =====
-const SUPABASE_URL = 'https://br-jolly-tahr-31ec8190.supabase2.aidap-global.cn-beijing.volces.com';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjMzNTg5NzUyMzYsInJvbGUiOiJhbm9uIn0.IRMuafXO5mnHyM-TDi6EnQafegbR-t5D_V-b-7pSJ3c';
-let supabase = null;  // Will be initialized after SDK loads
-let isSupabaseMode = false;  // Flag to indicate Supabase mode
+// ===== Database Mode =====
+let cloudApp = null;       // 云开发 App 实例
+let supabase = null;       // Supabase 实例（Supabase 模式下使用）
+let isCloudMode = false;   // 是否使用云开发模式
+let isSupabaseMode = false; // 是否使用 Supabase 模式
 let allQuestions = [];
 let allExams = [];
 let practiceQuestions = [];
@@ -2815,21 +2827,86 @@ function clearLogin() {
   flushRecordBuffer(); // Flush any pending practice records
 }
 
-// ===== Supabase Initialization =====
-async function initSupabase() {
-  try {
-    if (!window.supabase) {
-      throw new Error('Supabase SDK not loaded');
+// ===== Database Initialization =====
+async function initDatabase() {
+  if (USE_CLOUD_DEV) {
+    // 云开发模式
+    try {
+      if (!window.cloudbase) {
+        throw new Error('云开发 SDK 未加载');
+      }
+      if (!CLOUD_ENV_ID) {
+        throw new Error('请配置 CLOUD_ENV_ID');
+      }
+      cloudApp = window.cloudbase.init({
+        env: CLOUD_ENV_ID,
+      });
+      
+      // 尝试匿名登录
+      try {
+        await cloudApp.auth().anonymousAuthProvider().signIn();
+        console.log('云开发匿名登录成功');
+      } catch (e) {
+        console.log('匿名登录跳过:', e.message);
+      }
+      
+      isCloudMode = true;
+      isSupabaseMode = false;
+      console.log('云开发初始化成功，环境:', CLOUD_ENV_ID);
+      return true;
+    } catch (e) {
+      console.error('云开发初始化失败:', e);
+      isCloudMode = false;
+      return false;
     }
-    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    isSupabaseMode = true;
-    console.log('Supabase initialized successfully');
-    return true;
-  } catch (e) {
-    console.error('Failed to initialize Supabase:', e);
-    isSupabaseMode = false;
-    return false;
+  } else {
+    // Supabase 模式
+    try {
+      if (!window.supabase) {
+        throw new Error('Supabase SDK 未加载');
+      }
+      if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+        throw new Error('请配置 SUPABASE_URL 和 SUPABASE_ANON_KEY');
+      }
+      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      isSupabaseMode = true;
+      isCloudMode = false;
+      console.log('Supabase 初始化成功');
+      return true;
+    } catch (e) {
+      console.error('Supabase 初始化失败:', e);
+      isSupabaseMode = false;
+      return false;
+    }
   }
+}
+
+// 云函数调用封装
+async function callCloudFunction(name, data) {
+  if (!cloudApp) {
+    throw new Error('云开发未初始化');
+  }
+  try {
+    const result = await cloudApp.callFunction({
+      name: name,
+      data: data,
+    });
+    if (result.result) {
+      if (result.result.error) {
+        throw new Error(result.result.error);
+      }
+      return result.result;
+    }
+    throw new Error('云函数返回数据为空');
+  } catch (e) {
+    console.error('云函数调用失败:', name, e);
+    throw e;
+  }
+}
+
+// 兼容旧函数名
+async function initSupabase() {
+  return initDatabase();
 }
 
 // ===== API Layer (with cache, loading, error handling) =====
@@ -2857,7 +2934,11 @@ async function dbSelect(table, opts = {}) {
   try {
     let data = [];
     
-    if (isSupabaseMode && supabase) {
+    if (isCloudMode) {
+      // 云开发模式：调用云函数
+      const result = await callCloudFunction('select', { table, ...opts });
+      data = result.data || result || [];
+    } else if (isSupabaseMode && supabase) {
       // Use Supabase SDK
       let query = supabase.from(table).select(opts.select ? (Array.isArray(opts.select) ? opts.select.join(',') : opts.select) : '*');
       
@@ -2958,7 +3039,11 @@ async function dbInsert(table, rows, options = {}) {
       'homework_records': 'homework_id,student_id'
     };
     
-    if (isSupabaseMode && supabase) {
+    if (isCloudMode) {
+      // 云开发模式：调用云函数
+      const result = await callCloudFunction('insert', { table, rows, upsert: !!(upsertTables[table] || options.upsert) });
+      data = result.data || result || [];
+    } else if (isSupabaseMode && supabase) {
       let query = supabase.from(table);
       if (upsertTables[table] || options.upsert) {
         const { data: result, error } = await query.upsert(rows, {
@@ -2999,7 +3084,11 @@ async function dbUpdate(table, data, match) {
   try {
     let result = [];
     
-    if (isSupabaseMode && supabase) {
+    if (isCloudMode) {
+      // 云开发模式：调用云函数
+      result = await callCloudFunction('update', { table, data, match });
+      result = result.data || result || [];
+    } else if (isSupabaseMode && supabase) {
       let query = supabase.from(table).update(data);
       if (match) {
         Object.entries(match).forEach(([key, value]) => {
@@ -3077,7 +3166,11 @@ async function dbDelete(table, match = {}, force = false) {
   try {
     let result = [];
     
-    if (isSupabaseMode && supabase) {
+    if (isCloudMode) {
+      // 云开发模式：调用云函数
+      result = await callCloudFunction('delete', { table, match });
+      result = result.data || result || [];
+    } else if (isSupabaseMode && supabase) {
       let query = supabase.from(table).delete();
       if (match && Object.keys(match).length > 0) {
         Object.entries(match).forEach(([key, value]) => {
@@ -3110,7 +3203,11 @@ async function dbDelete(table, match = {}, force = false) {
 
 async function dbCount(table, filter) {
   try {
-    if (isSupabaseMode && supabase) {
+    if (isCloudMode) {
+      // 云开发模式：调用云函数
+      const result = await callCloudFunction('count', { table, match: filter?.where || filter || {} });
+      return result.count || result || 0;
+    } else if (isSupabaseMode && supabase) {
       let query = supabase.from(table).select('*', { count: 'exact', head: true });
       if (filter && filter.where) {
         Object.entries(filter.where).forEach(([key, value]) => {
@@ -3151,30 +3248,42 @@ async function dbCount(table, filter) {
 }
 
 // ===== 登录函数 =====
-async function dbLogin(username, password, role = 'student') {
+async function dbLogin(username, password, role = 'student', level = null) {
   try {
-    const table = role === 'admin' ? 'admins' : 'students';
-    const { data, error } = await supabase.from(table).select('*').eq('username', username).single();
-    if (error || !data) {
-      return { success: false, error: '账号不存在' };
-    }
-    
-    // 检查密码（支持明文和SHA256哈希）
-    let valid = false;
-    if (data.password.startsWith('sha256:')) {
-      // 哈希密码验证
-      const hash = await hashPassword(password);
-      valid = data.password === hash;
+    if (isCloudMode) {
+      // 云开发模式：调用登录云函数
+      const table = role === 'admin' ? 'admins' : 'students';
+      const result = await callCloudFunction('login', { table, username, password, level });
+      if (result.success) {
+        return { success: true, user: result.user, role: role };
+      }
+      return { success: false, error: result.error || '登录失败' };
+    } else if (isSupabaseMode && supabase) {
+      const table = role === 'admin' ? 'admins' : 'students';
+      const { data, error } = await supabase.from(table).select('*').eq('username', username).single();
+      if (error || !data) {
+        return { success: false, error: '账号不存在' };
+      }
+      
+      // 检查密码（支持明文和SHA256哈希）
+      let valid = false;
+      if (data.password.startsWith('sha256:')) {
+        // 哈希密码验证
+        const hash = await hashPassword(password);
+        valid = data.password === hash;
+      } else {
+        // 明文密码验证
+        valid = data.password === password;
+      }
+      
+      if (!valid) {
+        return { success: false, error: '密码错误' };
+      }
+      
+      return { success: true, user: data, role: role };
     } else {
-      // 明文密码验证
-      valid = data.password === password;
+      return { success: false, error: '数据库未初始化' };
     }
-    
-    if (!valid) {
-      return { success: false, error: '密码错误' };
-    }
-    
-    return { success: true, user: data, role: role };
   } catch(e) {
     console.error('dbLogin error:', e);
     return { success: false, error: '登录失败: ' + e.message };
