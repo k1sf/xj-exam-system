@@ -1215,7 +1215,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <script src="https://unpkg.com/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
 <script>
 // 版本号 - 用于确认是否加载了最新代码
-window.__CODE_VERSION__ = '2025-01-18-v7';
+window.__CODE_VERSION__ = '2025-01-18-v8';
 console.log('=== 代码版本: ' + window.__CODE_VERSION__ + ' ===');
 </script>
 </head>
@@ -4113,8 +4113,12 @@ async function renderEnrollSub() {
   }
   
   const configsHtml = _enrollmentConfigs.map(c => {
-    const statusColor = c.status === 'active' ? '#28a745' : '#dc3545';
-    const statusText = c.status === 'active' ? '进行中' : '已关闭';
+    // 检查是否已过期
+    const now = Date.now();
+    const isExpired = c.end_time && now > new Date(c.end_time).getTime();
+    const isActuallyActive = c.status === 'active' && !isExpired;
+    const statusColor = isActuallyActive ? '#28a745' : '#dc3545';
+    const statusText = isExpired ? '已结束' : (c.status === 'active' ? '进行中' : '已关闭');
     const autoSyncBadge = c.auto_sync ? '<span style="background:#28a745;color:#fff;padding:2px 6px;border-radius:4px;font-size:0.7rem;margin-left:6px">自动同步</span>' : '<span style="background:#999;color:#fff;padding:2px 6px;border-radius:4px;font-size:0.7rem;margin-left:6px">手动导入</span>';
     const levelsStr = (c.levels || []).map(l => LEVEL_ICONS[l] || '').join(' ');
     const timeRange = [];
@@ -5345,7 +5349,7 @@ async function createEnrollment() {
 async function openEnrollmentDetail(configId, source = 'enrollment') {
   _enrollmentDetailSource = source; // 记录来源
   try {
-    _currentEnrollmentConfig = (await dbSelect('enroll_configs', { where: { id: config_id } }))[0];
+    _currentEnrollmentConfig = (await dbSelect('enroll_configs', { where: { id: configId } }))[0];
     _enrollmentList = await dbSelect('enrollments', { where: { config_id: configId } });
   } catch(e) {
     console.error('加载报名详情失败:', e);
