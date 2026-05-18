@@ -1215,7 +1215,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <script src="https://unpkg.com/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
 <script>
 // 版本号 - 用于确认是否加载了最新代码
-window.__CODE_VERSION__ = '2025-01-18-v11';
+window.__CODE_VERSION__ = '2025-01-18-v12';
 console.log('=== 代码版本: ' + window.__CODE_VERSION__ + ' ===');
 </script>
 </head>
@@ -3112,9 +3112,22 @@ async function dbCount(table, filter) {
   try {
     if (isSupabaseMode && supabase) {
       let query = supabase.from(table).select('*', { count: 'exact', head: true });
-      if (filter) {
+      if (filter && filter.where) {
+        Object.entries(filter.where).forEach(([key, value]) => {
+          if (value === null) {
+            query = query.is(key, null);
+          } else if (Array.isArray(value)) {
+            query = query.in(key, value);
+          } else {
+            query = query.eq(key, value);
+          }
+        });
+      } else if (filter) {
+        // 兼容直接传递条件对象的情况
         Object.entries(filter).forEach(([key, value]) => {
-          if (Array.isArray(value)) {
+          if (value === null) {
+            query = query.is(key, null);
+          } else if (Array.isArray(value)) {
             query = query.in(key, value);
           } else {
             query = query.eq(key, value);
@@ -3743,7 +3756,8 @@ async function createStudents() {
         level,
         status: 'active',
         can_change_level: false,
-        expires_at: new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString()
+        expires_at: new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString(),
+        created_at: new Date().toISOString()
       });
     }
     if (rows.length === 0) {
@@ -5436,14 +5450,14 @@ async function renderEnrollmentDetailPage() {
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
         <select id="enrollLevelFilter" onchange="filterEnrollmentList()" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem">
           <option value="">全部级别</option>
-          ${(c.levels || []).map(l => `<option value="${escHtml(l)}">${escHtml(l)}</option>`).join('')}
+          ${(c.levels || []).map(l => `<option value="${escHtml(l)}" ${_enrollmentFilter.level === l ? 'selected' : ''}>${escHtml(l)}</option>`).join('')}
         </select>
         <select id="enrollStatusFilter" onchange="filterEnrollmentList()" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem">
           <option value="">全部状态</option>
-          <option value="pending">待审核</option>
-          <option value="approved">已导入</option>
+          <option value="pending" ${_enrollmentFilter.status === 'pending' ? 'selected' : ''}>待审核</option>
+          <option value="approved" ${_enrollmentFilter.status === 'approved' ? 'selected' : ''}>已导入</option>
         </select>
-        <input type="text" id="enrollSearch" placeholder="搜索姓名/手机号" onkeyup="filterEnrollmentList()" style="flex:1;min-width:120px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem">
+        <input type="text" id="enrollSearch" placeholder="搜索姓名/手机号" value="${escHtml(_enrollmentFilter.search)}" onkeyup="filterEnrollmentList()" style="flex:1;min-width:120px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem">
       </div>
       <div style="max-height:400px;overflow-y:auto">
         ${renderEnrollmentTable()}
@@ -5741,7 +5755,8 @@ async function importEnrollments() {
           level: enrollment.level,
           cohort: enrollment.cohort,
           status: 'active',
-          expires_at: new Date(Date.now() + 365*24*60*60*1000).toISOString()
+          expires_at: new Date(Date.now() + 365*24*60*60*1000).toISOString(),
+          created_at: new Date().toISOString()
         }]);
         imported++;
       }
@@ -11998,7 +12013,10 @@ async function submitEnrollment(configId, autoSync) {
         password: await hashPassword('123456'),
         nickname: name,
         level: level,
-        cohort: cohort || '未分配'
+        cohort: cohort || '未分配',
+        status: 'active',
+        expires_at: new Date(Date.now() + 365*24*60*60*1000).toISOString(),
+        created_at: new Date().toISOString()
       });
     }
     
