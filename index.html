@@ -1215,7 +1215,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <script src="https://unpkg.com/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
 <script>
 // 版本号 - 用于确认是否加载了最新代码
-window.__CODE_VERSION__ = '2025-01-18-v2';
+window.__CODE_VERSION__ = '2025-01-18-v3';
 console.log('=== 代码版本: ' + window.__CODE_VERSION__ + ' ===');
 </script>
 </head>
@@ -8844,27 +8844,6 @@ async function renderPracticeSub() {
     return;
   }
   
-  // 从 localStorage 恢复练习进度（刷新页面后）
-  // 注意：key 必须与 savePracticeProgress/loadPracticeProgress 一致
-  if (!window._restorePracticeQId && currentUser) {
-    const savedKey = `practice_progress_${currentUser.username}_${currentLevel}`;
-    const savedStr = localStorage.getItem(savedKey);
-    if (savedStr) {
-      try {
-        const saved = JSON.parse(savedStr);
-        if (saved.currentQId) {
-          window._restorePracticeQId = saved.currentQId;
-          window._restorePracticeMode = saved.mode;
-          window._restorePracticeIndex = saved.index || 0;
-          console.log(`[Practice] 从 localStorage 恢复进度: QId=${saved.currentQId}, Mode=${saved.mode}, Index=${saved.index}`);
-        }
-      } catch (e) {
-        console.warn('[Practice] 恢复进度失败:', e);
-      }
-    } else {
-      console.log(`[Practice] 未找到保存的进度: key=${savedKey}`);
-    }
-  }
   
   // 初始化题目数据（首次加载，且不是错题/复习模式）
   let savedProgressForDialog = null;
@@ -8925,40 +8904,32 @@ async function renderPracticeSub() {
   }
   
   // 恢复之前的进度（如果是从刷新恢复）并显示"继续学习"对话框
-  if (window._restorePracticeQId && practiceQuestions.length > 0) {
-    const restoreQId = window._restorePracticeQId;
-    const restoreMode = window._restorePracticeMode;
-    const restoreIndex = window._restorePracticeIndex;
-    
-    // 检查模式是否匹配
-    if (restoreMode === practiceMode || !restoreMode) {
+  // 只有 'all' 和 'fav' 模式才有进度恢复，'random' 模式不需要
+  if (practiceMode !== 'random' && practiceQuestions.length > 0) {
+    const saved = loadPracticeProgress(practiceMode);
+    if (saved && saved.currentQId && saved.index > 0) {
       // 尝试通过题目 ID 恢复进度
-      const foundIndex = practiceQuestions.findIndex(q => Number(q.id) === Number(restoreQId));
+      const foundIndex = practiceQuestions.findIndex(q => Number(q.id) === Number(saved.currentQId));
       if (foundIndex >= 0) {
         savedProgressForDialog = {
           index: foundIndex,
           total: practiceQuestions.length,
-          mode: restoreMode,
-          currentQId: restoreQId,
-          timestamp: Date.now()
+          mode: practiceMode,
+          currentQId: saved.currentQId,
+          timestamp: saved.timestamp
         };
-        console.log(`[Practice] 检测到保存的进度: 第 ${foundIndex + 1} 题`);
-      } else if (restoreIndex >= 0 && restoreIndex < practiceQuestions.length) {
+        console.log(`[Practice] 检测到 ${practiceMode} 模式保存的进度: 第 ${foundIndex + 1} 题`);
+      } else if (saved.index >= 0 && saved.index < practiceQuestions.length) {
         savedProgressForDialog = {
-          index: restoreIndex,
+          index: saved.index,
           total: practiceQuestions.length,
-          mode: restoreMode,
+          mode: practiceMode,
           currentQId: null,
-          timestamp: Date.now()
+          timestamp: saved.timestamp
         };
-        console.log(`[Practice] 通过索引检测到保存的进度: 第 ${restoreIndex + 1} 题`);
+        console.log(`[Practice] 通过索引检测到 ${practiceMode} 模式保存的进度: 第 ${saved.index + 1} 题`);
       }
     }
-    
-    // 清除恢复标记
-    delete window._restorePracticeIndex;
-    delete window._restorePracticeQId;
-    delete window._restorePracticeMode;
   }
   
   // 渲染刷题界面
@@ -9082,27 +9053,24 @@ async function switchPracticeMode(mode) {
         practiceAnswered[key] = { isFav: localFavStatus[key] ?? false };
       });
   }
-  // Check for saved progress - 支持所有模式恢复进度
-  const saved = loadPracticeProgress();
-  if (saved && saved.index > 0) {
-    // 检查模式是否匹配，或者尝试通过题目 ID 恢复
-    if (saved.mode === practiceMode || saved.currentQId) {
+  
+  // 进度恢复：只有 'all' 和 'fav' 模式才有进度，'random' 模式不需要
+  if (mode !== 'random') {
+    const saved = loadPracticeProgress(mode);
+    if (saved && saved.currentQId && saved.index > 0) {
       // 尝试通过题目 ID 恢复位置
-      if (saved.currentQId) {
-        const targetQuestions = practiceQuestions.length > 0 ? practiceQuestions : allQ;
-        const foundIdx = targetQuestions.findIndex(q => q.id === saved.currentQId);
-        if (foundIdx !== -1) {
-          // 找到了题目，恢复到这个位置
-          renderPracticeCard();
-          showContinueDialog({ ...saved, index: foundIdx, total: targetQuestions.length });
-          return;
-        }
+      const targetQuestions = practiceQuestions.length > 0 ? practiceQuestions : allQ;
+      const foundIdx = targetQuestions.findIndex(q => Number(q.id) === Number(saved.currentQId));
+      if (foundIdx !== -1) {
+        // 找到了题目，显示继续对话框
+        renderPracticeCard();
+        showContinueDialog({ ...saved, index: foundIdx, total: targetQuestions.length, mode: mode });
+        return;
       }
       // 如果题目列表长度匹配，直接使用保存的索引
-      const targetQuestions = practiceQuestions.length > 0 ? practiceQuestions : allQ;
       if (saved.total === targetQuestions.length) {
         renderPracticeCard();
-        showContinueDialog(saved);
+        showContinueDialog({ ...saved, mode: mode });
         return;
       }
     }
@@ -9400,9 +9368,14 @@ async function toggleFav(qId) {
 }
 
 // ===== Practice progress memory =====
+// 不同模式独立保存进度，key 格式：practice_progress_${username}_${level}_${mode}
+// 随机模式不保存进度
+
 function savePracticeProgress() {
-  // 保存所有模式的进度，而不仅仅是 'all' 模式
-  const key = `practice_progress_${currentUser.username}_${currentLevel}`;
+  // 随机模式不保存进度
+  if (practiceMode === 'random') return;
+  
+  const key = `practice_progress_${currentUser.username}_${currentLevel}_${practiceMode}`;
   const currentQId = practiceQuestions[practiceIndex]?.id || null;
   localStorage.setItem(key, JSON.stringify({
     mode: practiceMode,
@@ -9412,16 +9385,32 @@ function savePracticeProgress() {
     currentQId: currentQId, // 保存当前题目 ID，用于恢复
     timestamp: Date.now()
   }));
+  console.log(`[savePracticeProgress] 保存进度: mode=${practiceMode}, index=${practiceIndex}, key=${key}`);
 }
-function loadPracticeProgress() {
-  const key = `practice_progress_${currentUser.username}_${currentLevel}`;
+
+function loadPracticeProgress(mode) {
+  // 随机模式不加载进度
+  if (mode === 'random') return null;
+  
+  const key = `practice_progress_${currentUser.username}_${currentLevel}_${mode}`;
   const data = localStorage.getItem(key);
   if (!data) return null;
-  try { return JSON.parse(data); } catch { return null; }
+  try { 
+    const parsed = JSON.parse(data);
+    console.log(`[loadPracticeProgress] 加载进度: mode=${mode}, index=${parsed.index}, key=${key}`);
+    return parsed;
+  } catch { return null; }
 }
-function clearPracticeProgress() {
-  const key = `practice_progress_${currentUser.username}_${currentLevel}`;
+
+function clearPracticeProgress(mode) {
+  // 如果没有指定模式，使用当前模式
+  const targetMode = mode || practiceMode;
+  // 随机模式没有进度可清除
+  if (targetMode === 'random') return;
+  
+  const key = `practice_progress_${currentUser.username}_${currentLevel}_${targetMode}`;
   localStorage.removeItem(key);
+  console.log(`[clearPracticeProgress] 清除进度: mode=${targetMode}, key=${key}`);
 }
 
 function showContinueDialog(saved) {
@@ -9453,7 +9442,7 @@ function dismissContinueDialog() {
   const overlay = document.getElementById('continue-overlay');
   if (overlay) overlay.remove();
   // 关闭弹窗时，从保存的进度继续（而不是从头开始）
-  const saved = loadPracticeProgress();
+  const saved = loadPracticeProgress(practiceMode);
   if (saved && typeof saved.index === 'number') {
     practiceIndex = saved.index;
   } else {
