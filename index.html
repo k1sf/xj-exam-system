@@ -1215,7 +1215,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <script src="https://unpkg.com/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
 <script>
 // 版本号 - 用于确认是否加载了最新代码
-window.__CODE_VERSION__ = '2025-01-18-v3';
+window.__CODE_VERSION__ = '2025-01-18-v5';
 console.log('=== 代码版本: ' + window.__CODE_VERSION__ + ' ===');
 </script>
 </head>
@@ -8360,9 +8360,29 @@ async function startWrongDaily() {
   showLoading('加载错题...');
   
   try {
-    const res = await fetch(`${API_BASE}/wrong-daily?student_id=${currentUser.id}&level=${encodeURIComponent(currentLevel)}`);
-    const data = await res.json();
-    _wrongQuestions = data.questions || [];
+    // 使用 Supabase 直接查询错题
+    const wrongRecords = await dbSelect('records', { 
+      eq: { student_id: currentUser.username, is_correct: false },
+      select: ['question_id', 'wrong_level', 'created_at']
+    });
+    
+    // 获取当前级别的题目
+    const allQ = await dbSelect('questions', { 
+      eq: { level: currentLevel }, 
+      select: ['id', 'type', 'content', 'options', 'answer', 'analysis', 'tags'] 
+    });
+    const qIdSet = new Set(allQ.map(q => parseInt(q.id)));
+    
+    // 过滤当前级别的错题
+    const levelWrongQIds = (wrongRecords || [])
+      .filter(r => qIdSet.has(parseInt(r.question_id)))
+      .map(r => parseInt(r.question_id));
+    
+    // 去重并取最多10道
+    const uniqueWrongQIds = [...new Set(levelWrongQIds)].slice(0, 10);
+    
+    // 获取题目详情
+    _wrongQuestions = allQ.filter(q => uniqueWrongQIds.includes(parseInt(q.id)));
     
     if (_wrongQuestions.length === 0) {
       hideLoading();
@@ -8374,19 +8394,7 @@ async function startWrongDaily() {
     _wrongTrainingIndex = 0;
     _wrongTrainingAnswers = {};
     _wrongTrainingStartTime = Date.now();
-    
-    // 创建训练会话
-    const sessionRes = await fetch(`${API_BASE}/wrong-session-start`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        student_id: currentUser.id,
-        mode: 'daily',
-        question_ids: _wrongQuestions.map(q => q.id)
-      })
-    });
-    const sessionData = await sessionRes.json();
-    _wrongTrainingSession = sessionData.session_id;
+    _wrongTrainingSession = Date.now(); // 使用时间戳作为会话ID
     
     hideLoading();
     renderWrongQuestion();
@@ -8404,9 +8412,35 @@ async function loadWrongTopics() {
   showLoading('加载知识点...');
   
   try {
-    const res = await fetch(`${API_BASE}/wrong-topics?student_id=${currentUser.id}&level=${encodeURIComponent(currentLevel)}`);
-    const data = await res.json();
-    _wrongTopics = data.topics || [];
+    // 使用 Supabase 直接查询错题
+    const wrongRecords = await dbSelect('records', { 
+      eq: { student_id: currentUser.username, is_correct: false },
+      select: ['question_id']
+    });
+    
+    // 获取当前级别的题目
+    const allQ = await dbSelect('questions', { 
+      eq: { level: currentLevel }, 
+      select: ['id', 'tags'] 
+    });
+    const qIdSet = new Set(allQ.map(q => parseInt(q.id)));
+    
+    // 过滤当前级别的错题ID
+    const wrongQIds = new Set((wrongRecords || [])
+      .filter(r => qIdSet.has(parseInt(r.question_id)))
+      .map(r => parseInt(r.question_id)));
+    
+    // 统计知识点分布
+    const topicCount = {};
+    allQ.filter(q => wrongQIds.has(parseInt(q.id))).forEach(q => {
+      (q.tags || []).forEach(tag => {
+        topicCount[tag] = (topicCount[tag] || 0) + 1;
+      });
+    });
+    
+    _wrongTopics = Object.entries(topicCount)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
     
     hideLoading();
     
@@ -8467,9 +8501,24 @@ async function startTopicTraining(tag) {
   showLoading('加载错题...');
   
   try {
-    const res = await fetch(`${API_BASE}/wrong-topic-questions?student_id=${currentUser.id}&tag=${encodeURIComponent(tag)}&level=${encodeURIComponent(currentLevel)}`);
-    const data = await res.json();
-    _wrongQuestions = data.questions || [];
+    // 使用 Supabase 直接查询错题
+    const wrongRecords = await dbSelect('records', { 
+      eq: { student_id: currentUser.username, is_correct: false },
+      select: ['question_id']
+    });
+    
+    // 获取当前级别包含该标签的题目
+    const allQ = await dbSelect('questions', { 
+      eq: { level: currentLevel }, 
+      select: ['id', 'type', 'content', 'options', 'answer', 'analysis', 'tags'] 
+    });
+    
+    // 过滤：当前级别 + 包含该标签 + 是错题
+    const wrongQIds = new Set((wrongRecords || []).map(r => parseInt(r.question_id)));
+    _wrongQuestions = allQ.filter(q => 
+      wrongQIds.has(parseInt(q.id)) && 
+      (q.tags || []).includes(tag)
+    );
     
     if (_wrongQuestions.length === 0) {
       hideLoading();
@@ -8481,19 +8530,7 @@ async function startTopicTraining(tag) {
     _wrongTrainingIndex = 0;
     _wrongTrainingAnswers = {};
     _wrongTrainingStartTime = Date.now();
-    
-    // 创建训练会话
-    const sessionRes = await fetch(`${API_BASE}/wrong-session-start`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        student_id: currentUser.id,
-        mode: 'topic',
-        question_ids: _wrongQuestions.map(q => q.id)
-      })
-    });
-    const sessionData = await sessionRes.json();
-    _wrongTrainingSession = sessionData.session_id;
+    _wrongTrainingSession = Date.now(); // 使用时间戳作为会话ID
     
     hideLoading();
     renderWrongQuestion();
@@ -8511,9 +8548,29 @@ async function startWrongExam() {
   showLoading('生成试卷...');
   
   try {
-    const res = await fetch(`${API_BASE}/wrong-exam?student_id=${currentUser.id}&level=${encodeURIComponent(currentLevel)}&count=20`);
-    const data = await res.json();
-    _wrongQuestions = data.questions || [];
+    // 使用 Supabase 直接查询错题
+    const wrongRecords = await dbSelect('records', { 
+      eq: { student_id: currentUser.username, is_correct: false },
+      select: ['question_id', 'wrong_level', 'created_at']
+    });
+    
+    // 获取当前级别的题目
+    const allQ = await dbSelect('questions', { 
+      eq: { level: currentLevel }, 
+      select: ['id', 'type', 'content', 'options', 'answer', 'analysis', 'tags'] 
+    });
+    const qIdSet = new Set(allQ.map(q => parseInt(q.id)));
+    
+    // 过滤当前级别的错题
+    const levelWrongQIds = (wrongRecords || [])
+      .filter(r => qIdSet.has(parseInt(r.question_id)))
+      .map(r => parseInt(r.question_id));
+    
+    // 去重并打乱顺序，取最多20道
+    const uniqueWrongQIds = [...new Set(levelWrongQIds)].sort(() => Math.random() - 0.5).slice(0, 20);
+    
+    // 获取题目详情
+    _wrongQuestions = allQ.filter(q => uniqueWrongQIds.includes(parseInt(q.id)));
     
     if (_wrongQuestions.length === 0) {
       hideLoading();
@@ -8525,19 +8582,7 @@ async function startWrongExam() {
     _wrongTrainingIndex = 0;
     _wrongTrainingAnswers = {};
     _wrongTrainingStartTime = Date.now();
-    
-    // 创建训练会话
-    const sessionRes = await fetch(`${API_BASE}/wrong-session-start`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        student_id: currentUser.id,
-        mode: 'exam',
-        question_ids: _wrongQuestions.map(q => q.id)
-      })
-    });
-    const sessionData = await sessionRes.json();
-    _wrongTrainingSession = sessionData.session_id;
+    _wrongTrainingSession = Date.now(); // 使用时间戳作为会话ID
     
     hideLoading();
     renderWrongQuestion();
@@ -8677,22 +8722,6 @@ async function submitWrongAnswer() {
     addXp(3);  // 答错+3 XP
   }
   
-  // 提交到后端更新掌握度
-  try {
-    await fetch(`${API_BASE}/wrong-submit`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        student_id: currentUser.id,
-        question_id: q.id,
-        is_correct: isCorrect,
-        mode: _wrongTrainingMode
-      })
-    });
-  } catch (e) {
-    console.error('提交结果失败:', e);
-  }
-  
   // 显示结果
   showWrongAnswerResult(q, userAnswer, correctAnswer, isCorrect);
 }
@@ -8733,28 +8762,13 @@ function nextWrongQuestion() {
 
 // 完成训练
 async function finishWrongTraining() {
-  if (!currentUser || !_wrongTrainingSession) return;
+  if (!currentUser) return;
   
   const duration = Math.floor((Date.now() - _wrongTrainingStartTime) / 1000);
   const correctCount = Object.keys(_wrongTrainingAnswers).filter(qid => {
     const q = _wrongQuestions.find(q => q.id == qid);
     return q && _wrongTrainingAnswers[String(qid)] === q.answer;
   }).length;
-  
-  // 更新会话
-  try {
-    await fetch(`${API_BASE}/wrong-session-finish`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        session_id: _wrongTrainingSession,
-        correct_count: correctCount,
-        duration_seconds: duration
-      })
-    });
-  } catch (e) {
-    console.error('更新会话失败:', e);
-  }
   
   const total = _wrongQuestions.length;
   const accuracy = Math.round(correctCount * 100 / total);
@@ -9374,6 +9388,8 @@ async function toggleFav(qId) {
 function savePracticeProgress() {
   // 随机模式不保存进度
   if (practiceMode === 'random') return;
+  // 确保用户已登录
+  if (!currentUser || !currentUser.username) return;
   
   const key = `practice_progress_${currentUser.username}_${currentLevel}_${practiceMode}`;
   const currentQId = practiceQuestions[practiceIndex]?.id || null;
@@ -9391,6 +9407,8 @@ function savePracticeProgress() {
 function loadPracticeProgress(mode) {
   // 随机模式不加载进度
   if (mode === 'random') return null;
+  // 确保用户已登录
+  if (!currentUser || !currentUser.username) return null;
   
   const key = `practice_progress_${currentUser.username}_${currentLevel}_${mode}`;
   const data = localStorage.getItem(key);
@@ -9407,6 +9425,8 @@ function clearPracticeProgress(mode) {
   const targetMode = mode || practiceMode;
   // 随机模式没有进度可清除
   if (targetMode === 'random') return;
+  // 确保用户已登录
+  if (!currentUser || !currentUser.username) return;
   
   const key = `practice_progress_${currentUser.username}_${currentLevel}_${targetMode}`;
   localStorage.removeItem(key);
