@@ -1215,7 +1215,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <script src="https://unpkg.com/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
 <script>
 // 版本号 - 用于确认是否加载了最新代码
-window.__CODE_VERSION__ = '2025-01-18-v8';
+window.__CODE_VERSION__ = '2025-01-18-v10';
 console.log('=== 代码版本: ' + window.__CODE_VERSION__ + ' ===');
 </script>
 </head>
@@ -5367,8 +5367,27 @@ async function openEnrollmentDetail(configId, source = 'enrollment') {
 
 async function renderEnrollmentDetailPage() {
   const c = _currentEnrollmentConfig;
-  const statusColor = c.status === 'active' ? '#28a745' : '#dc3545';
-  const statusText = c.status === 'active' ? '进行中' : '已关闭';
+  
+  // 检查是否已过期
+  const now = Date.now();
+  const endTime = c.end_time ? new Date(c.end_time).getTime() : null;
+  const isExpired = endTime && now > endTime;
+  
+  // 确定实际状态
+  const actualStatus = (c.status === 'active' && !isExpired) ? 'active' : (isExpired ? 'expired' : 'closed');
+  
+  let statusColor, statusText;
+  if (actualStatus === 'active') {
+    statusColor = '#28a745';
+    statusText = '进行中';
+  } else if (actualStatus === 'expired') {
+    statusColor = '#dc3545';
+    statusText = '已结束';
+  } else {
+    statusColor = '#dc3545';
+    statusText = '已关闭';
+  }
+  
   const levelsStr = (c.levels || []).map(l => `${LEVEL_ICONS[l]||''}${escHtml(l)}`).join(' ');
   
   // 生成分享链接
@@ -5639,7 +5658,7 @@ function copyEnrollmentLink() {
 
 async function toggleEnrollmentStatus(configId, status) {
   try {
-    await dbUpdate('enroll_configs', { where: { id: configId }, values: { status } });
+    await dbUpdate('enroll_configs', { status }, { id: configId });
     showToast(status === 'active' ? '已开启' : '已关闭', 'success');
     openEnrollmentDetail(configId);
   } catch(e) {
@@ -5662,7 +5681,10 @@ function goBackToEnrollList() {
 async function deleteEnrollment(configId) {
   if (!confirm('确定删除此报名？报名记录将一并删除！')) return;
   try {
-    await dbDelete('enroll_configs', { where: { id: configId } });
+    // 先删除关联的报名记录
+    await dbDelete('enrollments', { config_id: configId });
+    // 再删除报名配置
+    await dbDelete('enroll_configs', { id: configId });
     showToast('删除成功', 'success');
     goBackToEnrollList();
   } catch(e) {
@@ -5711,7 +5733,7 @@ async function importEnrollments() {
       }
       
       // 更新报名状态
-      await dbUpdate('enrollments', { where: { id: enrollment.id }, values: { status: 'approved' } });
+      await dbUpdate('enrollments', { status: 'approved' }, { id: enrollment.id });
     }
     
     showToast(`成功导入 ${imported} 人，更新 ${updated} 人`, 'success');
@@ -6034,7 +6056,7 @@ async function createHomework() {
     // 更新配置（记忆下次延续）
     const existingConfig = await dbSelect('homework_config', { select: 'id', where: { key: 'default' }, limit: 1 });
     if (existingConfig.length > 0) {
-      await dbUpdate('homework_config', { where: { key: 'default' }, values: { value: { question_end: qEnd, default_count: defaultCount } } });
+      await dbUpdate('homework_config', { value: { question_end: qEnd, default_count: defaultCount } }, { key: 'default' });
     } else {
       await dbInsert('homework_config', [{ key: 'default', value: { question_end: qEnd, default_count: defaultCount } }]);
     }
@@ -6151,7 +6173,7 @@ async function deleteHomework(id) {
   if (!confirm('确定要删除这个作业吗？')) return;
   
   try {
-    await dbDelete('homeworks', { where: { id } });
+    await dbDelete('homeworks', { id });
     showToast('删除成功', 'success');
     renderAdminHomework();
   } catch (e) {
