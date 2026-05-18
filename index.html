@@ -1215,7 +1215,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <script src="https://unpkg.com/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
 <script>
 // 版本号 - 用于确认是否加载了最新代码
-window.__CODE_VERSION__ = '2025-01-18-v1';
+window.__CODE_VERSION__ = '2025-01-18-v2';
 console.log('=== 代码版本: ' + window.__CODE_VERSION__ + ' ===');
 </script>
 </head>
@@ -8867,6 +8867,8 @@ async function renderPracticeSub() {
   }
   
   // 初始化题目数据（首次加载，且不是错题/复习模式）
+  let savedProgressForDialog = null;
+  
   if (!practiceQuestions || practiceQuestions.length === 0) {
     container.innerHTML = `<div style="text-align:center;padding:40px"><div class="spinner-lg" style="margin:0 auto"></div><div style="margin-top:12px;color:var(--text2)">加载题目...</div></div>`;
     
@@ -8875,6 +8877,7 @@ async function renderPracticeSub() {
     
     const allQ = await dbSelect('questions', { eq: { level: currentLevel }, order: ['id', false] });
     allQuestions = allQ || [];  // 缓存到全局变量
+    console.log(`[renderPracticeSub] 加载题目: ${allQuestions.length} 道, level=${currentLevel}`);
     
     const records = await dbSelect('records', { eq: { student_id: currentUser.username }, cacheBypass: true });
     
@@ -8918,44 +8921,44 @@ async function renderPracticeSub() {
     
     practiceMultiSelected = {};
     practiceIndex = 0;
+    console.log(`[renderPracticeSub] practiceQuestions 设置完成: ${practiceQuestions.length} 道, mode=${practiceMode}`);
+  }
+  
+  // 恢复之前的进度（如果是从刷新恢复）并显示"继续学习"对话框
+  if (window._restorePracticeQId && practiceQuestions.length > 0) {
+    const restoreQId = window._restorePracticeQId;
+    const restoreMode = window._restorePracticeMode;
+    const restoreIndex = window._restorePracticeIndex;
     
-    // 恢复之前的进度（如果是从刷新恢复）并显示"继续学习"对话框
-    let savedProgressForDialog = null;
-    if (window._restorePracticeQId && practiceQuestions.length > 0) {
-      const restoreQId = window._restorePracticeQId;
-      const restoreMode = window._restorePracticeMode;
-      const restoreIndex = window._restorePracticeIndex;
-      
-      // 检查模式是否匹配
-      if (restoreMode === practiceMode || !restoreMode) {
-        // 尝试通过题目 ID 恢复进度
-        const foundIndex = practiceQuestions.findIndex(q => Number(q.id) === Number(restoreQId));
-        if (foundIndex >= 0) {
-          savedProgressForDialog = {
-            index: foundIndex,
-            total: practiceQuestions.length,
-            mode: restoreMode,
-            currentQId: restoreQId,
-            timestamp: Date.now()
-          };
-          console.log(`[Practice] 检测到保存的进度: 第 ${foundIndex + 1} 题`);
-        } else if (restoreIndex >= 0 && restoreIndex < practiceQuestions.length) {
-          savedProgressForDialog = {
-            index: restoreIndex,
-            total: practiceQuestions.length,
-            mode: restoreMode,
-            currentQId: null,
-            timestamp: Date.now()
-          };
-          console.log(`[Practice] 通过索引检测到保存的进度: 第 ${restoreIndex + 1} 题`);
-        }
+    // 检查模式是否匹配
+    if (restoreMode === practiceMode || !restoreMode) {
+      // 尝试通过题目 ID 恢复进度
+      const foundIndex = practiceQuestions.findIndex(q => Number(q.id) === Number(restoreQId));
+      if (foundIndex >= 0) {
+        savedProgressForDialog = {
+          index: foundIndex,
+          total: practiceQuestions.length,
+          mode: restoreMode,
+          currentQId: restoreQId,
+          timestamp: Date.now()
+        };
+        console.log(`[Practice] 检测到保存的进度: 第 ${foundIndex + 1} 题`);
+      } else if (restoreIndex >= 0 && restoreIndex < practiceQuestions.length) {
+        savedProgressForDialog = {
+          index: restoreIndex,
+          total: practiceQuestions.length,
+          mode: restoreMode,
+          currentQId: null,
+          timestamp: Date.now()
+        };
+        console.log(`[Practice] 通过索引检测到保存的进度: 第 ${restoreIndex + 1} 题`);
       }
-      
-      // 清除恢复标记
-      delete window._restorePracticeIndex;
-      delete window._restorePracticeQId;
-      delete window._restorePracticeMode;
     }
+    
+    // 清除恢复标记
+    delete window._restorePracticeIndex;
+    delete window._restorePracticeQId;
+    delete window._restorePracticeMode;
   }
   
   // 渲染刷题界面
