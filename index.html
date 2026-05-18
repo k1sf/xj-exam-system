@@ -1215,7 +1215,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <script src="https://unpkg.com/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
 <script>
 // 版本号 - 用于确认是否加载了最新代码
-window.__CODE_VERSION__ = '2025-01-18-v14';
+window.__CODE_VERSION__ = '2025-01-18-v15';
 console.log('=== 代码版本: ' + window.__CODE_VERSION__ + ' ===');
 </script>
 </head>
@@ -4269,10 +4269,31 @@ function resetQuestionFilter() {
   renderAdminQuestions();
 }
 
-function openQuestionEditor(qId) {
+async function openQuestionEditor(qId) {
   if (qId && !requireAdmin()) return;
   editingQuestionId = qId || null;
-  const q = qId ? allQuestions.find(x => x.id === qId) : null;
+  let q = null;
+  
+  if (qId) {
+    // 先从内存中查找
+    q = allQuestions.find(x => x.id === qId);
+    // 如果内存中找不到，从数据库加载
+    if (!q) {
+      try {
+        const result = await dbSelect('questions', { where: { id: qId }, limit: 1 });
+        if (result && result.length > 0) {
+          q = result[0];
+          // 更新内存缓存
+          allQuestions.push(q);
+        }
+      } catch (e) {
+        console.error('加载题目失败:', e);
+        showToast('加载题目失败', 'error');
+        return;
+      }
+    }
+  }
+  
   const type = q ? q.type : 'single';
   const content = q ? q.content : '';
   const options = q ? (q.options || []) : [];
